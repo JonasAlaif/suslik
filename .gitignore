@@ -152,3 +152,4 @@ certify/
 *results.tex
 trace.json
 *.trace.json
+*.db.json
