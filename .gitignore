@@ -16,6 +16,8 @@ project/plugins/project/
 .history
 .cache
 .lib/
+.bloop/
+.metals/
 ### macOS template
 *.DS_Store
 .AppleDouble
