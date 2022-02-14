@@ -45,6 +45,16 @@ trait SepLogicUtils extends PureLogicUtils {
     (for {hl <- pre.chunks if pl(hl)
           hr <- post.chunks if pr(hl, hr)} yield (hl, hr)).headOption
   }
+  /**
+    * Get all heaplets from pre and post satisfying a relation
+    */
+  def findAllMatchingHeaplets(pl: Heaplet => Boolean,
+                           pr: (Heaplet, Heaplet) => Boolean,
+                           pre: SFormula,
+                           post: SFormula): Seq[(Heaplet, Heaplet)] = {
+    for {hl <- pre.chunks if pl(hl)
+         hr <- post.chunks if pr(hl, hr)} yield (hl, hr)
+  }
 
   /**
     * Are two heaplets both points-to with the same LHS?

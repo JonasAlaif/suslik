@@ -134,7 +134,9 @@ class SSLParser extends StandardTokenParsers with SepLogicUtils {
 
   def heaplet: Parser[Heaplet] = {
     val maybePerm = opt("@" ~> expr)
+    val label = ident <~ "@"
     ((identWithOffset <~ ":->") ~ maybePerm ~ expr ^^ { case (a, o) ~ p ~ b => PointsTo(Var(a), o, b, p.getOrElse(eMut)) }
+      //  ||| label ~ ("(" ~> ident <~ ")") ~ (":->" ~> maybePerm) ~ expr ^^ { case a ~ t ~ p ~ b => PointsToLabel(Var(a), t, b, p.getOrElse(eMut)) }
         ||| ("[" ~> (ident ~ ("," ~> numericLit)) <~ "]") ~ maybePerm ^^ { case a ~ s ~ p => Block(Var(a), Integer.parseInt(s), p.getOrElse(eMut)) }
         ||| ident ~ ("(" ~> rep1sep(expr, ",") <~ ")") ~ opt("<" ~> expr <~ ">") ^^ {
         case name ~ args ~ v => SApp(name, args, PTag(), v.getOrElse(Var(getTotallyFreshName(cardinalityPrefix))))

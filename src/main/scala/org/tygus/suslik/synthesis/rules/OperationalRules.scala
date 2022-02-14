@@ -27,6 +27,7 @@ object OperationalRules extends SepLogicUtils with RuleUtils {
   Γ ; {φ ; x.f -> l * P} ; {ψ ; x.f -> l' * Q} ---> *x.f := l' ; S
 
   */
+  var toggle = 0
   object WriteRule extends SynthesisRule with GeneratesCode with InvertibleRule {
 
     override def toString: Ident = "Write"
@@ -42,24 +43,35 @@ object OperationalRules extends SepLogicUtils with RuleUtils {
       }
 
       // When do two heaplets match
-      def isMatch(hl: Heaplet, hr: Heaplet) = sameLhs(hl)(hr) && !sameRhs(hl)(hr) && noGhosts(hr)
+      def isMatch(hl: Heaplet, hr: Heaplet) = {
+        val same = sameLhs(hl)(hr) && !sameRhs(hl)(hr) && noGhosts(hr)
+        println(same + ": " + hl + " vs " + hr)
+        same
+      }
 
       // This is a simple focusing optimization:
       // since in the flat phase all pairs of heaplets must go,
       // we are only working on the first heaplet in the post (and its matching heaplet in the pre)
-      val firstHeaplet = SFormula(goal.post.sigma.chunks.take(1))
-      findMatchingHeaplets(_ => true, isMatch, goal.pre.sigma, firstHeaplet) match {
-        case None => Nil
-        case Some((hl@PointsTo(x@Var(_), offset, _, p1), hr@PointsTo(_, _, e2, p2))) =>
+      //val firstHeaplet = SFormula(goal.post.sigma.chunks.take(1))
+      toggle += 1
+      findAllMatchingHeaplets(_ => true, isMatch, goal.pre.sigma, goal.post.sigma).flatMap {
+        case (hl@PointsTo(x@Var(_), offset, _, p1), hr@PointsTo(_, _, e2, p2)) =>
           val newPre = Assertion(pre.phi, goal.pre.sigma - hl)
           val newPost = Assertion(post.phi && (p1 |=| eMut) && (p2 |=| eMut), goal.post.sigma - hr)
-          val subGoal = goal.spawnChild(newPre, newPost)
+          println(toggle + ": Trying *(" + x + "+" + offset + ") = " + e2)
+          val subGoal = goal.spawnChild(newPre, newPost, programVars = goal.programVars.filter(pv => {
+              val cnt = !e2.vars.contains(pv)
+              println(cnt + ": FV " + pv)
+              cnt
+          }))
+          //val subGoal = goal.spawnChild(newPre, newPost, programVars = goal.programVars.filter(!e2.vars.contains(_)))
+          //val subGoal = goal.spawnChild(newPre, newPost)
           val kont: StmtProducer = PrependProducer(Store(x, offset, e2)) >> ExtractHelper(goal)
 
-          List(RuleResult(List(subGoal), kont, this, goal))
-        case Some((hl, hr)) =>
+          Some(RuleResult(List(subGoal), kont, this, goal))
+        case (hl, hr) =>
           ruleAssert(assertion = false, s"Write rule matched unexpected heaplets ${hl.pp} and ${hr.pp}")
-          Nil
+          None
       }
     }
 
@@ -92,7 +104,7 @@ object OperationalRules extends SepLogicUtils with RuleUtils {
           val y = freshVar(goal.vars, e.pp)
           val tpy = e.getType(goal.gamma).get
           val newPhi = phi && (y |=| e)
-          val newSigma = (sigma - pts) ** PointsTo(x, offset, y, p)
+          val newSigma = (sigma - pts) ** PointsTo(x, offset, IntConst(666), p)
           val subGoal = goal.spawnChild(pre = Assertion(newPhi, newSigma),
                                         gamma = goal.gamma + (y -> tpy),
                                         programVars = y :: goal.programVars)
