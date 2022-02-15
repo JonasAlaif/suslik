@@ -105,6 +105,43 @@ case class PointsTo(loc: Expr, offset: Int = 0, value: Expr, perm: Expr = eMut) 
 }
 
 /**
+  * LABEL@(type) :-> value
+  */
+case class Label(loc: Expr, tp: Ident, value: Expr, perm: Expr = eMut) extends Heaplet {
+
+  override def resolveOverloading(gamma: Gamma): Heaplet =
+    this.copy(loc = loc.resolveOverloading(gamma), value = value.resolveOverloading(gamma), perm = perm.resolveOverloading(gamma))
+
+  override def pp: Ident = {
+    s"${loc.pp}@($tp) :->${ppPermWithDefault(perm)} ${value.pp}"
+  }
+
+  def subst(sigma: Map[Var, Expr]): Heaplet = loc.subst(sigma) match {
+    //case BinaryExpr(OpPlus, l, IntConst(off)) => Label(l, offset + off, value.subst (sigma), perm.subst(sigma))
+    case _ => Label(loc.subst(sigma), tp, value.subst(sigma), perm.subst(sigma))
+  }
+
+  def resolve(gamma: Gamma, env: Environment): Option[Gamma] = {
+    for {
+      gamma1 <- loc.resolve(gamma, Some(LocType))
+      gamma2 <- value.resolve(gamma1, Some(LocType))
+      gamma3 <- perm.resolve(gamma2, Some(PermType))
+    } yield gamma3
+  }
+
+  override def compare(that: Heaplet) = that match {
+    case SApp(pred, args, tag, card) => -1
+    case _ => super.compare(that)
+  }
+
+  // This only unifies the rhs of the points-to, because lhss are unified by a separate rule
+  override def unify(that: Heaplet): Option[ExprSubst] = that match {
+    case Label(l, t, v, p) if l == loc && t == tp => Some(Map(value -> v, perm -> p))
+    case _ => None
+  }
+}
+
+/**
   * block(var, size)
   */
 case class Block(loc: Expr, sz: Int, perm: Expr = eMut) extends Heaplet {
@@ -205,7 +242,7 @@ case class SApp(pred: Ident, args: Seq[Expr], tag: PTag, card: Expr) extends Hea
 }
 
 
-case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpressions[SFormula] {
+case class SFormula(chunks: List[Heaplet], typemap: Map[Var, Option[Any]]) extends PrettyPrinting with HasExpressions[SFormula] {
   def resolveOverloading(gamma: Gamma): SFormula = {
     this.copy(chunks = chunks.map(_.resolveOverloading(gamma)))
   }
@@ -222,14 +259,14 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
 
   def ptss: List[PointsTo] = for (b@PointsTo(_, _, _, _) <- chunks) yield b
 
-  def subst(sigma: Map[Var, Expr]): SFormula = SFormula(chunks.map(_.subst(sigma)))
+  def subst(sigma: Map[Var, Expr]): SFormula = SFormula(chunks.map(_.subst(sigma)), typemap.map { case (v, ty) => sigma(v).asInstanceOf[Var] -> ty })
 
   // Collect certain sub-expressions
   def collect[R <: Expr](p: Expr => Boolean): Set[R] = {
     chunks.foldLeft(Set.empty[R])((a, h) => a ++ h.collect(p))
   }
 
-  def setSAppTags(t: PTag): SFormula = SFormula(chunks.map(h => h.setTag(t)))
+  def setSAppTags(t: PTag): SFormula = SFormula(chunks.map(h => h.setTag(t)), typemap)
 
   def callTags: List[Int] = chunks.flatMap(_.getTag).map(_.calls)
 
@@ -238,19 +275,19 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   def block_size (expr: Expr) = blocks find { case Block(loc,_,_) if loc == expr => true case _ => false } map (v => v.sz)
 
   // Add h to chunks (multiset semantics)
-  def **(h: Heaplet): SFormula = SFormula(h :: chunks)
+  def **(h: Heaplet): SFormula = SFormula(h :: chunks, typemap)
 
   // Add all chunks from other (multiset semantics)
-  def **(other: SFormula): SFormula = SFormula(chunks ++ other.chunks)
+  def **(other: SFormula): SFormula = SFormula(chunks ++ other.chunks, (typemap.toSeq ++ other.typemap.toSeq).toMap)
 
   // Remove h from this formula (multiset semantics)
-  def -(h: Heaplet): SFormula = SFormula(chunks.diff(List(h)))
+  def -(h: Heaplet): SFormula = SFormula(chunks.diff(List(h)), typemap)
 
   // Remove all chunks present in other (multiset semantics)
-  def -(other: SFormula): SFormula = SFormula(chunks.diff(other.chunks))
+  def -(other: SFormula): SFormula = SFormula(chunks.diff(other.chunks), typemap.toSeq.diff(other.typemap.toSeq).toMap)
 
   // Add chunks from other (set semantics)
-  def +(other: SFormula): SFormula = SFormula((chunks ++ other.chunks).distinct)
+  def +(other: SFormula): SFormula = SFormula((chunks ++ other.chunks).distinct, (typemap.toSeq ++ other.typemap.toSeq).toMap)
 
   def disjoint(other: SFormula): Boolean = chunks.intersect(other.chunks).isEmpty
 
@@ -279,6 +316,50 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   def cost: Int = chunks.map(_.cost).sum
 
   //  def cost: Int = chunks.foldLeft(0)((m, c) => m.max(c.cost))
+  def resolve_pts_types() = {
+    /*
+    var type_map: Map[Expr, Any] = apps.map(app => app.args(0) -> app.pred).toMap
+    var ptss_list = ptss
+    var old_len = ptss_list.length + 1
+    while (ptss_list.length != old_len) {
+      old_len = ptss_list.length
+      ptss_list = ptss_list.filter(pts => pts.value match {
+        case v@Var(_) => type_map.get(v) match {
+          case p@Some(tp) => {
+            pts.tp = p
+            if (pts.offset == 0) {
+              type_map = type_map + (pts.loc -> (pts.perm, tp))
+            }
+            false
+          }
+          case None => true
+        }
+        case LocConst(value) => false
+        case IntConst(value) => {
+          pts.tp = Some("int")
+          false
+        }
+        case BoolConst(value) => {
+          pts.tp = Some("bool")
+          false
+        }
+        case PermConst(value) => false
+        case BinaryExpr(op, left, right) => {
+          pts.tp = Some(op.resType.pp)
+          false
+        }
+        case OverloadedBinaryExpr(overloaded_op, left, right) => ???
+        case UnaryExpr(op, arg) => {
+          pts.tp = Some(op.outputType.pp)
+          false
+        }
+        case SetLiteral(elems) => ???
+        case IfThenElse(cond, left, right) => ???
+        case Unknown(name, params, pendingSubst) => ???
+      })
+    }
+    */
+  }
 }
 
 /**

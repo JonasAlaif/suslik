@@ -295,7 +295,7 @@ object LogicalRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
       // This is a simple focusing optimization:
       // since in the flat phase all pairs of heaplets must go,
       // we are only working on the first heaplet in the post (and its matching heaplet in the pre)
-      val firstHeaplet = SFormula(goal.post.sigma.chunks.take(1))
+      val firstHeaplet = SFormula(goal.post.sigma.chunks.take(1), Map())
       findMatchingHeaplets(_ => true, isMatch, goal.pre.sigma, firstHeaplet) match {
         case None => Nil
         case Some((_, hr@PointsTo(x, offset, e2, p))) =>

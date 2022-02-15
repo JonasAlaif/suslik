@@ -5,18 +5,21 @@ should be able to synthesize list copy
 #####
 
 predicate pred_B(loc box, int v) {
-| true => { box :-> v }
+| true => { [box, 1] ** box :-> v }
 }
 predicate pred_TB(loc tpl, int v0, int v1) {
-| true => { tpl+0 :-> box0 ** pred_B(box0, v0) ** tpl+1 :-> box1 ** pred_B(box1, v1) }
+| true => { [tpl, 2] ** tpl+0 :-> box0 ** pred_B(box0, v0) ** tpl+1 :-> box1 ** pred_B(box1, v1) }
+}
+predicate pred_TB2(loc tpl, int v0, int v1) {
+| true => { [tpl, 2] ** tpl+0 :-> box0 ** pred_B(box0, v0) ** tpl+1 :-> box1 ** pred_B(box1, v1) }
 }
 predicate pred_BTB(loc box, int v0, int v1) {
 | true => { [box, 1] ** box+0 :-> tpl ** pred_TB(tpl, v0, v1) }
 }
 
-{ X :-> x ** pred_TB(x, v0, v1) ** RESULT :-> 0 }
+{ RESULT :-> a ** pred_TB(X, v0, v1) }
 void box_and_swap(loc X, loc RESULT)
-{ X :-> 0 ** RESULT :-> r ** pred_BTB(r, v1, v0) }
+{ RESULT :-> r ** pred_TB2(r, v0, v1) }
 
 
 #####

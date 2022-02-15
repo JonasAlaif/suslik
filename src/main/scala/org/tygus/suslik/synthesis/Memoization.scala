@@ -3,7 +3,7 @@ package org.tygus.suslik.synthesis
 import org.tygus.suslik.language.Expressions.Var
 import org.tygus.suslik.language.Statements.{Solution, Statement}
 import org.tygus.suslik.logic.Gamma
-import org.tygus.suslik.logic.Specifications.{Assertion, Goal, GoalLabel, SuspendedCallGoal, mkSFormula}
+import org.tygus.suslik.logic.Specifications.{Assertion, Goal, GoalLabel, SuspendedCallGoal}
 import org.tygus.suslik.synthesis.SearchTree.{NodeId, OrNode}
 
 import scala.collection.mutable
@@ -100,8 +100,8 @@ object Memoization {
     private def trimGoal(g: Goal): MemoGoal = {
       val usedVars = g.pre.vars ++ g.post.vars ++ g.sketch.vars
       MemoGoal(
-        Assertion(g.pre.phi, mkSFormula(g.pre.sigma.chunks)),
-        Assertion(g.post.phi, mkSFormula(g.post.sigma.chunks)),
+        Assertion(g.pre.phi, g.pre.sigma),
+        Assertion(g.post.phi, g.post.sigma),
         g.gamma.filterKeys(usedVars),
         g.programVars.toSet.intersect(usedVars),
         g.universalGhosts.intersect(usedVars),

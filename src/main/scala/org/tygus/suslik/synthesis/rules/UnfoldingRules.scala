@@ -29,7 +29,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
       val env = goal.env
 
       h match {
-        case h@SApp(pred, args, PTag(cls, unf), card) if unf < env.config.maxOpenDepth =>
+        case h@SApp(pred, args, PTag(cls, unf), card) if unf < env.config.maxOpenDepth && pred != "token" =>
           ruleAssert(env.predicates.contains(pred), s"Open rule encountered undefined predicate: $pred")
           val freshSuffix = args.take(1).map(_.pp).mkString("_")
           val (InductivePredicate(_, params, clauses), fresh_sbst) = env.predicates(pred).refreshExistentials(goal.vars, freshSuffix)
@@ -44,7 +44,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
             body = asn.sigma
             newPrePhi = pre.phi && constraints && sel
             // The tags in the body should be one more than in the current application:
-            _newPreSigma1 = mkSFormula(body.chunks).setSAppTags(PTag(cls, unf + 1))
+            _newPreSigma1 = body.setSAppTags(PTag(cls, unf + 1))
             newPreSigma = _newPreSigma1 ** remainingSigma
           } yield (sel, goal.spawnChild(Assertion(newPrePhi, newPreSigma),
             childId = Some(clauses.indexOf(c)),
@@ -171,6 +171,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
       def heapletResults(h: Heaplet): Seq[RuleResult] = h match {
         case a@SApp(pred, args, PTag(cls, unf), card) =>
           if (unf >= env.config.maxCloseDepth) return Nil
+          if (pred == "token") return Nil
 
           ruleAssert(env.predicates.contains(pred),
             s"Close rule encountered undefined predicate: $pred")

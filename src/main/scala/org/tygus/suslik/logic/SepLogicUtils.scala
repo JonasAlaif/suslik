@@ -23,11 +23,11 @@ trait SepLogicUtils extends PureLogicUtils {
 
   def cardName(n: String) = s"${n}_card"
 
-  def emp: SFormula = SFormula(Nil)
+  def emp: SFormula = SFormula(Nil, Map())
 
-  def singletonHeap(h: Heaplet): SFormula = SFormula(List(h))
+  def singletonHeap(h: Heaplet): SFormula = SFormula(List(h), Map())
 
-  def mkSFormula(hs: List[Heaplet]) = SFormula(hs)
+  def mkSFormula(hs: List[Heaplet]) = ??? //SFormula(hs, Map())
 
   /**
     * Get the heaplet satisfying the predicate
@@ -191,7 +191,8 @@ trait SepLogicUtils extends PureLogicUtils {
       case Nil => acc
     }
 
-    goFind(small.chunks, large.chunks, List(Nil)).map(SFormula)
+    val newTypemap = (large.typemap.toSeq ++ small.typemap.toSeq).toMap
+    goFind(small.chunks, large.chunks, List(Nil)).map(SFormula(_, newTypemap))
   }
 
 }

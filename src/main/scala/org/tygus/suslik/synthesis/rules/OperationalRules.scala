@@ -41,13 +41,17 @@ object OperationalRules extends SepLogicUtils with RuleUtils {
         case PointsTo(x@Var(_), _, e, _) => !goal.isGhost(x) && e.vars.forall(v => !goal.isGhost(v))
         case _ => false
       }
+      /*def sameType: (Heaplet, Heaplet) => Boolean = {
+        case (hl@PointsTo(_, _, _, _, t1), hr@PointsTo(_, _, _, _, t2)) => {
+          val st = t1 == t2 || t1 == None
+          if (!st) println("NOT SAME TYPE: " + hl + " vs " + hr)
+          st
+        }
+        case _ => false
+      }*/
 
       // When do two heaplets match
-      def isMatch(hl: Heaplet, hr: Heaplet) = {
-        val same = sameLhs(hl)(hr) && !sameRhs(hl)(hr) && noGhosts(hr)
-        println(same + ": " + hl + " vs " + hr)
-        same
-      }
+      def isMatch(hl: Heaplet, hr: Heaplet) = sameLhs(hl)(hr) && !sameRhs(hl)(hr) && noGhosts(hr)// && sameType(hl, hr)
 
       // This is a simple focusing optimization:
       // since in the flat phase all pairs of heaplets must go,
@@ -61,7 +65,7 @@ object OperationalRules extends SepLogicUtils with RuleUtils {
           println(toggle + ": Trying *(" + x + "+" + offset + ") = " + e2)
           val subGoal = goal.spawnChild(newPre, newPost, programVars = goal.programVars.filter(pv => {
               val cnt = !e2.vars.contains(pv)
-              println(cnt + ": FV " + pv)
+              //println(cnt + ": FV " + pv)
               cnt
           }))
           //val subGoal = goal.spawnChild(newPre, newPost, programVars = goal.programVars.filter(!e2.vars.contains(_)))
@@ -104,6 +108,7 @@ object OperationalRules extends SepLogicUtils with RuleUtils {
           val y = freshVar(goal.vars, e.pp)
           val tpy = e.getType(goal.gamma).get
           val newPhi = phi && (y |=| e)
+          //val newVal = if (tp.get == "int" || tp.get == "bool") y else IntConst(666)
           val newSigma = (sigma - pts) ** PointsTo(x, offset, IntConst(666), p)
           val subGoal = goal.spawnChild(pre = Assertion(newPhi, newSigma),
                                         gamma = goal.gamma + (y -> tpy),
