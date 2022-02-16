@@ -290,7 +290,7 @@ case class VSTProofInterpreter(spec: FormalSpecification) extends Interpreter[Su
             Result(List(Forward), List(with_no_deferreds(clientContext)))
         }
 
-      case SuslikProofStep.Read(Var(ghost_from), Var(ghost_to), Load(to, _, from, offset)) =>
+      case SuslikProofStep.Read(Var(ghost_from), Var(ghost_to), Load(to, _, _, from, offset)) =>
         val ctx = clientContext with_renaming ghost_from -> ghost_to
         val rename_step = Rename(ghost_from, ghost_to)
         val read_step = Forward
@@ -301,7 +301,7 @@ case class VSTProofInterpreter(spec: FormalSpecification) extends Interpreter[Su
         val step = Free(v, size)
         Result(List(step), List(with_no_deferreds(clientContext)))
 
-      case SuslikProofStep.Malloc(Var(ghostFrom), Var(ghostTo), Statements.Malloc(to, tpe, sz)) =>
+      case SuslikProofStep.Malloc(Var(ghostFrom), Var(ghostTo), Statements.Malloc(to, _, tpe, sz)) =>
         this.contains_malloc = true
         val new_var = (ghostTo, CoqPtrValType)
         var ctx = clientContext

@@ -1,7 +1,7 @@
 package org.tygus.suslik.language
 
 import org.tygus.suslik.logic.Specifications.GoalLabel
-import org.tygus.suslik.logic.{Formals, FunSpec, Gamma}
+import org.tygus.suslik.logic.{Formals, FunSpec, Gamma, VarType}
 import org.tygus.suslik.util.StringUtil._
 
 /**
@@ -27,10 +27,10 @@ object Statements {
           case Error =>
             builder.append(mkSpaces(offset))
             builder.append(s"error;\n")
-          case Malloc(to, _, sz) =>
+          case Malloc(to, tp, _, sz) =>
             // Ignore type
             builder.append(mkSpaces(offset))
-            builder.append(s"let ${to.pp} = malloc($sz);\n")
+            builder.append(s"let ${to.pp} = malloc($tp);\n")
           case Free(v) =>
             builder.append(mkSpaces(offset))
             builder.append(s"free(${v.pp});\n")
@@ -38,11 +38,11 @@ object Statements {
             builder.append(mkSpaces(offset))
             val t = if (off <= 0) to.pp else s"(${to.pp} + $off)"
             builder.append(s"*$t = ${e.pp};\n")
-          case Load(to, _, from, off) =>
+          case Load(to, tp, _, from, off) =>
             builder.append(mkSpaces(offset))
             val f = if (off <= 0) from.pp else s"(${from.pp} + $off)"
             // Do not print the type annotation
-            builder.append(s"let ${to.pp} = *$f;\n")
+            builder.append(s"let ${to.pp}: ${tp} = *$f;\n")
           case Call(fun, args, _) =>
             builder.append(mkSpaces(offset))
             val function_call = s"${fun.pp}(${args.map(_.pp).mkString(", ")});\n"
@@ -78,9 +78,9 @@ object Statements {
         case Error => acc
         case Store(to, off, e) =>
           acc ++ to.collect(p) ++ e.collect(p)
-        case Load(_, _, from, off) =>
+        case Load(_, _, _, from, off) =>
           acc ++ from.collect(p)
-        case Malloc(_, _, _) =>
+        case Malloc(_, _, _, _) =>
           acc
         case Free(x) =>
           acc ++ x.collect(p)
@@ -104,14 +104,14 @@ object Statements {
         assert(!sigma.keySet.contains(to) || sigma(to).isInstanceOf[Var])
         Store(to.subst(sigma).asInstanceOf[Var], off, e.subst(sigma))
       }
-      case Load(to, tpe, from, offset) => {
+      case Load(to, tp, tpe, from, offset) => {
         assert(!sigma.keySet.contains(to) || sigma(to).isInstanceOf[Var])
         assert(!sigma.keySet.contains(from) || sigma(from).isInstanceOf[Var])
-        Load(to.subst(sigma).asInstanceOf[Var], tpe, from.subst(sigma).asInstanceOf[Var], offset)
+        Load(to.subst(sigma).asInstanceOf[Var], tp, tpe, from.subst(sigma).asInstanceOf[Var], offset)
       }
-      case Malloc(to, tpe, sz) => {
+      case Malloc(to, tp, tpe, sz) => {
         assert(!sigma.keySet.contains(to) || sigma(to).isInstanceOf[Var])
-        Malloc(to.subst(sigma).asInstanceOf[Var], tpe, sz)
+        Malloc(to.subst(sigma).asInstanceOf[Var], tp, tpe, sz)
       }
       case Free(x) => {
         assert(!sigma.keySet.contains(x) || sigma(x).isInstanceOf[Var])
@@ -130,8 +130,8 @@ object Statements {
       case Hole => 1
       case Error => 1
       case Store(to, off, e) => 1 + to.size + e.size
-      case Load(to, _, from, _) => 1 + to.size + from.size
-      case Malloc(to, _, _) => 1 + to.size
+      case Load(to, _, _, from, _) => 1 + to.size + from.size
+      case Malloc(to, _, _, _) => 1 + to.size
       case Free(x) => 1 + x.size
       case Call(_, args, _) => 1 + args.map(_.size).sum
       case SeqComp(s1,s2) => s1.size + s2.size
@@ -153,8 +153,8 @@ object Statements {
 
     // Variables defined by this atomic statement
     def definedVars: Set[Var] = this match {
-      case Load(y, _, _, _) => Set(y)
-      case Malloc(y, _, _)  => Set (y)
+      case Load(y, _, _, _, _) => Set(y)
+      case Malloc(y, _, _, _)  => Set (y)
       case _ if !isAtomic => {assert(false, "definedVars called on non-atomic statement"); Set()}
       case _ => Set()
     }
@@ -244,13 +244,13 @@ object Statements {
   case object Error extends Statement
 
   // let to = malloc(n)
-  case class Malloc(to: Var, tpe: SSLType, sz: Int = 1) extends Statement
+  case class Malloc(to: Var, tp: VarType, tpe: SSLType, sz: Int = 1) extends Statement
 
   // free(v)
   case class Free(v: Var) extends Statement
 
   // let to = *from.offset
-  case class Load(to: Var, tpe: SSLType, from: Var,
+  case class Load(to: Var, tp: VarType, tpe: SSLType, from: Var,
                   offset: Int = 0) extends Statement
 
   // *to.offset = e
@@ -270,8 +270,8 @@ object Statements {
         case (If(_, _, _), _) => { assert(false, "Conditional on LHS of seq comp"); this }
         case (_, Guarded(cond, b)) // Guards are propagated to the top but not beyond the definition of any var in their cond
             if cond.vars.intersect(s1.definedVars).isEmpty => Guarded(cond, SeqComp(s1, b).simplify)
-        case (Load(y, tpe, from, offset), _) => simplifyBinding(y, newY => Load(newY, tpe, from, offset))
-        case (Malloc(to, tpe, sz), _) => simplifyBinding(to, newTo => Malloc(newTo, tpe, sz))
+        case (Load(y, tp, tpe, from, offset), _) => simplifyBinding(y, newY => Load(newY, tp, tpe, from, offset))
+        case (Malloc(to, tp, tpe, sz), _) => simplifyBinding(to, newTo => Malloc(newTo, tp, tpe, sz))
         case _ => this
       }
     }

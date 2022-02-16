@@ -185,7 +185,7 @@ object IrisTranslator {
     val params = g.params.map { case (v, t) => (v.translate, t.translate) }
 
     val cardinalityParams: Map[String, HCardType] = (g.pre.sigma.chunks ++ g.post.sigma.chunks).flatMap({
-      case PointsTo(_, _, _, _) => None
+      case PointsTo(_, _, _, _, _) => None
       case Block(_, _, _) => None
       case SApp(pred, args, tag, Var(name)) => Some(name, HCardType(pred))
       case _ => throw TranslationException("ERR: Expecting all predicate applications to be abstract variables")
@@ -208,7 +208,7 @@ object IrisTranslator {
     val params = g.programVars.map(v => (v.translate, g.gamma(v).translate))
 
     val cardinalityParams: Map[String, HCardType] = (g.pre.sigma.chunks ++ g.post.sigma.chunks).flatMap({
-      case PointsTo(_,_,_,_) => None
+      case PointsTo(_,_,_,_,_) => None
       case Block(_,_,_) => None
       case SApp(pred, args, tag, Var(name)) => Some(name, HCardType(pred))
       case _ => throw TranslationException("ERR: Expecting all predicate applications to be abstract variables")

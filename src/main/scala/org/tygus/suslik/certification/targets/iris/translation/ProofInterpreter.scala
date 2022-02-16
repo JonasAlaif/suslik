@@ -243,7 +243,7 @@ case class ProofInterpreter(spec: IFunSpec) extends Interpreter[SuslikProofStep,
       Result(List(), List(withNoDeferreds(ctx)))
 
 
-    case SuslikProofStep.Malloc(Var(ghostFrom), Var(ghostTo), Statements.Malloc(_, _, sz)) =>
+    case SuslikProofStep.Malloc(Var(ghostFrom), Var(ghostTo), Statements.Malloc(_, _, _, sz)) =>
       val newVar = (ghostTo, HLocType())
       var ctx = clientCtx
       ctx = ctx withVariablesTypes List(newVar).toMap
@@ -274,7 +274,7 @@ case class ProofInterpreter(spec: IFunSpec) extends Interpreter[SuslikProofStep,
       withNoOp(newCtx)
 
     /** Statements */
-    case SuslikProofStep.Read(Var(ghostFrom), Var(ghostTo), Load(to, _, from, offset)) =>
+    case SuslikProofStep.Read(Var(ghostFrom), Var(ghostTo), Load(to, _, _, from, offset)) =>
       val ctx = clientCtx withRenaming ghostFrom -> ghostTo
       val rename = IRename(ICoqName(ghostFrom), ICoqName(ghostTo))
       Result(List(rename, ILoad), List(withNoDeferreds(ctx)))

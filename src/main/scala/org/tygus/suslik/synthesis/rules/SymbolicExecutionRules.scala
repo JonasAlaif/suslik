@@ -42,7 +42,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
         }
 
         def matchingHeaplet(h: Heaplet) = h match {
-          case PointsTo(h_from, h_offset, _, _) =>
+          case PointsTo(h_from, h_offset, _, _, _) =>
             SMTSolving.valid(goal.pre.phi ==> ((h_from |+| IntConst(h_offset)) |=| (to |+| IntConst(offset))))
           case _ => false
         }
@@ -50,7 +50,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
         findHeaplet(matchingHeaplet, pre.sigma) match {
           case None => throw SynthesisException("Write into unknown location: " + cmd.pp)
           case Some(h: PointsTo) =>
-            val newPre = Assertion(pre.phi, (pre.sigma - h) ** PointsTo(to, offset, new_val))
+            val newPre = Assertion(pre.phi, (pre.sigma - h) ** PointsTo(to, offset, new_val, tp = h.tp))
             val subGoal = goal.spawnChild(newPre, sketch = rest)
             val kont: StmtProducer = PrependFromSketchProducer(cmd)
             List(RuleResult(List(subGoal), kont, this, goal))
@@ -77,7 +77,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
        and update the pure pre with `to = e`
     */
     def apply(goal:Goal): Seq[RuleResult] = goal.sketch.uncons match {
-      case (cmd@Load(to, _, from, offset), rest) => {
+      case (cmd@Load(to, _, _, from, offset), rest) => {
         val pre = goal.pre
         val post = goal.post
 
@@ -86,7 +86,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
         } is already used.")
 
         def isMatchingHeaplet: Heaplet => Boolean = {
-          case PointsTo(heaplet_from, h_offset, _, _) =>
+          case PointsTo(heaplet_from, h_offset, _, _, _) =>
             SMTSolving.valid(goal.pre.phi ==> ((heaplet_from |+| IntConst(h_offset)) |=| (from |+| IntConst(offset))))
           case _ => false
         }
@@ -95,13 +95,13 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
           case None => {
             throw SynthesisException("Read from unknown location: " + cmd.pp)
           }
-          case Some(PointsTo(_, _, a, _)) =>
+          case Some(PointsTo(_, _, a, _, tp)) =>
             val tpy = a.getType(goal.gamma).get // the precondition knows better than the statement
             val subGoal = goal.spawnChild(
               pre = pre.copy(phi = pre.phi && (to |=| a)),
               post = post.copy(phi = post.phi && (to |=| a)),
               gamma = goal.gamma + (to -> tpy),
-              programVars = to :: goal.programVars,
+              typedProgramVars = (to, tp) :: goal.typedProgramVars,
               sketch = rest)
             val kont: StmtProducer = PrependFromSketchProducer(cmd)
             List(RuleResult(List(subGoal), kont, this, goal))
@@ -125,7 +125,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
     override def toString: Ident = "SE-Alloc"
 
     def apply(goal: Goal): Seq[RuleResult] = goal.sketch.uncons match {
-      case (cmd@Malloc(y, tpy, sz), rest) => {
+      case (cmd@Malloc(y, _, tpy, sz), rest) => {
         val pre = goal.pre
         synAssert(!goal.vars.contains(y), cmd.pp + s"name ${
           y.name
@@ -133,12 +133,12 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
 
         val freshChunks = for {
           off <- 0 until sz
-        } yield PointsTo(y, off, IntConst(MallocInitVal)) // because tons of variables slow down synthesis.
+        } yield PointsTo(y, off, IntConst(MallocInitVal), tp = None) // because tons of variables slow down synthesis.
         val freshBlock = Block(y, sz)
         val newPre = Assertion(pre.phi, mkSFormula(pre.sigma.chunks ++ freshChunks ++ List(freshBlock)))
         val subGoal = goal.spawnChild(newPre,
           gamma = goal.gamma + (y -> tpy),
-          programVars = y :: goal.programVars,
+          typedProgramVars = (y, ???) :: goal.typedProgramVars, // TODO!
           sketch = rest)
         val kont: StmtProducer = PrependFromSketchProducer(cmd)
         List(RuleResult(List(subGoal), kont, this, goal))

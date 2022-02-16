@@ -59,14 +59,14 @@ class VSTProgramInterpreter extends Interpreter[SuslikProofStep, StatementStep, 
       case _ => None
     }).toMap
     val free_ptrs = chunks.flatMap({
-      case PointsTo(Var(loc), 0, value, _) if !(block_map contains loc) => Some((loc, 1))
+      case PointsTo(Var(loc), 0, value, _, _) if !(block_map contains loc) => Some((loc, 1))
       case _ => None
     }).toMap
     (block_map ++ free_ptrs).map {
       case (ptr, sz) =>
       val types : Array[Option[VSTCType]] = Array.fill(sz)(None)
       chunks.foreach({
-        case PointsTo(Var(ptr_prime), offset, value, _) if ptr_prime == ptr =>
+        case PointsTo(Var(ptr_prime), offset, value, _, _) if ptr_prime == ptr =>
           types.update(offset, value.getType(gamma).flatMap({
             case IntType => Some(CoqIntValType)
             case LocType => Some(CoqPtrValType)
@@ -129,7 +129,7 @@ class VSTProgramInterpreter extends Interpreter[SuslikProofStep, StatementStep, 
           case Types.CoqIntValType => CWriteInt(to, expr, offset)
         }
         single_child_result_of(List(op), (Nil, no_deferreds, ctx))
-      case SuslikProofStep.Read(from_var, to_var, Load(Var(to),tpe, Var(from), offset)) =>
+      case SuslikProofStep.Read(from_var, to_var, Load(Var(to), _, tpe, Var(from), offset)) =>
         val (op, variable_type) = tpe match {
           case IntType => (CLoadInt(to, from, offset), CoqIntValType)
           case LocType => (CLoadLoc(to, from, offset), CoqPtrValType)
@@ -143,7 +143,7 @@ class VSTProgramInterpreter extends Interpreter[SuslikProofStep, StatementStep, 
       case SuslikProofStep.Free(Free(Var(name)), size) =>
         val op = CFree(name)
         single_child_result_of(List(op), (Nil, no_deferreds, ctx))
-      case SuslikProofStep.Malloc(Var(_), Var(_), Malloc(Var(to), tpe, sz)) =>
+      case SuslikProofStep.Malloc(Var(_), Var(_), Malloc(Var(to), _, tpe, sz)) =>
         val new_context = ctx with_new_variable (to, translate_type(tpe))
         single_child_result_of(List(CMalloc(to, sz)), (Nil, no_deferreds, new_context))
       case SuslikProofStep.Inconsistency(label) => no_child_result_of(List(CSkip))

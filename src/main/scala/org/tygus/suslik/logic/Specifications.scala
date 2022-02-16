@@ -58,6 +58,8 @@ object Specifications extends SepLogicUtils {
     def size: Int = phi.size + sigma.size
 
     def cost: Int = sigma.cost
+
+    def get_typed(names: List[Var]): List[(Var, VarType)] = names.map(n => (n, sigma.type_map.get(n)))
   }
 
   /**
@@ -104,7 +106,7 @@ object Specifications extends SepLogicUtils {
   case class Goal(pre: Assertion,
                   post: Assertion,
                   gamma: Gamma, // types of all variables (program, universal, and existential)
-                  programVars: List[Var], // program-level variables
+                  typedProgramVars: List[(Var, VarType)], // program-level variables
                   universalGhosts: Set[Var], // universally quantified ghost variables
                   fname: String, // top-level function name
                   label: GoalLabel, // unique id within the derivation
@@ -120,7 +122,7 @@ object Specifications extends SepLogicUtils {
 
     override def pp: String =
 //      s"${label.pp}\n" +
-      s"${programVars.map { v => s"${getType(v).pp} ${v.pp}" }.mkString(", ")} " +
+      s"${typedProgramVars.map { v => s"${getType(v._1).pp} ${v._1.pp} (${v._2})" }.mkString(", ")} " +
         s"[${universalGhosts.map { v => s"${getType(v).pp} ${v.pp}" }.mkString(", ")}]" +
         s"[${existentials.map { v => s"${getType(v).pp} ${v.pp}" }.mkString(", ")}] |-\n" +
         s"${pre.pp}\n${sketch.pp}" +
@@ -171,7 +173,7 @@ object Specifications extends SepLogicUtils {
     def spawnChild(pre: Assertion = this.pre,
                    post: Assertion = this.post,
                    gamma: Gamma = this.gamma,
-                   programVars: List[Var] = this.programVars,
+                   typedProgramVars: List[(Var, VarType)] = this.typedProgramVars,
                    childId: Option[Int] = None,
                    env: Environment = this.env,
                    sketch: Statement = this.sketch,
@@ -185,14 +187,14 @@ object Specifications extends SepLogicUtils {
       // Sort heaplets from old to new and simplify pure parts
       val preSimple = Assertion(simplify(pre.phi), pre.sigma)
       val postSimple = Assertion(simplify(post.phi), post.sigma)
-//      val usedVars = preSimple.vars ++ postSimple.vars ++ programVars.toSet ++
+//      val usedVars = preSimple.vars ++ postSimple.vars ++ typedProgramVars.toSet ++
 //        callGoal.map(cg => cg.calleePost.vars ++ cg.callerPost.vars).getOrElse(Set())
 //      val newGamma = gammaFinal.filterKeys(usedVars.contains)
-//      val newUniversalGhosts = this.universalGhosts.intersect(usedVars) ++ preSimple.vars -- programVars
-      val newUniversalGhosts = this.universalGhosts ++ preSimple.vars -- programVars
+//      val newUniversalGhosts = this.universalGhosts.intersect(usedVars) ++ preSimple.vars -- typedProgramVars
+      val newUniversalGhosts = this.universalGhosts ++ preSimple.vars -- typedProgramVars.map(_._1)
 
       Goal(preSimple, postSimple,
-        gammaFinal, programVars, newUniversalGhosts,
+        gammaFinal, typedProgramVars, newUniversalGhosts,
         this.fname, this.label.bumpUp(childId), Some(this), env, sketch,
         callGoal, hasProgressed, isCompanion)
     }
@@ -212,7 +214,7 @@ object Specifications extends SepLogicUtils {
     def hasBlocks: Boolean = pre.hasBlocks || post.hasBlocks
 
     def hasExistentialPointers: Boolean = post.sigma.chunks.exists {
-      case PointsTo(x@Var(_), _, _, _) => isExistential(x)
+      case PointsTo(x@Var(_), _, _, _, _) => isExistential(x)
       case _ => false
     }
 
@@ -265,6 +267,8 @@ object Specifications extends SepLogicUtils {
 
     def formals: Formals = programVars.map(v => (v, getType(v)))
 
+    def programVars: List[Var] = typedProgramVars.map(_._1)
+
     def depth: Int = ancestors.length
 
     // Size of the specification in this goal (in AST nodes)
@@ -300,9 +304,10 @@ object Specifications extends SepLogicUtils {
     val pre1 = pre.resolveOverloading(gamma)
     val post1 = post.resolveOverloading(gamma)
     val formalNames = formals.map(_._1)
+    val programVars = pre.get_typed(formalNames)
     val ghostUniversals = pre1.vars -- formalNames
     Goal(pre1, post1,
-      gamma, formalNames, ghostUniversals,
+      gamma, programVars, ghostUniversals,
       fname, topLabel, None, env.resolveOverloading(), sketch.resolveOverloading(gamma),
       None, hasProgressed = false, isCompanion = true)
   }

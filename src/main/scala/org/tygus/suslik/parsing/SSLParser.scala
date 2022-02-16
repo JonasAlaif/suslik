@@ -135,7 +135,7 @@ class SSLParser extends StandardTokenParsers with SepLogicUtils {
   def heaplet: Parser[Heaplet] = {
     val maybePerm = opt("@" ~> expr)
     val label = ident <~ "@"
-    ((identWithOffset <~ ":->") ~ maybePerm ~ expr ^^ { case (a, o) ~ p ~ b => PointsTo(Var(a), o, b, p.getOrElse(eMut)) }
+    ((identWithOffset <~ ":->") ~ maybePerm ~ expr ^^ { case (a, o) ~ p ~ b => PointsTo(Var(a), o, b, p.getOrElse(eMut), None) }
       //  ||| label ~ ("(" ~> ident <~ ")") ~ (":->" ~> maybePerm) ~ expr ^^ { case a ~ t ~ p ~ b => Label(Var(a), t, b, p.getOrElse(eMut)) }
         ||| ("[" ~> (ident ~ ("," ~> numericLit)) <~ "]") ~ maybePerm ^^ { case a ~ s ~ p => Block(Var(a), Integer.parseInt(s), p.getOrElse(eMut)) }
         ||| ident ~ ("(" ~> rep1sep(expr, ",") <~ ")") ~ opt("<" ~> expr <~ ">") ^^ {
@@ -146,11 +146,7 @@ class SSLParser extends StandardTokenParsers with SepLogicUtils {
 
   def sigma: Parser[SFormula] = (
     "emp" ^^^ emp
-      ||| repsep(heaplet, "**") ^^ { hs => {
-        val s = mkSFormula(hs)
-        s.resolve_pts_types()
-        s
-       }}
+      ||| repsep(heaplet, "**") ^^ { mkSFormula(_) }
     )
 
   def assertion: Parser[Assertion] = "{" ~> (opt(expr <~ ";") ~ sigma) <~ "}" ^^ {
@@ -194,7 +190,7 @@ class SSLParser extends StandardTokenParsers with SepLogicUtils {
       ||| ("error" ~> ";" ^^^ Statements.Error)
       // Malloc
       ||| "let" ~> varParser ~ ("=" ~> "malloc" ~> "(" ~> numericLit <~ ")" ~> ";") ^^ {
-      case variable ~ number_str => Malloc(variable, IntType, Integer.parseInt(number_str)) // todo: maybe not ignore type here
+      case variable ~ number_str => Malloc(variable, None, IntType, Integer.parseInt(number_str)) // todo: maybe not ignore type here
     }
       ||| ("free" ~> "(" ~> varParser <~ ")" ~> ";") ^^ Free
       // Store
@@ -206,10 +202,10 @@ class SSLParser extends StandardTokenParsers with SepLogicUtils {
     }
       // Load
       ||| ("let" ~> varParser) ~ ("=" ~> "*" ~> varParser <~ ";") ^^ {
-      case to ~ from => Load(to, IntType, from) // todo: maybe not ignore type here
+      case to ~ from => Load(to, None, IntType, from) // todo: maybe not ignore type here
     }
       ||| ("let" ~> varParser <~ "=" <~ "*" <~ "(") ~ (varParser <~ "+") ~ (numericLit <~ ")" <~ ";") ^^ {
-      case to ~ from ~ offset_str => Load(to, IntType, from, Integer.parseInt(offset_str)) // todo: maybe not ignore type here
+      case to ~ from ~ offset_str => Load(to, None, IntType, from, Integer.parseInt(offset_str)) // todo: maybe not ignore type here
     }
       // Call
       ||| varParser ~ ("(" ~> repsep(expr, ",") <~ ")" <~ ";") ^^ {

@@ -80,11 +80,11 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
       def lcpLen(s1: String, s2: String): Int = s1.zip(s2).takeWhile(Function.tupled(_ == _)).length
 
       val alternatives = for {
-        PointsTo(y, oy, _, _) <- postPtss
+        PointsTo(y, oy, _, _, _) <- postPtss
         if y.vars.exists(goal.isExistential)
-        t@PointsTo(x, ox, _, _) <- prePtss
+        t@PointsTo(x, ox, _, _, _) <- prePtss
 //        if post.sigma.block_size(y) == pre.sigma.block_size(x)
-        if ox == oy
+        if ox == oy && pre.sigma.type_map.get(x) == post.sigma.type_map.get(y)
         if !postPtss.exists(sameLhs(t))
       } yield (y -> x)
 
@@ -124,7 +124,7 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
       def canSubst(e: Expr, d: Expr) = e match {
         case x@Var(_) =>
           // e must be an existential var:
-          goal.isExistential(x) &&
+          goal.isExistential(x) && s2.type_map.get(e) == s2.type_map.get(d) &&
           // if it's a program-level existential, then all vars in d must be program-level
           (!goal.isProgramLevelExistential(x) || d.vars.subsetOf(goal.programVars.toSet))
         case _ => false
@@ -182,7 +182,7 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
       for {
         ex <- least(exCandidates) // since all existentials must go, no point trying them in different order
         v <- toSorted(uniCandidates(ex)) ++ constants
-        if goal.getType(ex) == v.getType(goal.gamma).get
+        if goal.getType(ex) == v.getType(goal.gamma).get && goal.pre.sigma.type_map.get(v) == goal.post.sigma.type_map.get(ex)
         sigma = Map(ex -> v)
         newPost = goal.post.subst(sigma)
         newCallGoal = goal.callGoal.map(_.updateSubstitution(sigma))

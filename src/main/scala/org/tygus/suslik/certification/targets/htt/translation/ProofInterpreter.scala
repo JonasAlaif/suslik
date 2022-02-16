@@ -159,7 +159,7 @@ object ProofInterpreter extends Interpreter[SuslikProofStep, Proof.Step, ProofCo
         Result(steps, branchSteps.zip(childCtxs).map { case (s, c) => (s, None, c) })
 
       /** Program statements */
-      case SuslikProofStep.Read(ghostFrom, ghostTo, Load(to, _, from, offset)) =>
+      case SuslikProofStep.Read(ghostFrom, ghostTo, Load(to, _, _, from, offset)) =>
         val readStep = Proof.Read(to.translate, from.translate, offset)
         val renameStep = Proof.Rename(ghostFrom.name, ghostTo.name)
         val m = Map(ghostFrom.translate -> ghostTo.translate)
@@ -172,7 +172,7 @@ object ProofInterpreter extends Interpreter[SuslikProofStep, Proof.Step, ProofCo
         val writePostStep = Proof.WritePost(to.translate, offset)
         val steps = if (ctx.callGoal.isDefined) List(writeStep) else List(writeStep, writePostStep)
         Result(steps, List(withNoDeferred(ctx)))
-      case SuslikProofStep.Malloc(ghostFrom, ghostTo, Malloc(to, tpe, sz)) =>
+      case SuslikProofStep.Malloc(ghostFrom, ghostTo, Malloc(to, _, tpe, sz)) =>
         val allocStep = Proof.Alloc(to.translate, tpe.translate, sz)
         val renameStep = Proof.Rename(ghostFrom.name, ghostTo.name)
         val m = Map(ghostFrom.translate -> ghostTo.translate)

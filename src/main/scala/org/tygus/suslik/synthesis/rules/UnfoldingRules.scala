@@ -61,6 +61,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
     }
 
     def apply(goal: Goal): Seq[RuleResult] = {
+      println("Trying Open: " + goal.pre.sigma.type_map)
       for {
         heaplet <- goal.pre.sigma.chunks
         s <- mkInductiveSubGoals(goal, heaplet) match {

@@ -202,7 +202,7 @@ case class AbduceCall(
           // find all pointers that are not yet known to be non-null
           def find_pointers(p: PFormula, s: SFormula): Set[Expr] = {
             // All pointers
-            val allPointers = (for (PointsTo(l, _, _, _) <- s.chunks) yield l).toSet
+            val allPointers = (for (PointsTo(l, _, _, _, _) <- s.chunks) yield l).toSet
             allPointers.filter(
               x => !p.conjuncts.contains(x |/=| NilPtr) && !p.conjuncts.contains(NilPtr |/=| x)
             )
@@ -311,7 +311,7 @@ case class AbduceCall(
         case _ => fail_with_bad_proof_structure()
       }
       case OperationalRules.ReadRule => node.kont match {
-        case SubstVarProducer(from, to) >> PrependProducer(stmt@Load(_, _, _, _)) >> ExtractHelper(_) =>
+        case SubstVarProducer(from, to) >> PrependProducer(stmt@Load(_, _, _, _, _)) >> ExtractHelper(_) =>
           node.children match {
             case ::(head, Nil) => SuslikProofStep.Read(from, to, stmt)
             case ls => fail_with_bad_children(ls, 1)
@@ -457,7 +457,7 @@ case class AbduceCall(
         case _ => fail_with_bad_proof_structure()
       }
       case OperationalRules.AllocRule => node.kont match {
-        case SubstVarProducer(from, to) >> PrependProducer(stmt@Statements.Malloc(_, _, _)) >> ExtractHelper(goal) =>
+        case SubstVarProducer(from, to) >> PrependProducer(stmt@Statements.Malloc(_, _, _, _)) >> ExtractHelper(goal) =>
           node.children match {
             case ::(head, Nil) =>
               SuslikProofStep.
