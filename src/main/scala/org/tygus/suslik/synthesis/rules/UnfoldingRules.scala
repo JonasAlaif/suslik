@@ -46,10 +46,13 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
             // The tags in the body should be one more than in the current application:
             _newPreSigma1 = body.setSAppTags(PTag(cls, unf + 1))
             newPreSigma = _newPreSigma1 ** remainingSigma
-          } yield (sel, goal.spawnChild(Assertion(newPrePhi, newPreSigma),
+          } yield {
+            //println("Could open: " + pred + " to get:\n" + newPreSigma)
+          (sel, goal.spawnChild(Assertion(newPrePhi, newPreSigma),
             childId = Some(clauses.indexOf(c)),
             hasProgressed = true,
             isCompanion = true))
+          }
 
           // This is important, otherwise the rule is unsound and produces programs reading from ghosts
           // We can make the conditional without additional reading
@@ -61,7 +64,6 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
     }
 
     def apply(goal: Goal): Seq[RuleResult] = {
-      println("Trying Open: " + goal.pre.sigma.type_map)
       for {
         heaplet <- goal.pre.sigma.chunks
         s <- mkInductiveSubGoals(goal, heaplet) match {
@@ -200,6 +202,8 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
             val actualSelector = selector.subst(freshExistentialsSubst).subst(substArgs)
             val newPhi = post.phi && actualConstraints && actualSelector
             val newPost = Assertion(newPhi, goal.post.sigma ** actualBody - h)
+
+            //println("Could close: " + pred + " to get:\n" + newPost.sigma)
 
             val kont = UnfoldProducer(a, selector, Assertion(actualConstraints, actualBody), predSbst ++ freshExistentialsSubst) >> IdProducer >> ExtractHelper(goal)
 

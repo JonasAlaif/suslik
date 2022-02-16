@@ -59,7 +59,7 @@ object Specifications extends SepLogicUtils {
 
     def cost: Int = sigma.cost
 
-    def get_typed(names: List[Var]): List[(Var, VarType)] = names.map(n => (n, sigma.type_map.get(n)))
+    def get_typed(names: List[Var]): List[(Var, VarType)] = names.map(n => (n, sigma.tps.get(n)))
   }
 
   /**
@@ -214,7 +214,7 @@ object Specifications extends SepLogicUtils {
     def hasBlocks: Boolean = pre.hasBlocks || post.hasBlocks
 
     def hasExistentialPointers: Boolean = post.sigma.chunks.exists {
-      case PointsTo(x@Var(_), _, _, _, _) => isExistential(x)
+      case PointsTo(x@Var(_), _, _, _) => isExistential(x)
       case _ => false
     }
 
@@ -283,6 +283,32 @@ object Specifications extends SepLogicUtils {
         case None => 3*pre.cost + post.cost  // + existentials.size //
         case Some(cg) => 10 + 3*cg.callerPre.cost + cg.callerPost.cost // + (cg.callerPost.vars -- allUniversals).size //
       }
+  }
+
+  object Goal {
+    def apply(pre: Assertion,
+              post: Assertion,
+              gamma: Gamma, // types of all variables (program, universal, and existential)
+              typedProgramVars: List[(Var, VarType)], // program-level variables
+              universalGhosts: Set[Var], // universally quantified ghost variables
+              fname: String, // top-level function name
+              label: GoalLabel, // unique id within the derivation
+              parent: Option[Goal], // parent goal in the derivation
+              env: Environment, // predicates and components
+              sketch: Statement, // sketch
+              callGoal: Option[SuspendedCallGoal],
+              hasProgressed: Boolean,
+              isCompanion: Boolean) = {
+      pre.sigma.ptss.map { case PointsTo(l, _, v, _) => {
+        pre.sigma.tps.get(l).get
+        pre.sigma.tps.get(v).get
+      }}
+      post.sigma.ptss.map { case PointsTo(l, _, v, _) => {
+        post.sigma.tps.get(l).get
+        post.sigma.tps.get(v).get
+      }}
+      new Goal(pre, post, gamma, typedProgramVars, universalGhosts, fname, label, parent, env, sketch, callGoal, hasProgressed, isCompanion)
+    }
   }
 
   def resolvePrePost(gamma0: Gamma, env: Environment, pre: Assertion, post: Assertion): Gamma = {

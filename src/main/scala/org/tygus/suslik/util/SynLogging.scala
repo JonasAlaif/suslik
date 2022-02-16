@@ -203,6 +203,7 @@ object SynStatUtil {
   def countStmts(proc: Procedure): Int = {
     def countInner(s: Statement): Int = s match {
       case Statements.Skip => 0
+      case Statements.Return(_) => 1
       //case Statements.Hole =>
       case Statements.Error => 1
       case Statements.Malloc(to, _, tpe, sz) => 1

@@ -38,14 +38,14 @@ object OperationalRules extends SepLogicUtils with RuleUtils {
 
       // Heaplets have no ghosts
       def noGhosts: Heaplet => Boolean = {
-        case PointsTo(x@Var(_), _, e, _, _) => !goal.isGhost(x) && e.vars.forall(v => !goal.isGhost(v))
+        case PointsTo(x@Var(_), _, e, _) => !goal.isGhost(x) && e.vars.forall(v => !goal.isGhost(v))
         case _ => false
       }
       def sameType: (Heaplet, Heaplet) => Boolean = {
-        case (hl@PointsTo(x@Var(_), _, _, _, _), hr@PointsTo(y@Var(_), _, _, _, _)) => {
-          val st = goal.pre.sigma.type_map.get(x) == goal.post.sigma.type_map.get(y)
-          println("Typing: " + hl + " vs " + hr + " type of " + x + " is " + goal.pre.sigma.type_map.get(x))
-          if (!st) println("NOT SAME TYPE: " + hl + " vs " + hr)
+        case (hl@PointsTo(x@Var(_), _, _, _), hr@PointsTo(y@Var(_), _, _, _)) => {
+          val st = goal.pre.sigma.tps.get(x) == goal.post.sigma.tps.get(y)
+          //println("Typing: " + hl + ": " + goal.pre.sigma.tps.get(x) + " vs " + hr + ": " + goal.post.sigma.tps.get(y) + " //Context, pre: " + goal.pre.sigma + " post: " + goal.post.sigma)
+          //if (!st) println("NOT SAME TYPE: " + hl + " vs " + hr)
           st
         }
         case _ => false
@@ -60,10 +60,10 @@ object OperationalRules extends SepLogicUtils with RuleUtils {
       //val firstHeaplet = SFormula(goal.post.sigma.chunks.take(1))
       toggle += 1
       findAllMatchingHeaplets(_ => true, isMatch, goal.pre.sigma, goal.post.sigma).flatMap {
-        case (hl@PointsTo(x@Var(_), offset, _, p1, _), hr@PointsTo(_, _, e2, p2, _)) =>
+        case (hl@PointsTo(x@Var(_), offset, _, p1), hr@PointsTo(_, _, e2, p2)) =>
           val newPre = Assertion(pre.phi, goal.pre.sigma - hl)
           val newPost = Assertion(post.phi && (p1 |=| eMut) && (p2 |=| eMut), goal.post.sigma - hr)
-          println(toggle + ": Trying *(" + x + "+" + offset + ") = " + e2)
+          //println(toggle + ": Trying *(" + x + "+" + offset + ") = " + e2)
           val subGoal = goal.spawnChild(newPre, newPost, typedProgramVars = goal.typedProgramVars.filter(pv => {
               val cnt = !e2.vars.contains(pv._1)
               //println(cnt + ": FV " + pv)
@@ -98,19 +98,21 @@ object OperationalRules extends SepLogicUtils with RuleUtils {
       val sigma = goal.pre.sigma
 
       def isGhostPoints: Heaplet => Boolean = {
-        case PointsTo(x@Var(_), _, e, _, tp) =>
-           !goal.isGhost(x) && tp.isDefined && e.vars.intersect(goal.ghosts).nonEmpty
+        case PointsTo(x@Var(_), _, e, _) =>
+           !goal.isGhost(x) && e.vars.intersect(goal.ghosts).nonEmpty
         case _ => false
       }
 
       findHeaplet(isGhostPoints, goal.pre.sigma) match {
         case None => Nil
-        case Some(pts@PointsTo(x@Var(_), offset, e, p, tp)) =>
+        case Some(pts@PointsTo(x@Var(_), offset, e, p)) =>
           val y = freshVar(goal.vars, e.pp)
           val tpy = e.getType(goal.gamma).get
           val newPhi = phi && (y |=| e)
-          val newVal = if (tp.get == "int" || tp.get == "bool") y else IntConst(666)
-          val newSigma = (sigma - pts) ** PointsTo(x, offset, newVal, p, tp)
+          val tp = goal.pre.sigma.tps.get(e)
+          //println("Got type of " + e + " is " + tp + " in tpenv " + goal.pre.sigma.tps.type_map)
+          val newVal = if (tp.get._1.length == 0 && (tp.get._2 == "int" || tp.get._2 == "bool")) y else IntConst(666)
+          val newSigma = (sigma - pts) ** SFormula(List(PointsTo(x, offset, newVal, p)), TypeMap(Map(y.name -> tp.get)))
           val subGoal = goal.spawnChild(pre = Assertion(newPhi, newSigma),
                                         gamma = goal.gamma + (y -> tpy),
                                         typedProgramVars = (y, tp) :: goal.typedProgramVars)
@@ -157,14 +159,14 @@ object OperationalRules extends SepLogicUtils with RuleUtils {
         case None => Nil
         case Some((Block(x@Var(_), sz, _), _)) =>
           val y = freshVar(goal.vars, x.name)
-          val tp = post.sigma.type_map.get(x)
+          val tp = post.sigma.tps.get(x)
           val tpy = LocType
 
           val freshChunks = for {
             off <- 0 until sz
-          } yield PointsTo(y, off, IntConst(MallocInitVal), tp = None)
+          } yield PointsTo(y, off, IntConst(MallocInitVal))
           val freshBlock = Block(x, sz).subst(x, y)
-          val newPre = Assertion(pre.phi, mkSFormula(pre.sigma.chunks ++ freshChunks ++ List(freshBlock)))
+          val newPre = Assertion(pre.phi, pre.sigma ** SFormula(freshBlock :: freshChunks.toList, TypeMap(Map(y.name -> goal.post.sigma.tps.get(x).get))))
 
           val subGoal = goal.spawnChild(newPre,
                                         post.subst(x, y),
@@ -203,8 +205,7 @@ object OperationalRules extends SepLogicUtils with RuleUtils {
       findTargetHeaplets(goal) match {
         case None => Nil
         case Some((h@Block(x@Var(_), _, p), pts)) =>
-          val toRemove = mkSFormula(pts.toList) ** h
-          val newPre = Assertion(pre.phi, pre.sigma - toRemove)
+          val newPre = Assertion(pre.phi, pre.sigma - h - SFormula(pts.toList, TypeMap()))
           val newPurePost = post.phi && (p |=| eMut) && PFormula(pts.map(_.perm |=| eMut).toSet)
           val newPost = Assertion(newPurePost, post.sigma)
 

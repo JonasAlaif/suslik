@@ -23,52 +23,31 @@ trait SepLogicUtils extends PureLogicUtils {
 
   def cardName(n: String) = s"${n}_card"
 
-  def emp: SFormula = SFormula(Nil, Map())
+  def emp: SFormula = SFormula(Nil, TypeMap())
 
   def singletonHeap(h: Heaplet): SFormula = mkSFormula(List(h))
 
   def mkSFormula(hs: List[Heaplet]) = {
-    var type_map: Map[Expr, Any] = (for (b@SApp(_, _, _, _) <- hs) yield b.args(0) -> b.pred).toMap
-    var ptss_list = for (b@PointsTo(_, _, _, _, _) <- hs) yield b
+    var tps = TypeMap((for (b@SApp(_, _, _, _) <- hs) yield b.args(0).asInstanceOf[Var].name -> (List(), b.pred)).toMap)
+    var ptss_list = for (b@PointsTo(_, _, _, _) <- hs) yield b
     var old_len = ptss_list.length + 1
     while (ptss_list.length != old_len) {
       old_len = ptss_list.length
-      ptss_list = ptss_list.filter(pts => pts.value match {
-        case v@Var(_) => type_map.get(v) match {
-          case p@Some(tp) => {
-            pts.tp = p
-            if (pts.offset == 0) {
-              type_map = type_map + (pts.loc -> (pts.perm, tp))
-            }
+      ptss_list = ptss_list.filter(pts =>
+        if (pts.offset != 0) false else tps.get(pts.value) match {
+          case Some((refs, t)) => {
+            //tps = tps + (pts.loc.asInstanceOf[Var].name -> (pts.perm :: refs, t))
             false
           }
           case None => true
         }
-        case LocConst(value) => false
-        case IntConst(value) => {
-          pts.tp = Some("int")
-          false
-        }
-        case BoolConst(value) => {
-          pts.tp = Some("bool")
-          false
-        }
-        case PermConst(value) => false
-        case BinaryExpr(op, left, right) => {
-          pts.tp = Some(op.resType.pp)
-          false
-        }
-        case OverloadedBinaryExpr(overloaded_op, left, right) => ???
-        case UnaryExpr(op, arg) => {
-          pts.tp = Some(op.outputType.pp)
-          false
-        }
-        case SetLiteral(elems) => ???
-        case IfThenElse(cond, left, right) => ???
-        case Unknown(name, params, pendingSubst) => ???
-      })
+      )
     }
-    SFormula(hs, type_map)
+    for (PointsTo(_, _, Var(name), _) <- ptss_list) {
+      tps = tps + (name -> (List(), "int"))
+    }
+    //println("CREATED: " + hs + " with types " + tps)
+    SFormula(hs, tps)
   }
 
   /**
@@ -103,8 +82,8 @@ trait SepLogicUtils extends PureLogicUtils {
     */
   def sameLhs(hl: Heaplet): Heaplet => Boolean = hr => {
     hl match {
-      case PointsTo(xl, ol, _, _, _) => hr match {
-        case PointsTo(xr, or, _, _, _) => xl == xr && ol == or
+      case PointsTo(xl, ol, _, _) => hr match {
+        case PointsTo(xr, or, _, _) => xl == xr && ol == or
         case _ => false
       }
       case _ => false
@@ -116,8 +95,8 @@ trait SepLogicUtils extends PureLogicUtils {
     */
   def sameRhs(hl: Heaplet): Heaplet => Boolean = hr => {
     hl match {
-      case PointsTo(_, _, el, _, _) => hr match {
-        case PointsTo(_, _, er, _, _) => el == er
+      case PointsTo(_, _, el, _) => hr match {
+        case PointsTo(_, _, er, _) => el == er
         case _ => false
       }
       case _ => false
@@ -136,7 +115,7 @@ trait SepLogicUtils extends PureLogicUtils {
       case None => None
       case Some(h@Block(x@Var(_), sz, _)) =>
         val ptsMb = for (off <- 0 until sz) yield
-          findHeaplet(h => sameLhs(PointsTo(x, off, IntConst(0), tp = None))(h) && pPts(h), sigma)
+          findHeaplet(h => sameLhs(PointsTo(x, off, IntConst(0)))(h) && pPts(h), sigma)
 //        Some((h, pts.flatten))
         val pts = ptsMb.flatten.map(_.asInstanceOf[PointsTo])
         if (pts.length == sz) Some((h, pts))
@@ -211,9 +190,9 @@ trait SepLogicUtils extends PureLogicUtils {
         case Block(_, _sz, _) => sz == _sz
         case _ => false
       }
-      case PointsTo(_, offset, _, _, _) =>
+      case PointsTo(_, offset, _, _) =>
         stuff.filter {
-          case PointsTo(_, _offset, _, _, _) => offset == _offset
+          case PointsTo(_, _offset, _, _) => offset == _offset
           case _ => false
         }
       case SApp(pred, args, _, _) => stuff.filter {
@@ -233,7 +212,7 @@ trait SepLogicUtils extends PureLogicUtils {
       case Nil => acc
     }
 
-    val newTypemap = (large.type_map.toSeq ++ small.type_map.toSeq).toMap
+    val newTypemap = large.tps ** small.tps
     goFind(small.chunks, large.chunks, List(Nil)).map(SFormula(_, newTypemap))
   }
 

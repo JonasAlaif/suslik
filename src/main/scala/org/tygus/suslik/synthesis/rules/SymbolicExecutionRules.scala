@@ -42,7 +42,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
         }
 
         def matchingHeaplet(h: Heaplet) = h match {
-          case PointsTo(h_from, h_offset, _, _, _) =>
+          case PointsTo(h_from, h_offset, _, _) =>
             SMTSolving.valid(goal.pre.phi ==> ((h_from |+| IntConst(h_offset)) |=| (to |+| IntConst(offset))))
           case _ => false
         }
@@ -50,7 +50,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
         findHeaplet(matchingHeaplet, pre.sigma) match {
           case None => throw SynthesisException("Write into unknown location: " + cmd.pp)
           case Some(h: PointsTo) =>
-            val newPre = Assertion(pre.phi, (pre.sigma - h) ** PointsTo(to, offset, new_val, tp = h.tp))
+            val newPre = Assertion(pre.phi, (pre.sigma - h) ** PointsTo(to, offset, new_val))
             val subGoal = goal.spawnChild(newPre, sketch = rest)
             val kont: StmtProducer = PrependFromSketchProducer(cmd)
             List(RuleResult(List(subGoal), kont, this, goal))
@@ -86,7 +86,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
         } is already used.")
 
         def isMatchingHeaplet: Heaplet => Boolean = {
-          case PointsTo(heaplet_from, h_offset, _, _, _) =>
+          case PointsTo(heaplet_from, h_offset, _, _) =>
             SMTSolving.valid(goal.pre.phi ==> ((heaplet_from |+| IntConst(h_offset)) |=| (from |+| IntConst(offset))))
           case _ => false
         }
@@ -95,7 +95,8 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
           case None => {
             throw SynthesisException("Read from unknown location: " + cmd.pp)
           }
-          case Some(PointsTo(_, _, a, _, tp)) =>
+          case Some(PointsTo(_, _, a, _)) =>
+            val tp = goal.pre.sigma.tps.get(a)
             val tpy = a.getType(goal.gamma).get // the precondition knows better than the statement
             val subGoal = goal.spawnChild(
               pre = pre.copy(phi = pre.phi && (to |=| a)),
@@ -133,9 +134,9 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
 
         val freshChunks = for {
           off <- 0 until sz
-        } yield PointsTo(y, off, IntConst(MallocInitVal), tp = None) // because tons of variables slow down synthesis.
+        } yield PointsTo(y, off, IntConst(MallocInitVal)) // because tons of variables slow down synthesis.
         val freshBlock = Block(y, sz)
-        val newPre = Assertion(pre.phi, mkSFormula(pre.sigma.chunks ++ freshChunks ++ List(freshBlock)))
+        val newPre = Assertion(pre.phi, pre.sigma ** SFormula(freshBlock :: freshChunks.toList, TypeMap()))
         val subGoal = goal.spawnChild(newPre,
           gamma = goal.gamma + (y -> tpy),
           typedProgramVars = (y, ???) :: goal.typedProgramVars, // TODO!
@@ -174,7 +175,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
         findNamedHeaplets(goal, x) match {
           case None => throw SynthesisException("No block at this location or some record fields are unknown: " + cmd.pp)
           case Some((h@Block(_, _, _), pts)) =>
-            val newPre = Assertion(pre.phi, pre.sigma - h - mkSFormula(pts.toList))
+            val newPre = Assertion(pre.phi, pre.sigma - h - SFormula(pts.toList, TypeMap()))
             val subGoal = goal.spawnChild(newPre, sketch = rest)
             val kont: StmtProducer = PrependFromSketchProducer(cmd)
             List(RuleResult(List(subGoal), kont, this, goal))

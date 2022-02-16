@@ -21,6 +21,9 @@ object Statements {
       def build(s: Statement, offset: Int = 2): Unit = {
         s match {
           case Skip =>
+          case Return(result) =>
+            builder.append(mkSpaces(offset))
+            builder.append(s"return ${result.pp};\n")
           case Hole =>
             builder.append(mkSpaces(offset))
             builder.append(s"??\n")
@@ -30,7 +33,7 @@ object Statements {
           case Malloc(to, tp, _, sz) =>
             // Ignore type
             builder.append(mkSpaces(offset))
-            builder.append(s"let ${to.pp} = malloc($tp);\n")
+            builder.append(s"let ${to.pp} = malloc(${tp.get._2});\n")
           case Free(v) =>
             builder.append(mkSpaces(offset))
             builder.append(s"free(${v.pp});\n")
@@ -42,7 +45,7 @@ object Statements {
             builder.append(mkSpaces(offset))
             val f = if (off <= 0) from.pp else s"(${from.pp} + $off)"
             // Do not print the type annotation
-            builder.append(s"let ${to.pp}: ${tp} = *$f;\n")
+            builder.append(s"let ${to.pp}: ${tp.get._2} = *$f;\n")
           case Call(fun, args, _) =>
             builder.append(mkSpaces(offset))
             val function_call = s"${fun.pp}(${args.map(_.pp).mkString(", ")});\n"
@@ -74,6 +77,8 @@ object Statements {
 
       def collector(acc: Set[R])(st: Statement): Set[R] = st match {
         case Skip => acc
+        case Return(result) =>
+          acc ++ result.collect(p)
         case Hole => acc
         case Error => acc
         case Store(to, off, e) =>
@@ -100,6 +105,10 @@ object Statements {
     }
 
     override def subst(sigma: Subst): Statement = this match {
+      case Return(x) => {
+        assert(!sigma.keySet.contains(x) || sigma(x).isInstanceOf[Var])
+        Return(x.subst(sigma).asInstanceOf[Var])
+      }
       case Store(to, off, e) => {
         assert(!sigma.keySet.contains(to) || sigma(to).isInstanceOf[Var])
         Store(to.subst(sigma).asInstanceOf[Var], off, e.subst(sigma))
@@ -127,6 +136,7 @@ object Statements {
     // Statement size in AST nodes
     def size: Int = this match {
       case Skip => 0
+      case Return(result) => 1 + result.size
       case Hole => 1
       case Error => 1
       case Store(to, off, e) => 1 + to.size + e.size
@@ -236,6 +246,9 @@ object Statements {
 
   // skip
   case object Skip extends Statement
+
+  // return
+  case class Return(result: Var) extends Statement
 
   // ??
   case object Hole extends Statement
