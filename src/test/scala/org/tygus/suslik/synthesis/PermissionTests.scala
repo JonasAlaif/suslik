@@ -70,8 +70,8 @@ class PermissionTests extends FunSuite with SynthesisRunnerUtil  {
 
   val spec5 = FunSpec("test5", VoidType,
     List((Var("r"), LocType)),
-    Assertion(pTrue, SFormula(List(PointsTo(Var("r"),0,IntConst(0),Var("a"))))), //pre
-    Assertion(pTrue, SFormula(List(PointsTo(Var("r"),0,IntConst(1),Var("a")))))  //post
+    Assertion(pTrue, SFormula(List(PointsTo(Var("r"),0,IntConst(0),Var("a", _))))), //pre
+    Assertion(pTrue, SFormula(List(PointsTo(Var("r"),0,IntConst(1),Var("a", _)))))  //post
   )
 
   test("Cannot write if permission is unknown") {
@@ -83,8 +83,8 @@ class PermissionTests extends FunSuite with SynthesisRunnerUtil  {
 
   val spec6 = FunSpec("test6", VoidType,
     List((Var("r"), LocType)),
-    Assertion(PFormula(Var("a") |=| eMut), SFormula(List(PointsTo(Var("r"),0,IntConst(0),Var("a"))))), //pre
-    Assertion(pTrue, SFormula(List(PointsTo(Var("r"),0,IntConst(1),Var("a")))))  //post
+    Assertion(PFormula(Var("a") |=| eMut), SFormula(List(PointsTo(Var("r"),0,IntConst(0),Var("a", _))))), //pre
+    Assertion(pTrue, SFormula(List(PointsTo(Var("r"),0,IntConst(1),Var("a", _)))))  //post
   )
 
   test("Can write if permission is symbolic but known") {
@@ -96,7 +96,7 @@ class PermissionTests extends FunSuite with SynthesisRunnerUtil  {
 
   val spec7 = FunSpec("test7", VoidType,
     List((Var("r"), LocType)),
-    Assertion(pTrue, SFormula(List(Block(Var("r"), 2, eImm), PointsTo(Var("r"),0,IntConst(0)), PointsTo(Var("r"),1,IntConst(1))))), //pre
+    Assertion(pTrue, SFormula(List(Block(Var("r"), 2, eImm), PointsTo(Var("r"),0,IntConst(0)), PointsTo(Var("r", _),1,IntConst(1))))), //pre
     Assertion(pTrue, SFormula(List()))  //post
   )
 
@@ -122,7 +122,7 @@ class PermissionTests extends FunSuite with SynthesisRunnerUtil  {
 
   val spec9 = FunSpec("test9", VoidType,
     List((Var("r"), LocType)),
-    Assertion(pTrue, SFormula(List(Block(Var("r"), 2), PointsTo(Var("r"),0,IntConst(0)), PointsTo(Var("r"),1,IntConst(1))))), //pre
+    Assertion(pTrue, SFormula(List(Block(Var("r"), 2), PointsTo(Var("r"),0,IntConst(0)), PointsTo(Var("r", _),1,IntConst(1))))), //pre
     Assertion(pTrue, SFormula(List()))  //post
   )
 

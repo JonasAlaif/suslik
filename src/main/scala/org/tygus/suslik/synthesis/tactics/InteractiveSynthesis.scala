@@ -4,7 +4,7 @@ import org.tygus.suslik.synthesis.SynConfig
 import org.tygus.suslik.synthesis.rules.Rules
 import org.tygus.suslik.util.SynStats
 
-class InteractiveSynthesis(config: SynConfig, stats: SynStats) extends PhasedSynthesis(config) {
+class InteractiveSynthesis(config: SynConfig, stats: SynStats) extends RustSynthesis(config) {
 
   override def filterExpansions(allExpansions: Seq[Rules.RuleResult]): Seq[Rules.RuleResult] = {
     // Interactive mode: ask user to pick an expansion
