@@ -1,18 +1,18 @@
 package org.tygus.suslik.parsing
 
-import org.tygus.suslik.LanguageUtils.{cardinalityPrefix, getTotallyFreshName}
 import org.tygus.suslik.language.Expressions._
 import org.tygus.suslik.language.Statements._
 import org.tygus.suslik.language._
 import org.tygus.suslik.logic.Specifications._
 import org.tygus.suslik.logic._
-import org.tygus.suslik.synthesis.SynthesisException
+import org.tygus.suslik.synthesis._
+import org.tygus.suslik.LanguageUtils._
 
 import scala.annotation.tailrec
 import scala.collection.mutable.ListBuffer
 import scala.util.parsing.combinator.syntactical.StandardTokenParsers
 
-class SSLParser extends StandardTokenParsers with SepLogicUtils {
+class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers with SepLogicUtils {
 
   // Modified repN
   def repAll[T](p: => Parser[T]): Parser[List[T]] =
@@ -162,10 +162,6 @@ class SSLParser extends StandardTokenParsers with SepLogicUtils {
       opt("[" ~> ident <~ "]") ~
       (("{" ~ opt("|")) ~> rep1sep(indClause, "|") <~ "}") ^^ {
       case name ~ formals ~ card ~ clauses =>
-        val c = card match {
-          case Some(s) => s
-          case None => cardName(name)
-        }
         InductivePredicate(name, formals, clauses)
     }
 

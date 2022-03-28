@@ -6,6 +6,7 @@ import org.tygus.suslik.language.Statements._
 import org.tygus.suslik.logic.Specifications._
 import org.tygus.suslik.logic._
 import org.tygus.suslik.synthesis.{ExtractHelper, PrependProducer, StmtProducer, SubstVarProducer}
+import org.tygus.suslik.report.ProofTrace
 import org.tygus.suslik.synthesis.rules.Rules._
 
 /**
@@ -28,7 +29,7 @@ object OperationalRules extends SepLogicUtils with RuleUtils {
 
   */
   var toggle = 0
-  object WriteRule extends SynthesisRule with GeneratesCode with InvertibleRule {
+  abstract class WriteAbstract extends SynthesisRule with GeneratesCode {
 
     override def toString: Ident = "Write"
 
@@ -73,14 +74,20 @@ object OperationalRules extends SepLogicUtils with RuleUtils {
           //val subGoal = goal.spawnChild(newPre, newPost)
           val kont: StmtProducer = PrependProducer(Store(x, offset, e2)) >> ExtractHelper(goal)
 
-          Some(RuleResult(List(subGoal), kont, this, goal))
-        case (hl, hr) =>
+          ProofTrace.current.add(ProofTrace.DerivationTrail(goal, Seq(subGoal), this,
+            Map("to" -> x.pp, "offset" -> offset.toString, "value" -> e2.pp)))
+          List(RuleResult(List(subGoal), kont, this, goal))
+        case Some((hl, hr)) =>
           ruleAssert(assertion = false, s"Write rule matched unexpected heaplets ${hl.pp} and ${hr.pp}")
           None
       }
     }
 
   }
+
+  object WriteRule extends WriteAbstract with InvertibleRule
+
+  object WriteSimple extends WriteAbstract
 
   /*
   Read rule: create a fresh typed read
@@ -105,6 +112,20 @@ object OperationalRules extends SepLogicUtils with RuleUtils {
 
       findHeaplet(isGhostPoints, goal.pre.sigma) match {
         case None => Nil
+          // TUTORIAL:
+        // case Some(pts@PointsTo(x@Var(_), offset, v@Var(name), p)) =>
+        //   val y = freshVar(goal.vars, name)
+        //   val tpy = v.getType(goal.gamma).get
+        //   val subGoal = goal.spawnChild(pre = goal.pre.subst(v, y),
+        //     post = goal.post.subst(v, y),
+        //     gamma = goal.gamma + (y -> tpy),
+        //     programVars = y :: goal.programVars)
+        //   val kont: StmtProducer = PrependProducer(Load(y, tpy, x, offset)) >> ExtractHelper(goal)
+
+        //   ProofTrace.current.add(ProofTrace.DerivationTrail(goal, Seq(subGoal), this,
+        //     Map("to" -> y.pp, "from" -> x.pp, "offset" -> offset.toString)))
+
+        //   List(RuleResult(List(subGoal), kont, this, goal))
         case Some(pts@PointsTo(x@Var(_), offset, e, p)) =>
           val y = freshVar(goal.vars, e.pp)
           val tpy = e.getType(goal.gamma).get
