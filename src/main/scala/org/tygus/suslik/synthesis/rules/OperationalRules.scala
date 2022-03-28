@@ -77,7 +77,7 @@ object OperationalRules extends SepLogicUtils with RuleUtils {
           ProofTrace.current.add(ProofTrace.DerivationTrail(goal, Seq(subGoal), this,
             Map("to" -> x.pp, "offset" -> offset.toString, "value" -> e2.pp)))
           List(RuleResult(List(subGoal), kont, this, goal))
-        case Some((hl, hr)) =>
+        case (hl, hr) =>
           ruleAssert(assertion = false, s"Write rule matched unexpected heaplets ${hl.pp} and ${hr.pp}")
           None
       }

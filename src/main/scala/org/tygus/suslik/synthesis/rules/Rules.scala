@@ -59,7 +59,7 @@ object Rules {
   trait GeneratesCode
 
   trait PhaseDisabled {
-    def heapletFilter(h: Heaplet): Boolean = true
+    def heapletFilter(h: Heaplet, post: SFormula): Boolean = true
 
     def profilesMatch(pre: SFormula, post: SFormula, exact: Boolean): Boolean = true
   }

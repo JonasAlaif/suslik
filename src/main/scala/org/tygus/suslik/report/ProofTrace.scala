@@ -256,6 +256,8 @@ object ProofTraceJson {
 
     def fromExpr(e: Expr): AST = e match {
       case Var(name) => "Var" -: AST(name)
+      case PermConst(_) => "PermConst" -: AST(e.pp)
+      case LocConst(_) => "LocConst" -: AST(e.pp)
       case IntConst(_) => "IntConst" -: AST(e.pp)
       case BoolConst(_) => "BoolConst" -: AST(e.pp)
       case UnaryExpr(op, arg) => labelOf(op) -: fromExpr(arg)
@@ -272,8 +274,8 @@ object ProofTraceJson {
         subst.toSeq.map { case (v, e) => AST("↦", Seq(v, e).map(fromExpr)) }
 
     def fromHeaplet(heaplet: Heaplet): AST = heaplet match {
-      case PointsTo(loc, offset, value) => AST("↦", Seq(fromExpr(loc), AST(offset), fromExpr(value)))
-      case Block(loc, sz) => AST("[]", Seq(fromExpr(loc), AST(sz)))
+      case PointsTo(loc, offset, value, p) => AST("↦", Seq(fromExpr(loc), AST(offset), fromExpr(value), fromExpr(p)))
+      case Block(loc, sz, p) => AST("[]", Seq(fromExpr(loc), AST(sz), fromExpr(p)))
       case SApp(pred, args, tag, card) => AST("SApp",
         Seq(AST(pred), AST("()", args.map(fromExpr)), AST(tag.pp), fromExpr(card)))
     }
