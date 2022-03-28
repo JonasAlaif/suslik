@@ -44,7 +44,7 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
       val alternatives = for {
         s <- postCandidates.take(1)
         t <- pre.sigma.chunks
-        if !s.eqModTags(t)
+        if !s.eqModTags(t) && s.types_equal(post.sigma.tps, t, pre.sigma.tps)
         sub <- t.unify(s)
         subExpr = goal.substToFormula(sub)
         newPostSigma = (post.sigma - s) ** t.copyTag(s)

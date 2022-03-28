@@ -34,6 +34,8 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
   // that makes it syntactically equal to that
   def unifySyntactic(that: Heaplet, unificationVars: Set[Var]): Option[Subst]
 
+  def types_equal(self_tps: TypeMap, other: Heaplet, other_tps: TypeMap): Boolean
+
   def compare(that: Heaplet): Int = this.pp.compare(that.pp)
 
   def resolve(gamma: Gamma, env: Environment): Option[Gamma]
@@ -96,6 +98,11 @@ case class PointsTo(loc: Expr, offset: Int = 0, value: Expr, perm: Expr = eMut) 
     } yield gamma3
   }
 
+  def types_equal(self_tps: TypeMap, other: Heaplet, other_tps: TypeMap): Boolean = other match {
+    case PointsTo(_, _, v, _) => self_tps.get(value) == other_tps.get(v)
+    case _ => false
+  }
+
   override def compare(that: Heaplet) = that match {
     case SApp(pred, args, tag, card) => -1
     case _ => super.compare(that)
@@ -104,6 +111,16 @@ case class PointsTo(loc: Expr, offset: Int = 0, value: Expr, perm: Expr = eMut) 
   // This only unifies the rhs of the points-to, because lhss are unified by a separate rule
   override def unify(that: Heaplet): Option[ExprSubst] = that match {
     case PointsTo(l, o, v, p) if l == loc && o == offset => Some(Map(value -> v, perm -> p))
+    case _ => None
+  }
+
+  override def unifySyntactic(that: Heaplet, unificationVars: Set[Var]): Option[Subst] = that match {
+    case PointsTo(l, o, v, p) if o == offset =>
+      for {
+        sub1 <- loc.unifySyntactic(l, unificationVars)
+        sub1p <- perm.unifySyntactic(p, unificationVars)
+        sub2 <- value.subst(sub1 ++ sub1p).unifySyntactic(v.subst(sub1 ++ sub1p), unificationVars)
+      } yield sub1 ++ sub1p ++ sub2
     case _ => None
   }
 }
@@ -178,6 +195,11 @@ case class Block(loc: Expr, sz: Int, perm: Expr = eMut) extends Heaplet {
     } yield gamma2
   }
 
+  def types_equal(self_tps: TypeMap, other: Heaplet, other_tps: TypeMap): Boolean = other match {
+    case Block(l, _, _) => self_tps.get(loc) == other_tps.get(l)
+    case _ => false
+  }
+
   override def compare(that: Heaplet) = that match {
     case SApp(pred, args, tag, card) => -1
     case _ => super.compare(that)
@@ -189,7 +211,11 @@ case class Block(loc: Expr, sz: Int, perm: Expr = eMut) extends Heaplet {
   }
 
   override def unifySyntactic(that: Heaplet, unificationVars: Set[Var]): Option[Subst] = that match {
-    case Block(l, s) if sz == s => loc.unifySyntactic(l, unificationVars)
+    case Block(l, s, p) if sz == s => 
+      for {
+        sub1 <- loc.unifySyntactic(l, unificationVars)
+        sub2 <- perm.unifySyntactic(p, unificationVars)
+      } yield sub1 ++ sub2
     case _ => None
   }
 }
@@ -218,6 +244,11 @@ case class SApp(pred: Ident, args: Seq[Expr], tag: PTag, card: Expr) extends Hea
     s"$pred(${args.map(_.pp).mkString(", ")})${ppCard(card)}"
   }
 
+
+  def types_equal(self_tps: TypeMap, other: Heaplet, other_tps: TypeMap): Boolean = other match {
+    case SApp(p, _, _, _) => pred == p
+    case _ => false
+  }
 
   override def compare(that: Heaplet): Int = that match {
     case SApp(pred1, args1, tag, card) =>
