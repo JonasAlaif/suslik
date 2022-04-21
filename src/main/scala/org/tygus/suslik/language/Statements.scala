@@ -43,6 +43,9 @@ object Statements {
             val f = if (off <= 0) from.pp else s"(${from.pp} + $off)"
             // Do not print the type annotation
             builder.append(s"let ${to.pp} = *$f;\n")
+          case Construct(to, pred, args) =>
+            builder.append(mkSpaces(offset))
+            builder.append(s"let ${to.pp} = $pred(${args.map(_.pp).mkString(", ")});\n")
           case Call(fun, args, _) =>
             builder.append(mkSpaces(offset))
             val function_call = s"${fun.pp}(${args.map(_.pp).mkString(", ")});\n"
@@ -80,6 +83,8 @@ object Statements {
           acc ++ to.collect(p) ++ e.collect(p)
         case Load(_, _, from, off) =>
           acc ++ from.collect(p)
+        case Construct(to, _, args) =>
+          acc ++ to.collect(p) ++ args.flatMap(_.collect(p)).toSet
         case Malloc(_, _, _) =>
           acc
         case Free(x) =>
@@ -109,6 +114,9 @@ object Statements {
         assert(!sigma.keySet.contains(from) || sigma(from).isInstanceOf[Var])
         Load(to.subst(sigma).asInstanceOf[Var], tpe, from.subst(sigma).asInstanceOf[Var], offset)
       }
+      case Construct(to, pred, args) =>
+        assert(!sigma.keySet.contains(to) || sigma(to).isInstanceOf[Var])
+        Construct(to.subst(sigma).asInstanceOf[Var], pred, args.map(_.subst(sigma)))
       case Malloc(to, tpe, sz) => {
         assert(!sigma.keySet.contains(to) || sigma(to).isInstanceOf[Var])
         Malloc(to.subst(sigma).asInstanceOf[Var], tpe, sz)
@@ -131,6 +139,7 @@ object Statements {
       case Error => 1
       case Store(to, off, e) => 1 + to.size + e.size
       case Load(to, _, from, _) => 1 + to.size + from.size
+      case Construct(to, _, args) => 1 + to.size + args.map(_.size).sum
       case Malloc(to, _, _) => 1 + to.size
       case Free(x) => 1 + x.size
       case Call(_, args, _) => 1 + args.map(_.size).sum
@@ -242,6 +251,9 @@ object Statements {
   // let to = *from.offset
   case class Load(to: Var, tpe: SSLType, from: Var,
                   offset: Int = 0) extends Statement
+
+  // let to = pred(args)
+  case class Construct(to: Var, pred: Ident, args: Seq[Expr]) extends Statement
 
   // *to.offset = e
   case class Store(to: Var, offset: Int, e: Expr) extends Statement

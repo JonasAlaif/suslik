@@ -9,6 +9,8 @@ import org.tygus.suslik.synthesis._
 import org.tygus.suslik.synthesis.rules.Rules._
 
 import scala.Function.tupled
+import org.tygus.suslik.language.Statements
+import org.tygus.suslik.language.LocType
 
 /**
   * The goal of unification rules is to eliminate existentials
@@ -35,7 +37,7 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
     def apply(goal: Goal): Seq[RuleResult] = {
       val pre = goal.pre
       val post = goal.post
-      if (!profilesMatch(pre.sigma, post.sigma, goal.callGoal.isEmpty)) return Nil
+      if (!profilesMatch(pre.sigma, post.sigma, !goal.env.config.canLeak && goal.callGoal.isEmpty)) return Nil
 
 //      val postCandidates = post.sigma.chunks.filter(p => p.vars.exists(goal.isExistential) && heapletFilter(p))
       val postCandidates = post.sigma.chunks.filter(p => heapletFilter(p))
@@ -227,9 +229,12 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
         newGoal = goal.spawnChild(post = newPost, callGoal = newCallGoal)
         kont = SubstProducer(ex, v) >> IdProducer >> ExtractHelper(goal)
       } yield {
+        val kont_full = if (goal.getType(ex) == LocType || v.vars.subsetOf(goal.programVars.toSet))
+          PrependProducer(Statements.Construct(ex, "", List(v))) >> kont else kont
+
         ProofTrace.current.add(ProofTrace.DerivationTrail.withSubst(
           goal, Seq(newGoal), this, sigma))
-        RuleResult(List(newGoal), kont, this, goal)
+        RuleResult(List(newGoal), kont_full, this, goal)
       }
     }
   }

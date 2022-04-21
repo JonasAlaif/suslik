@@ -149,7 +149,7 @@ class AsyncSynthesisRunner extends SynthesisRunnerUtil {
       if (env.config.simple)
         new AutomaticSimple(env.config)
       else
-        new AutomaticPhased(env.config)
+        new AutomaticRust(env.config)
       /** @todo this is defunct */
       /*
       new PhasedSynthesis(env.config) {

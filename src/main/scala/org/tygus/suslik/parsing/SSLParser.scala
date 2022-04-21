@@ -132,9 +132,9 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
                                            else Var(getTotallyFreshName(cardinalityPrefix))
 
   def heaplet: Parser[Heaplet] = (
-    (identWithOffset <~ ":->") ~ expr ^^ { case (a, o) ~ b => PointsTo(Var(a), o, b) }
-      ||| "[" ~> (ident ~ ("," ~> numericLit)) <~ "]" ^^ { case a ~ s => Block(Var(a), Integer.parseInt(s)) }
-      ||| ident ~ ("(" ~> rep1sep(expr, ",") <~ ")") ~ opt("<" ~> expr <~ ">") ^^ {
+    // (identWithOffset <~ ":->") ~ expr ^^ { case (a, o) ~ b => PointsTo(Var(a), o, b) } |||
+      // "[" ~> (ident ~ ("," ~> numericLit)) <~ "]" ^^ { case a ~ s => Block(Var(a), Integer.parseInt(s)) } |||
+      ident ~ ("(" ~> rep1sep(expr, ",") <~ ")") ~ opt("<" ~> expr <~ ">") ^^ {
       case name ~ args ~ v => SApp(name, args, PTag(), v.getOrElse(defaultCardParameter))
     }
     )
