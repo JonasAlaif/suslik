@@ -346,6 +346,13 @@ object SMTSolving extends Core
       val r = convertIntExpr(right)
       c.ite(l, r)
     }
+    case UnaryExpr(op, arg) => {
+      val a = convertIntExpr(arg)
+      op match {
+        case OpUnaryMinus => a.unary_-
+        case _ => throw SMTUnsupportedExpr(e)
+      }
+    }
     case _ => throw SMTUnsupportedExpr(e)
   }
 
