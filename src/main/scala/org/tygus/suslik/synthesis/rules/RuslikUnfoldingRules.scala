@@ -31,9 +31,12 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
 
       h match {
         case h@SApp(pred, args, PTag(cls, unf), card) if unf < env.config.maxOpenDepth =>
+          if (goal.isGhost(args.head.asInstanceOf[Var])) return None
+          // if (pred.endsWith("_BRRW")) return None
+
           ruleAssert(env.predicates.contains(pred), s"Open rule encountered undefined predicate: $pred")
-          val freshSuffix = args.take(1).map(_.pp).mkString("_")
-          val (InductivePredicate(_, params, clauses), fresh_sbst) = env.predicates(pred).refreshExistentials(goal.vars, freshSuffix)
+          val freshPrefix = args.take(1).map(_.pp).mkString("_") + "_"
+          val (InductivePredicate(_, params, clauses), fresh_sbst) = env.predicates(pred).refreshExistentials(goal.vars, prefix = freshPrefix)
           // [Cardinality] adjust cardinality of sub-clauses
           val sbst = params.map(_._1).zip(args).toMap + (selfCardVar -> card)
           val remainingSigma = pre.sigma - h
@@ -43,22 +46,32 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             asn = _asn.subst(sbst)
             constraints = asn.phi
             // 
-            (primPreds, newPreds) = asn.sigma.chunks.partition(_.asInstanceOf[SApp].pred.startsWith("PRIM_"))
-            apvs = primPreds.map(_.asInstanceOf[SApp].args.head.asInstanceOf[Var])
+            apvs = asn.sigma.chunks.map(_.asInstanceOf[SApp].args.head.asInstanceOf[Var])
             newProgramVars = goal.programVars ++ apvs
             // 
+            (primPreds, newPreds) = asn.sigma.chunks.partition(_.asInstanceOf[SApp].pred.startsWith("PRIM_"))
             newVarInvs = primPreds
-              .map(h => env.predicates(h.asInstanceOf[SApp].pred).clauses.head.asn.phi)
+              .map(h => {
+                val primPred = env.predicates(h.asInstanceOf[SApp].pred)
+                primPred.clauses.head.asn.phi.subst(Map(primPred.params.head._1 -> h.asInstanceOf[SApp].args.head))
+              })
               .foldLeft(PFormula(Set.empty[Expr]))(_ && _)
             newPrePhi = pre.phi && constraints && sel && newVarInvs
             // The tags in the body should be one more than in the current application:
-            _newPreSigma1 = mkSFormula(newPreds).setSAppTags(PTag(cls, unf + 1))
+            _newPreSigma1 = mkSFormula(newPreds).setSAppTags(PTag(cls, unf + 1))//.subst(
+            //   Map((newPreds.head.asInstanceOf[SApp].))
+            // )
             newPreSigma = _newPreSigma1 ** remainingSigma
-          } yield (sel, goal.spawnChild(Assertion(newPrePhi, newPreSigma),
+          } yield {
+            // if (!newVarInvs.conjuncts.isEmpty) {
+            //   println("newPrePhi: " + newPrePhi)
+            // }
+            (sel, goal.spawnChild(Assertion(newPrePhi, newPreSigma),
             programVars = newProgramVars,
             childId = Some(clauses.indexOf(c)),
             hasProgressed = true,
             isCompanion = true))
+          }
 
           ProofTrace.current.add(ProofTrace.DerivationTrail(goal, newGoals.map(_._2), this,
             Map("pred" -> pred, "args" -> args.map(_.toString))))
@@ -73,15 +86,15 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     }
 
     def apply(goal: Goal): Seq[RuleResult] = {
+      val chunks = if (goal.pre.sigma.mustUnfold.isEmpty) goal.pre.sigma.chunks else goal.pre.sigma.mustUnfold;
       for {
-        heaplet <- goal.pre.sigma.chunks
+        heaplet <- chunks
         s <- mkInductiveSubGoals(goal, heaplet) match {
           case None => None
           case Some((selGoals, heaplet, fresh_subst, sbst)) =>
             val (selectors, subGoals) = selGoals.unzip
             val kont = BranchProducer(Some (heaplet), fresh_subst, sbst, selectors) >>
-              PrependProducer(Free(heaplet.args.head.asInstanceOf[Var])) >>
-              ExtractHelper(goal)
+              PrependProducer(Free(heaplet.args.head.asInstanceOf[Var])) >> ExtractHelper(goal)
             Some(RuleResult(subGoals, kont, this, goal))
         }
       } yield s
@@ -105,7 +118,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         if (goal.env.config.maxCalls :: goal.pre.sigma.callTags).min < goal.env.config.maxCalls
 
         newGamma = goal.gamma ++ (f.params ++ f.var_decl).toMap // Add f's (fresh) variables to gamma
-        call = Call(Var(f.name), f.params.map(_._1), l)
+        call = Call(Var(f.name), freshSub(Var("result")) +: f.params.map(_._1), l)
         calleePostSigma = f.post.sigma.setSAppTags(PTag(1, 0))
         callePost = Assertion(f.post.phi, calleePostSigma)
         suspendedCallGoal = Some(SuspendedCallGoal(goal.pre, goal.post, callePost, call, freshSub))
@@ -189,10 +202,12 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     def apply(goal: Goal): Seq[RuleResult] = {
       val post = goal.post
       val env = goal.env
+      val chunks = if (goal.post.sigma.mustUnfold.isEmpty) goal.post.sigma.chunks else goal.post.sigma.mustUnfold;
 
       def heapletResults(h: Heaplet): Seq[RuleResult] = h match {
         case a@SApp(pred, args, PTag(cls, unf), card) =>
-          // if (unf >= env.config.maxCloseDepth) return Nil
+          if (unf >= env.config.maxCloseDepth) return Nil
+          // if (pred.endsWith("_BRRW")) return Nil
 
           ruleAssert(env.predicates.contains(pred),
             s"Close rule encountered undefined predicate: $pred")
@@ -216,7 +231,10 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             // 
             (primPreds, newPreds) = actualAssertion.sigma.chunks.partition(_.asInstanceOf[SApp].pred.startsWith("PRIM_"))
             newVarInvs = primPreds
-              .map(h => env.predicates(h.asInstanceOf[SApp].pred).clauses.head.asn.phi)
+              .map(h => {
+                val primPred = env.predicates(h.asInstanceOf[SApp].pred)
+                primPred.clauses.head.asn.phi.subst(Map(primPred.params.head._1 -> h.asInstanceOf[SApp].args.head))
+              })
               .foldLeft(PFormula(Set.empty[Expr]))(_ && _)
             // newExistsVars = primPreds.map(_.asInstanceOf[SApp].args.head.asInstanceOf[Var])
             
@@ -227,9 +245,13 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             val actualSelector = selector.subst(freshExistentialsSubst).subst(substArgs)
             val newPhi = post.phi && actualConstraints && actualSelector && newVarInvs
             val newPost = Assertion(newPhi, goal.post.sigma ** actualBody - h)
+            // if (!newVarInvs.conjuncts.isEmpty) {
+            //   println("newPhi: " + newPhi)
+            // }
 
-            val kont = AppendProducer(Construct(args.head.asInstanceOf[Var], pred, actualAssertion.sigma.chunks.map(_.asInstanceOf[SApp].args.head))) >>
+            val kont =
               UnfoldProducer(a, selector, Assertion(actualConstraints, actualBody), predSbst ++ freshExistentialsSubst) >>
+              AppendProducer(Construct(args.head.asInstanceOf[Var], pred, actualSelector +: actualAssertion.sigma.chunks.map(_.asInstanceOf[SApp].args.head))) >>
               IdProducer >> ExtractHelper(goal)
 
             RuleResult(List(goal.spawnChild(post = newPost)), kont, this, goal)
@@ -239,7 +261,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       }
 
       for {
-        h <- goal.post.sigma.chunks
+        h <- chunks
         s <- heapletResults(h)
       } yield s
     }

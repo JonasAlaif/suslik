@@ -39,7 +39,8 @@ object LogicalRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
       val pre = goal.pre
       val post = goal.post
 
-      if (pre.sigma.isEmp && post.sigma.isEmp && // heaps are empty
+      if ((goal.env.config.canLeak || pre.sigma.isEmp) && 
+        post.sigma.isEmp && // heaps are empty
         goal.existentials.isEmpty && // no existentials
         SMTSolving.valid(pre.phi ==> post.phi)) // pre implies post
         List(RuleResult(Nil, ConstProducer(Skip), this, goal)) // we are done

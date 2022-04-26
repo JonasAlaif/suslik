@@ -241,6 +241,8 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
 
   def ptss: List[PointsTo] = for (b@PointsTo(_, _, _) <- chunks) yield b
 
+  def mustUnfold: List[SApp] = for { b@SApp(name, _, _, _) <- chunks; if name.startsWith("MU_") } yield b
+
   def subst(sigma: Map[Var, Expr]): SFormula = SFormula(chunks.map(_.subst(sigma)))
 
   // Collect certain sub-expressions

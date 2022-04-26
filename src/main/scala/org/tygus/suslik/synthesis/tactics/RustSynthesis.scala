@@ -11,14 +11,34 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
 
   def nextRules(node: OrNode): List[SynthesisRule] = {
     val goal = node.goal
-    if (goal.isUnsolvable)
+    if (!goal.pre.sigma.mustUnfold.isEmpty) List(RuslikUnfoldingRules.Open)
+    else if (!goal.post.sigma.mustUnfold.isEmpty) List(RuslikUnfoldingRules.Close)
+    else if (goal.isUnsolvable)
       Nil
     else if (goal.callGoal.nonEmpty) callAbductionRules(goal)
     else anyPhaseRules ++ specBasedRules(node)
   }
 
   protected def callAbductionRules(goal: Goal): List[SynthesisRule] = {
-    List()
+  List(
+      UnificationRules.SubstRight,
+      // FailRules.PostInconsistent,
+      // FailRules.CheckPost
+      ) ++
+      (if (goal.post.sigma.apps.nonEmpty)
+        List(LogicalRules.FrameUnfoldingFinal,
+          UnificationRules.HeapUnifyUnfolding)
+      else
+        List(UnfoldingRules.CallRule,
+          UnificationRules.SubstRight,
+          // LogicalRules.FrameFlat,
+          // UnificationRules.PickCard,
+          // LogicalRules.GhostWrite,
+          // UnificationRules.HeapUnifyPure,
+          // LogicalRules.SimplifyConditional,
+          // OperationalRules.WriteRule,
+          UnificationRules.Pick
+          ))
   }
 
   protected def anyPhaseRules: List[SynthesisRule] = List(
@@ -29,7 +49,7 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
 
   protected def specBasedRules(node: OrNode): List[SynthesisRule] = {
     val goal = node.goal
-    if (goal.hasPredicates()) {
+    if (goal.post.hasPredicates) {
       // Unfolding phase: get rid of predicates
       val lastUnfoldingRule = node.ruleHistory.dropWhile(anyPhaseRules.contains).headOption
       if (lastUnfoldingRule.contains(UnificationRules.HeapUnifyUnfolding) ||
@@ -48,7 +68,7 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
       else List(
         LogicalRules.FrameUnfolding,
         UnificationRules.HeapUnifyUnfolding,
-        // RuslikUnfoldingRules.AbduceCall,
+        RuslikUnfoldingRules.AbduceCall,
         RuslikUnfoldingRules.Open,
         RuslikUnfoldingRules.Close,
       )

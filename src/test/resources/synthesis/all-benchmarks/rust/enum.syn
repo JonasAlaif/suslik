@@ -17,8 +17,8 @@ predicate EnumInternal(loc root, int disc, int v0, int v1) {
 | disc == 1 => { Box_int(b, v1) }
 }
 
-{ Enum(X, v0, v1) }
+{ v0+1 < 128 && v1-1 > 0 ; Enum(X, v0, v1) }
 void box_and_swap(loc X)
-{ v1p == v1+1 && v0p == v0+1 ; Enum(RESULT, v1p, v0p) }
+{ v1p == v1-1 && v0p == v0+1 ; Enum(RESULT, v1p, v0p) }
 
 #####
