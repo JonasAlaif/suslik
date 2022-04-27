@@ -133,7 +133,7 @@ case class BranchProducer(pred: Option[SApp], freshVars: SubstVar, sbst: Subst, 
       val cond_branches = selectors.zip(stmts).reverse
       val ctail = cond_branches.tail
       val finalBranch = cond_branches.head._2
-      ctail.foldLeft(finalBranch) { case (eb, (c, tb)) => If(c, tb, eb).simplify }
+      ctail.foldLeft(finalBranch) { case (eb, (c, tb)) => If(c, tb, eb) }
     }
   })
 }

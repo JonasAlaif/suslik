@@ -26,14 +26,14 @@ object Statements {
             builder.append(s"??\n")
           case Error =>
             builder.append(mkSpaces(offset))
-            builder.append(s"error;\n")
+            builder.append(s"unreachable();\n")
           case Malloc(to, _, sz) =>
             // Ignore type
             builder.append(mkSpaces(offset))
             builder.append(s"let ${to.pp} = malloc($sz);\n")
           case Free(v) =>
             builder.append(mkSpaces(offset))
-            builder.append(s"free(${v.pp});\n")
+            builder.append(s"// unfold(${v.pp});\n")
           case Store(to, off, e) =>
             builder.append(mkSpaces(offset))
             val t = if (off <= 0) to.pp else s"(${to.pp} + $off)"

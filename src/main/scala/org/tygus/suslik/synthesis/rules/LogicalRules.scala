@@ -149,8 +149,10 @@ object LogicalRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
     }
   }
 
+  object FrameBorrows extends Frame with BorrowsPhase
   object FrameUnfolding extends Frame with UnfoldingPhase
 
+  object FrameBorrowsFinal extends Frame with BorrowsPhase with InvertibleRule
   object FrameUnfoldingFinal extends Frame with UnfoldingPhase with InvertibleRule
 
   object FrameBlock extends Frame with BlockPhase with InvertibleRule

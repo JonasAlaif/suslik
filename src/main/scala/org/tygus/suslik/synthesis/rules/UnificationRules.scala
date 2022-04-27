@@ -58,7 +58,7 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
 //        val newGoal = goal.spawnChild(post = newPost, callGoal = newCallGoal)
         val newPost = Assertion(post.phi && subExpr, newPostSigma)
         val newGoal = goal.spawnChild(post = newPost)
-        val kont = if (goal.callGoal.isEmpty) { PrependProducer(Statements.Construct(s.asInstanceOf[SApp].args.head.asInstanceOf[Var], "", List(t.asInstanceOf[SApp].args.head))) >>
+        val kont = if (goal.callGoal.isEmpty && !s.asInstanceOf[SApp].isBorrow) { PrependProducer(Statements.Construct(s.asInstanceOf[SApp].args.head.asInstanceOf[Var], "", List(t.asInstanceOf[SApp].args.head))) >>
           UnificationProducer(t, s, sub) } else { UnificationProducer(t, s, sub) } >> IdProducer >> ExtractHelper(goal)
 
         ProofTrace.current.add(ProofTrace.DerivationTrail.withSubst(goal, List(newGoal), this, sub))
@@ -105,6 +105,7 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
 
   object HeapUnifySimple extends SyntacticUnify with PhaseDisabled
 
+  object HeapUnifyBorrows extends HeapUnify with BorrowsPhase
   object HeapUnifyUnfolding extends HeapUnify with UnfoldingPhase
 
   object HeapUnifyBlock extends HeapUnify with BlockPhase

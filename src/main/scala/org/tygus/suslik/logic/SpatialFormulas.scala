@@ -158,7 +158,16 @@ case class PTag(calls: Int = 0, unrolls: Int = 0) extends PrettyPrinting {
   *
   *       Predicate application
   */
-case class SApp(pred: Ident, args: Seq[Expr], tag: PTag, card: Expr) extends Heaplet {
+case class SApp(pred_with_info: Ident, args: Seq[Expr], tag: PTag, card: Expr) extends Heaplet {
+  // Must be unfolded/reborrowed immediately
+  def isGhost = pred_with_info.endsWith("_GHOST")
+  // Use Open/Close or Reborrow
+  def isBorrow = pred_with_info.startsWith("BRRW_")
+  // Must be unfolded immediately
+  def isPrim = pred_with_info.startsWith("PRIM_")
+  // Ident to locate predicate from env
+  def pred_no_ghost: Ident = if (isGhost) pred_with_info.dropRight(6) else pred_with_info
+  def pred: Ident = if (isBorrow) pred_no_ghost.drop(5) else pred_no_ghost
 
   override def resolveOverloading(gamma: Gamma): Heaplet = this.copy(args = args.map(_.resolveOverloading(gamma)))
 
@@ -166,13 +175,13 @@ case class SApp(pred: Ident, args: Seq[Expr], tag: PTag, card: Expr) extends Hea
     def ppCard(e: Expr) = s"<${e.pp}>"
 
 //    s"$pred(${args.map(_.pp).mkString(", ")})${ppCard(card)}${tag.pp}"
-    s"$pred(${args.map(_.pp).mkString(", ")})${ppCard(card)}"
+    s"$pred_with_info(${args.map(_.pp).mkString(", ")})${ppCard(card)}"
   }
 
 
   override def compare(that: Heaplet): Int = that match {
     case SApp(pred1, args1, tag, card) =>
-      val c1 = this.pred.compareTo(pred1)
+      val c1 = this.pred_with_info.compareTo(pred1)
       val c2 = this.args.toString.compareTo(args1.toString)
       if (c1 != 0) return c1
       if (c2 != 0) return c2
@@ -208,13 +217,13 @@ case class SApp(pred: Ident, args: Seq[Expr], tag: PTag, card: Expr) extends Hea
   override def setTag(t: PTag): Heaplet = this.copy(tag = t)
 
   override def unify(that: Heaplet): Option[ExprSubst] = that match {
-    case SApp(p, as, _, c) if pred == p => Some((card :: args.toList).zip(c :: as.toList).toMap)
+    case SApp(p, as, _, c) if pred_with_info == p => Some((card :: args.toList).zip(c :: as.toList).toMap)
     case _ => None
   }
 
   override def unifySyntactic(that: Heaplet, unificationVars: Set[Var]): Option[Subst] = that match {
-    case SApp(p, Seq(), _, c) if pred == p => card.unifySyntactic(c, unificationVars)
-    case app@SApp(p, a +: as, _, _) if pred == p => for {
+    case SApp(p, Seq(), _, c) if pred_with_info == p => card.unifySyntactic(c, unificationVars)
+    case app@SApp(p, a +: as, _, _) if pred_with_info == p => for {
       sub1 <- args.head.unifySyntactic(a, unificationVars)
       sub2 <- this.copy(args = args.tail).subst(sub1).unifySyntactic(app.copy(args = as), unificationVars)
     } yield sub1 ++ sub2
@@ -241,7 +250,13 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
 
   def ptss: List[PointsTo] = for (b@PointsTo(_, _, _) <- chunks) yield b
 
-  def mustUnfold: List[SApp] = for { b@SApp(name, _, _, _) <- chunks; if name.startsWith("MU_") } yield b
+  def mkBrrw: SFormula = SFormula(chunks.map {
+    case b@SApp(_, _, _, _) => b.copy(pred_with_info = "BRRW_" + b.pred_with_info)
+    case other => other
+  })
+  def borrows: List[SApp] = for (b@SApp(_, _, _, _) <- chunks if b.isBorrow) yield b
+  def prims: List[SApp] = for { b@SApp(_, _, _, _) <- chunks; if b.isPrim } yield b
+  def ghosts: List[SApp] = for { b@SApp(_, _, _, _) <- chunks; if b.isGhost } yield b
 
   def subst(sigma: Map[Var, Expr]): SFormula = SFormula(chunks.map(_.subst(sigma)))
 
@@ -287,7 +302,7 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   }
 
   lazy val profile: SProfile = {
-    val appProfile = apps.groupBy(_.pred).mapValues(_.length)
+    val appProfile = apps.groupBy(_.pred_with_info).mapValues(_.length)
     val blockProfile = blocks.groupBy(_.sz).mapValues(_.length)
     val ptsProfile = ptss.groupBy(_.offset).mapValues(_.length)
     SProfile(appProfile, blockProfile, ptsProfile)

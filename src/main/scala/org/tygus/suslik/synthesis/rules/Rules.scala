@@ -64,6 +64,17 @@ object Rules {
     def profilesMatch(pre: SFormula, post: SFormula, exact: Boolean): Boolean = true
   }
 
+  trait BorrowsPhase {
+    def heapletFilter(h: Heaplet): Boolean = {
+      h.isInstanceOf[SApp] && h.asInstanceOf[SApp].isBorrow
+    }
+
+    def profilesMatch(pre: SFormula, post: SFormula, exact: Boolean): Boolean = {
+      if (exact) SFormula(pre.borrows).profile.apps == SFormula(post.borrows).profile.apps
+      else multiSubset(SFormula(post.borrows).profile.apps, SFormula(pre.borrows).profile.apps)
+    }
+  }
+
   trait UnfoldingPhase {
     def heapletFilter(h: Heaplet): Boolean = {
       h.isInstanceOf[SApp]

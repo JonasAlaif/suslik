@@ -128,7 +128,7 @@ trait SepLogicUtils extends PureLogicUtils {
       preds1 <- sigma1.apps.permutations
       preds2 <- sigma2.apps.permutations
       pairs = preds1.zip(preds2)
-      if pairs.forall {case (p1, p2) => p1.pred == p2.pred}
+      if pairs.forall {case (p1, p2) => p1.pred_with_info == p2.pred_with_info}
     } yield pairs.map {case (p1, p2) => (p1.card, p2.card)}
 
     cardSeqs.toList.distinct.exists(ps => SMTSolving.valid(cond ==> lexiOrd(ps)))

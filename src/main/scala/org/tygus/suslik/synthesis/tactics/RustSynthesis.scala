@@ -11,10 +11,12 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
 
   def nextRules(node: OrNode): List[SynthesisRule] = {
     val goal = node.goal
-    if (!goal.pre.sigma.mustUnfold.isEmpty) List(RuslikUnfoldingRules.Open)
-    else if (!goal.post.sigma.mustUnfold.isEmpty) List(RuslikUnfoldingRules.Close)
-    else if (goal.isUnsolvable)
-      Nil
+    if (!goal.pre.sigma.prims.isEmpty) List(RuslikUnfoldingRules.Open)
+    else if (!goal.post.sigma.prims.isEmpty) List(RuslikUnfoldingRules.Close)
+    else if (!goal.pre.sigma.ghosts.isEmpty) List(RuslikUnfoldingRules.Open, RuslikUnfoldingRules.Reborrow)
+    else if (!goal.post.sigma.ghosts.isEmpty) List(RuslikUnfoldingRules.Close)
+    // Might still be solvable by "Inconsistency"
+    else if (goal.isUnsolvable) anyPhaseRules
     else if (goal.callGoal.nonEmpty) callAbductionRules(goal)
     else anyPhaseRules ++ specBasedRules(node)
   }
@@ -49,7 +51,25 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
 
   protected def specBasedRules(node: OrNode): List[SynthesisRule] = {
     val goal = node.goal
-    if (goal.post.hasPredicates) {
+    if (!goal.post.sigma.borrows.isEmpty) {
+      // Borrows phase: get rid of borrows
+      val lastUnfoldingRule = node.ruleHistory.dropWhile(anyPhaseRules.contains).headOption
+      if (lastUnfoldingRule.contains(UnificationRules.HeapUnifyBorrows) ||
+        lastUnfoldingRule.contains(LogicalRules.FrameBorrows) ||
+        lastUnfoldingRule.contains(LogicalRules.FrameBorrowsFinal))
+        List(
+          LogicalRules.FrameBorrowsFinal,
+          UnificationRules.HeapUnifyBorrows,
+        )
+      else List(
+        LogicalRules.FrameBorrows,
+        UnificationRules.HeapUnifyBorrows,
+        RuslikUnfoldingRules.AbduceCall,
+        RuslikUnfoldingRules.Reborrow,
+        RuslikUnfoldingRules.BrrwWrite,
+      )
+    }
+    else if (goal.post.hasPredicates) {
       // Unfolding phase: get rid of predicates
       val lastUnfoldingRule = node.ruleHistory.dropWhile(anyPhaseRules.contains).headOption
       if (lastUnfoldingRule.contains(UnificationRules.HeapUnifyUnfolding) ||

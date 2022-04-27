@@ -11,6 +11,7 @@ object Specifications extends SepLogicUtils {
 
   case class Assertion(phi: PFormula, sigma: SFormula) extends HasExpressions[Assertion]
     with PureLogicUtils {
+    def mkBrrw: Assertion = Assertion(phi, sigma.mkBrrw)
 
     def pp: String = if (phi.conjuncts.isEmpty) s"{${sigma.pp}}" else s"{${phi.pp} ; ${sigma.pp}}"
 
