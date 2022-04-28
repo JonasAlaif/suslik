@@ -14,8 +14,12 @@ predicate EnumInternal(loc name, int disc, int v, int len) {
 | disc == 1 => { len == len_p + 1 ; PRIM_u8(f, v) ** Enum(a, v, len_p) }
 }
 
-{ BRRW_Enum(x, v, len)<a> }
+predicate Box(loc name, int v, int len) {
+| true => { Enum(bx, v, len) }
+}
+
+{ BRRW_Box(x, v, len)<a> }
 void zero(loc x)
-{ BRRW_Enum(x, 0, len)<a> }
+{ BRRW_Box(x, 0, len)<a> }
 
 #####

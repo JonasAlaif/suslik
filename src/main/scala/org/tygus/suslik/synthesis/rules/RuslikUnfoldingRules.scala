@@ -89,8 +89,12 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           case Some((selGoals, heaplet, fresh_subst, sbst)) =>
             val (selectors, subGoals) = selGoals.unzip
             val kont = BranchProducer(Some (heaplet), fresh_subst, sbst, selectors) >>
-              (if (heaplet.asInstanceOf[SApp].isGhost) ExtractHelper(goal)
-              else PrependProducer(Free(heaplet.args.head.asInstanceOf[Var])) >> ExtractHelper(goal))
+              (if (heaplet.isGhost) IdProducer
+              else if (heaplet.isPrim && heaplet.args.length == 2
+              && heaplet.args(1).isInstanceOf[Var] && goal.isGhost(heaplet.args(1).asInstanceOf[Var]))
+                  PrependProducer(Construct(heaplet.args(1).asInstanceOf[Var], "", Seq(heaplet.args.head)))
+              else PrependProducer(Free(heaplet.args.head.asInstanceOf[Var])) ) >>
+              ExtractHelper(goal)
             Some(RuleResult(subGoals, kont, this, goal))
         }
       } yield s
@@ -207,12 +211,14 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         case a@SApp(pred_with_info, args, PTag(cls, unf), card) =>
           if (unf >= env.config.maxCloseDepth) return Nil
           if (a.isBorrow) return Nil
-          // goal.callVars?
-          if (args.exists(_.vars.exists(v =>
-            // Cannot possibly get it as a PV
-            !goal.pre.vars.contains(v) &&
-            // Will need to get it as a PV
-            goal.universalGhosts.contains(v)))) return Nil
+            // Incomplete, since this could be an enum which doesn't care about the ghosts
+            // Should group into pred(name, {a, b, ...}, {x, y, ...}) and check that at least
+            // one group has non-ghosts:
+          // if (args.exists(_.vars.exists(v =>
+          //   // Cannot possibly get it as a PV
+          //   !goal.pre.sigma.vars.contains(v) &&
+          //   // Will need to get it as a PV
+          //   goal.universalGhosts.contains(v)))) return Nil
 
           // Strip "_GHOST":
           val pred = a.pred
@@ -252,8 +258,8 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             val kont =
               UnfoldProducer(a, selector, Assertion(actualConstraints, actualBody), predSbst ++ freshExistentialsSubst) >>
               // TODO: Substitue into past appends if I am ghost!
-              (if (!a.isGhost) AppendProducer(Construct(args.head.asInstanceOf[Var], pred, construct_args)) >> IdProducer
-              else IdProducer) >>
+              (if (!a.isGhost) AppendProducer(Construct(args.head.asInstanceOf[Var], pred, construct_args))
+              else SubstProducer(args.head.asInstanceOf[Var], SetLiteral(construct_args.toList))) >>
               ExtractHelper(goal)
 
             RuleResult(List(goal.spawnChild(post = newPost)), kont, this, goal)
@@ -364,8 +370,12 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           case Some((selGoals, heaplet, fresh_subst, sbst)) =>
             val (selectors, subGoals) = selGoals.unzip
             val kont = BranchProducer(Some (heaplet), fresh_subst, sbst, selectors) >>
-              (if (heaplet.asInstanceOf[SApp].isGhost) ExtractHelper(goal)
-              else PrependProducer(Free(heaplet.args.head.asInstanceOf[Var])) >> ExtractHelper(goal))
+              (if (heaplet.asInstanceOf[SApp].isGhost) IdProducer
+              else if (heaplet.pred.startsWith("PRIM_") && heaplet.args.length == 2
+              && heaplet.args(1).isInstanceOf[Var] && goal.isGhost(heaplet.args(1).asInstanceOf[Var]))
+                  PrependProducer(Construct(heaplet.args(1).asInstanceOf[Var], "*", Seq(heaplet.args.head)))
+              else PrependProducer(Free(heaplet.args.head.asInstanceOf[Var]))) >>
+              ExtractHelper(goal)
             Some(RuleResult(subGoals, kont, this, goal))
         }
       } yield s
@@ -399,7 +409,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val newPost = Assertion(post.phi, (post.sigma ** newSApp - h) ** newH)
 
         val kont =
-          AppendProducer(Construct(Var("*" + args.head.pp), "", Seq(newSApp.args.head))) >> ExtractHelper(goal)
+          AppendProducer(Store(args.head.asInstanceOf[Var], 0, newSApp.args.head)) >> ExtractHelper(goal)
 
         Some(RuleResult(List(goal.spawnChild(post = newPost)), kont, this, goal))
       }

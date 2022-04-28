@@ -18,53 +18,66 @@ object Statements {
 
       val builder = new StringBuilder
 
-      def build(s: Statement, offset: Int = 2): Unit = {
+      def build(s: Statement, offset: Int = 2, sub: Subst = Map()): Subst = {
         s match {
-          case Skip =>
+          case Skip => sub
           case Hole =>
             builder.append(mkSpaces(offset))
             builder.append(s"??\n")
+            sub
           case Error =>
             builder.append(mkSpaces(offset))
             builder.append(s"unreachable();\n")
+            sub
+          case Sub(s) =>
+            sub ++ s.mapValues(_.subst(sub))
           case Malloc(to, _, sz) =>
             // Ignore type
             builder.append(mkSpaces(offset))
             builder.append(s"let ${to.pp} = malloc($sz);\n")
+            sub
           case Free(v) =>
             builder.append(mkSpaces(offset))
             builder.append(s"// unfold(${v.pp});\n")
+            sub
           case Store(to, off, e) =>
             builder.append(mkSpaces(offset))
             val t = if (off <= 0) to.pp else s"(${to.pp} + $off)"
             builder.append(s"*$t = ${e.pp};\n")
+            sub
           case Load(to, _, from, off) =>
             builder.append(mkSpaces(offset))
             val f = if (off <= 0) from.pp else s"(${from.pp} + $off)"
             // Do not print the type annotation
             builder.append(s"let ${to.pp} = *$f;\n")
+            sub
           case Construct(to, pred, args) =>
+            val Construct(to, pred, args) = s.subst(sub)
             builder.append(mkSpaces(offset))
             builder.append(s"let ${to.pp} = $pred(${args.map(_.pp).mkString(", ")});\n")
+            sub
           case Call(fun, args, _) =>
             builder.append(mkSpaces(offset))
             val function_call = s"let ${args.head.pp} = ${fun.pp}(${args.tail.map(_.pp).mkString(", ")});\n"
             builder.append(function_call)
+            sub
           case SeqComp(s1,s2) =>
-            build(s1, offset)
-            build(s2, offset)
+            val nSub = build(s1, offset, sub)
+            build(s2, offset, nSub)
           case If(cond, tb, eb) =>
             builder.append(mkSpaces(offset))
             builder.append(s"if (${cond.pp}) {\n")
-            build(tb, offset + 2)
+            build(tb, offset + 2, sub)
             builder.append(mkSpaces(offset)).append(s"} else {\n")
-            build(eb, offset + 2)
+            build(eb, offset + 2, sub)
             builder.append(mkSpaces(offset)).append(s"}\n")
+            sub
           case Guarded(cond, b) =>
             builder.append(mkSpaces(offset))
             builder.append(s"assume (${cond.pp}) {\n")
-            build(b, offset + 2)
+            build(b, offset + 2, sub)
             builder.append(mkSpaces(offset)).append(s"}\n")
+            sub
         }
       }
 
@@ -79,6 +92,7 @@ object Statements {
         case Skip => acc
         case Hole => acc
         case Error => acc
+        case Sub(_) => acc
         case Store(to, off, e) =>
           acc ++ to.collect(p) ++ e.collect(p)
         case Load(_, _, from, off) =>
@@ -137,6 +151,7 @@ object Statements {
       case Skip => 0
       case Hole => 1
       case Error => 1
+      case Sub(_) => 0
       case Store(to, off, e) => 1 + to.size + e.size
       case Load(to, _, from, _) => 1 + to.size + from.size
       case Construct(to, _, args) => 1 + to.size + args.map(_.size).sum
@@ -223,14 +238,15 @@ object Statements {
     }
 
     // Shorten a variable v to its minimal prefix unused in the current statement.
-    def simplifyVariable(v: Var): (Var, Statement) = {
-      val used = this.vars
-      val prefixes = Range(1, v.name.length).map(n => v.name.take(n))
-      prefixes.find(p => !used.contains(Var(p))) match {
-        case None => (v, this) // All shorter names are taken
-        case Some(name) => (Var(name), this.subst(v, Var(name)))
-      }
-    }
+    def simplifyVariable(v: Var): (Var, Statement) = (v, this)
+    // {
+    //   val used = this.vars
+    //   val prefixes = Range(1, v.name.length).map(n => v.name.take(n))
+    //   prefixes.find(p => !used.contains(Var(p))) match {
+    //     case None => (v, this) // All shorter names are taken
+    //     case Some(name) => (Var(name), this.subst(v, Var(name)))
+    //   }
+    // }
   }
 
   // skip
@@ -241,6 +257,9 @@ object Statements {
 
   // assert false
   case object Error extends Statement
+
+  // substitute in past goals
+  case class Sub(sub: Subst) extends Statement
 
   // let to = malloc(n)
   case class Malloc(to: Var, tpe: SSLType, sz: Int = 1) extends Statement

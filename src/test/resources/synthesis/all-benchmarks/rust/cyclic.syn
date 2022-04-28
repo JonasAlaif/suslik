@@ -7,7 +7,7 @@ predicate PRIM_u8(loc name, int v) {
 }
 
 predicate Enum(loc name, int v, int len) {
-| true => { PRIM_u8_GHOST(d, disc) ** EnumInternal_GHOST(name, disc, v, len) }
+| true => { PRIM_u8_GHOST(d, disc) ** EnumInternal_GHOST(i, disc, v, len) }
 }
 predicate EnumInternal(loc name, int disc, int v, int len) {
 | disc == 0 => { len == 0 ; emp }

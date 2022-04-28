@@ -163,7 +163,12 @@ trait Noop {
 }
 
 // Captures variable to expression substitutions
-case class SubstProducer(from: Var, to: Expr) extends StmtProducer with Noop
+case class SubstProducer(from: Var, to: Expr) extends StmtProducer {
+  val arity: Int = 1
+  val fn: Kont = liftToSolutions(stmts => {
+    SeqComp(stmts.head, Sub( Map((from -> to)) )).simplify
+  })
+}
 case class SubstMapProducer(subst: Subst) extends StmtProducer with Noop
 
 // Captures variable to variable substitutions

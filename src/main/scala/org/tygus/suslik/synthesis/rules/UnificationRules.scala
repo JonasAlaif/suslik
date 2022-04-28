@@ -58,8 +58,7 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
 //        val newGoal = goal.spawnChild(post = newPost, callGoal = newCallGoal)
         val newPost = Assertion(post.phi && subExpr, newPostSigma)
         val newGoal = goal.spawnChild(post = newPost)
-        val kont = if (goal.callGoal.isEmpty && !s.asInstanceOf[SApp].isBorrow) { PrependProducer(Statements.Construct(s.asInstanceOf[SApp].args.head.asInstanceOf[Var], "", List(t.asInstanceOf[SApp].args.head))) >>
-          UnificationProducer(t, s, sub) } else { UnificationProducer(t, s, sub) } >> IdProducer >> ExtractHelper(goal)
+        val kont = UnificationProducer(t, s, sub) >> IdProducer >> ExtractHelper(goal)
 
         ProofTrace.current.add(ProofTrace.DerivationTrail.withSubst(goal, List(newGoal), this, sub))
 
@@ -231,13 +230,10 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
         newGoal = goal.spawnChild(post = newPost, callGoal = newCallGoal)
         kont = SubstProducer(ex, v) >> IdProducer >> ExtractHelper(goal)
       } yield {
-        // println("ex.name: " + ex.name + ". v.vars: " + v.vars + " subset " + v.vars.subsetOf(goal.programVars.toSet))
-        val kont_full = if (goal.callGoal.isEmpty && (goal.getType(ex) == LocType || v.vars.subsetOf(goal.programVars.toSet)))
-          PrependProducer(Statements.Construct(ex, "", List(v))) >> kont else kont
 
         ProofTrace.current.add(ProofTrace.DerivationTrail.withSubst(
           goal, Seq(newGoal), this, sigma))
-        RuleResult(List(newGoal), kont_full, this, goal)
+        RuleResult(List(newGoal), kont, this, goal)
       }
     }
   }

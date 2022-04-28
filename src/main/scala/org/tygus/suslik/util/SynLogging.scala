@@ -205,6 +205,7 @@ object SynStatUtil {
       case Statements.Skip => 0
       //case Statements.Hole =>
       case Statements.Error => 1
+      case Statements.Sub(_) => 0
       case Statements.Malloc(to, tpe, sz) => 1
       case Statements.Free(_) => 1
       case Statements.Load(_,_,_,_) => 1
