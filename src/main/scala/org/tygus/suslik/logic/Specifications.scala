@@ -231,7 +231,7 @@ object Specifications extends SepLogicUtils {
     def ghosts: Set[Var] = pre.vars ++ post.vars -- programVars
 
     // Variables used in the suspended call (if it exists)
-    private def callVars: Set[Var] = callGoal.map(_.actualCall.args.flatMap(_.vars).toSet).getOrElse(Set())
+    private def callVars: Set[Var] = callGoal.map(_.actualCall.args.tail.flatMap(_.vars).toSet).getOrElse(Set())
 
     // Currently used ghosts that appear only in the postcondition (or suspened call)
     def existentials: Set[Var] = post.vars ++ callVars -- allUniversals
@@ -251,7 +251,7 @@ object Specifications extends SepLogicUtils {
     def isProgramLevelExistential(x:Var): Boolean = x.name.startsWith(progLevelPrefix) || (
       callGoal match {
         case None => false
-        case Some(cg) => cg.call.args.contains(x)
+        case Some(cg) => cg.call.args.tail.contains(x)
       })
 
     def getType(x: Var): SSLType = {

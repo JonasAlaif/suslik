@@ -48,7 +48,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             constraints = asn.phi
             newPrePhi = pre.phi && constraints && sel
             // Load vars into scope
-            apvs = if (h.isPrim) args.tail.map(_.asInstanceOf[Var])
+            apvs = if (h.isPrim) args.tail.flatMap(_.vars)
               else asn.sigma.chunks.map(_.asInstanceOf[SApp].args.head.asInstanceOf[Var])
             newProgramVars = goal.programVars ++ apvs
             // The tags in the body should be one more than in the current application:
@@ -114,7 +114,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         if (goal.env.config.maxCalls :: goal.pre.sigma.callTags).min < goal.env.config.maxCalls
 
         newGamma = goal.gamma ++ (f.params ++ f.var_decl).toMap // Add f's (fresh) variables to gamma
-        call = Call(Var(f.name), freshSub(Var("result")) +: f.params.map(_._1), l)
+        call = Call(Var(f.name), (freshSub.get(Var("result")) getOrElse Var("_")) +: f.params.map(_._1), l)
         calleePostSigma = f.post.sigma.setSAppTags(PTag(1, 0))
         callePost = Assertion(f.post.phi, calleePostSigma)
         suspendedCallGoal = Some(SuspendedCallGoal(goal.pre, goal.post, callePost, call, freshSub))
@@ -207,6 +207,12 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         case a@SApp(pred_with_info, args, PTag(cls, unf), card) =>
           if (unf >= env.config.maxCloseDepth) return Nil
           if (a.isBorrow) return Nil
+          // goal.callVars?
+          if (args.exists(_.vars.exists(v =>
+            // Cannot possibly get it as a PV
+            !goal.pre.vars.contains(v) &&
+            // Will need to get it as a PV
+            goal.universalGhosts.contains(v)))) return Nil
 
           // Strip "_GHOST":
           val pred = a.pred
@@ -283,11 +289,17 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           ruleAssert(env.predicates.contains(pred), s"Reborrow rule encountered undefined predicate: $pred")
           
           val freshPrefix = args.take(1).map(_.pp).mkString("_") + "_"
+          // Note: all vars not metioned in args are assumed to be equivalent (i.e. same refresh used for new pre and post)
           val (InductivePredicate(_, params, clauses), fresh_sbst) = env.predicates(pred).refreshExistentials(goal.vars, prefix = freshPrefix, mkBrrw = true)
           // [Cardinality] adjust cardinality of sub-clauses
           val sbstPre = params.map(_._1).zip(args).toMap + (selfCardVar -> card)
           // Post
-          val hPost = goal.post.sigma.chunks.find(ho => if (ho.isInstanceOf[SApp]) ho.asInstanceOf[SApp].args.head == args.head else false).get.asInstanceOf[SApp];
+          val _hPost = goal.post.sigma.chunks.find(ho =>
+            if (ho.isInstanceOf[SApp]) ho.asInstanceOf[SApp].args.head == args.head && ho.asInstanceOf[SApp].card == card
+            else false
+          );
+          assert(_hPost.isDefined, "Could not find matching borrow to " + h + " in post! Ensure that cards match!")
+          val hPost = _hPost.get.asInstanceOf[SApp]
           val remainingSigmaPost = goal.post.sigma - hPost
           val sbstPost = params.map(_._1).zip(hPost.args).toMap + (selfCardVar -> hPost.card)
           // Post
@@ -307,7 +319,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             newPostSigma = _newPostSigma1 ** remainingSigmaPost
             // Post
             // 
-            apvs = if (isPrim) args.tail.map(_.asInstanceOf[Var])
+            apvs = if (isPrim) args.tail.flatMap(_.vars)
               else asn.sigma.chunks.map(_.asInstanceOf[SApp].args.head.asInstanceOf[Var])
             newProgramVars = goal.programVars ++ apvs
 

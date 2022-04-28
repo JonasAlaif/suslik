@@ -45,7 +45,7 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
 
   protected def anyPhaseRules: List[SynthesisRule] = List(
     LogicalRules.Inconsistency,
-    // LogicalRules.SubstLeft,
+    LogicalRules.SubstLeft,
     UnificationRules.SubstRight,
   )
 
