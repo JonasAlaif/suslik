@@ -50,7 +50,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             // Load vars into scope
             apvs = if (h.isPrim) args.tail.flatMap(_.vars)
               else asn.sigma.chunks.map(_.asInstanceOf[SApp].args.head.asInstanceOf[Var])
-            newProgramVars = goal.programVars ++ apvs
+            newProgramVars = goal.programVars.diff(List(args.head.asInstanceOf[Var])) ++ apvs
             // The tags in the body should be one more than in the current application:
             _newPreSigma1 = asn.sigma.setSAppTags(PTag(cls, unf + 1))
             newPreSigma = _newPreSigma1 ** remainingSigma
@@ -327,7 +327,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             // 
             apvs = if (isPrim) args.tail.flatMap(_.vars)
               else asn.sigma.chunks.map(_.asInstanceOf[SApp].args.head.asInstanceOf[Var])
-            newProgramVars = goal.programVars ++ apvs
+            newProgramVars = goal.programVars.diff(List(args.head.asInstanceOf[Var])) ++ apvs
 
             newPrePhi = pre.phi && constraints && sel
             // The tags in the body should be one more than in the current application:
