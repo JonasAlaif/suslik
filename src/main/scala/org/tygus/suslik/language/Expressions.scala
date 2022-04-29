@@ -521,7 +521,16 @@ object Expressions {
   }
 
   case class BinaryExpr(op: BinOp, left: Expr, right: Expr) extends Expr {
-    def subst(sigma: Subst): Expr = BinaryExpr(op, left.subst(sigma), right.subst(sigma))
+    def subst(sigma: Subst): Expr = op match {
+      case OpEq => {
+        (left.subst(sigma), right.subst(sigma)) match {
+          case (left, right) if left == right => BoolConst(true)
+          case (IntConst(left), IntConst(right)) if left != right => BoolConst(false)
+          case (left, right) => BinaryExpr(OpEq, left, right)
+        }
+      }
+      case _ => BinaryExpr(op, left.subst(sigma), right.subst(sigma))
+    }
     override def substUnknown(sigma: UnknownSubst): Expr = BinaryExpr(op, left.substUnknown(sigma), right.substUnknown(sigma))
     override def level: Int = op.level
     override def associative: Boolean = op.isInstanceOf[AssociativeOp]
@@ -611,7 +620,11 @@ object Expressions {
   case class IfThenElse(cond: Expr, left: Expr, right: Expr) extends Expr {
     override def level: Int = 0
     override def pp: String = s"${cond.printInContext(this)} ? ${left.printInContext(this)} : ${right.printInContext(this)}"
-    override def subst(sigma: Subst): IfThenElse = IfThenElse(cond.subst(sigma), left.subst(sigma), right.subst(sigma))
+    override def subst(sigma: Subst): Expr = cond.subst(sigma) match {
+      case BoolConst(true) => left.subst(sigma)
+      case BoolConst(false) => right.subst(sigma)
+      case cond => IfThenElse(cond, left.subst(sigma), right.subst(sigma)).asInstanceOf[Expr]
+    }
     override def substUnknown(sigma: UnknownSubst): Expr = IfThenElse(cond.substUnknown(sigma), left.substUnknown(sigma), right.substUnknown(sigma))
     def getType(gamma: Gamma): Option[SSLType] = left.getType(gamma)
   }

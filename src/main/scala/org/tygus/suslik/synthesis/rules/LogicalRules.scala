@@ -259,6 +259,8 @@ object LogicalRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
         if (l.vars.intersect(r.vars).isEmpty) {
           if (isGhostVar(l)) Some(l.asInstanceOf[Var], r)
           else if (isGhostVar(r)) Some(r.asInstanceOf[Var], l)
+          // TODO: why was this for ghost only? (minimal change to get it to work with discriminants)
+          else if (l.isInstanceOf[Var] && r.isInstanceOf[IntConst]) Some(l.asInstanceOf[Var], r)
           else None
         } else None
 
