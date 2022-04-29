@@ -242,6 +242,14 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             actualAssertion = asn.subst(freshExistentialsSubst).subst(substArgs)
             actualConstraints = actualAssertion.phi
 
+            // TODO: Temporary proxy for the commented out above check
+            // Might not be complete in all cases
+            if !actualConstraints.vars.exists(v =>
+              // Cannot possibly get it as a PV
+              !goal.pre.sigma.vars.contains(v) &&
+              // Will need to get it as a PV
+              goal.universalGhosts.contains(v))
+
             actualBody = actualAssertion.sigma.setSAppTags(PTag(cls, unf + 1))
             // If we unfolded too much: back out
             //             if !actualBody.chunks.exists(h => exceedsMaxDepth(h))
@@ -306,6 +314,10 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           );
           assert(_hPost.isDefined, "Could not find matching borrow to " + h + " in post! Ensure that cards match!")
           val hPost = _hPost.get.asInstanceOf[SApp]
+          // Optimization (must BrrwWrite to primitive before impossibly reborrowing):
+          if (isPrim && args.tail.zip(hPost.args.tail).exists(tpl =>
+            tpl._1 != tpl._2 && (!tpl._2.isInstanceOf[Var] || !goal.isExistential(tpl._2.asInstanceOf[Var])))) return None
+
           val remainingSigmaPost = goal.post.sigma - hPost
           val sbstPost = params.map(_._1).zip(hPost.args).toMap + (selfCardVar -> hPost.card)
           // Post
