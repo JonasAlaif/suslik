@@ -135,7 +135,8 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
         val calleePostSigma = callGoal.calleePost.sigma.setSAppTags(PTag(callTag))
         val newPre = Assertion(pre.phi && callGoal.calleePost.phi, pre.sigma ** calleePostSigma)
         val newPost = callGoal.callerPost
-        val newGoal = goal.spawnChild(pre = newPre, post = newPost, callGoal = None, isCompanion = true)
+        val newProgramVars = call.args.head.asInstanceOf[Var] :: goal.programVars;
+        val newGoal = goal.spawnChild(pre = newPre, post = newPost, programVars = newProgramVars, callGoal = None, isCompanion = true)
         val postCallTransition = Transition(goal, newGoal)
         val kont: StmtProducer = SubstMapProducer(callGoal.freshToActual) >> PrependProducer(call) >> ExtractHelper(goal)
 
