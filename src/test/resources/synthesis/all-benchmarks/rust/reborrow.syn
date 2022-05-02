@@ -1,0 +1,17 @@
+# -c 10 -o 10 -p true
+
+#####
+
+predicate Struct(loc name) {
+| true => { PRIM_u8(d, val) }
+}
+
+predicate PRIM_u8(loc name, int v) {
+| true => { v >= 0 && v < 128; emp }
+}
+
+{ BRRW_Struct(x)<a> }
+void rbbrw(loc x)
+{ BLOCKED_Struct(x)<a> ** BRRW_PRIM_u8(result, val)<a> }
+
+#####
