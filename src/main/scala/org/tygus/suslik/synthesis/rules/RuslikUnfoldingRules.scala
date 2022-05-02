@@ -36,7 +36,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           // Strip "_GHOST":
           val pred = h.pred
           ruleAssert(env.predicates.contains(pred), s"Open rule encountered undefined predicate: $pred")
-          val freshPrefix = args.take(1).map(_.pp).mkString("_") + "_"
+          val freshPrefix = args.take(1).map(_.pp).mkString("_")
           val (InductivePredicate(_, params, clauses), fresh_sbst) = env.predicates(pred).refreshExistentials(goal.vars, prefix = freshPrefix)
           // [Cardinality] adjust cardinality of sub-clauses
           val sbst = params.map(_._1).zip(args).toMap + (selfCardVar -> card)
@@ -236,7 +236,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             InductiveClause(selector, asn) <- clauses
             // Make sure that existential in the body are fresh
             asnExistentials = asn.vars -- paramNames.toSet -- Set(selfCardVar)
-            freshPrefix = args.take(1).map(_.pp).mkString("_") + "_"
+            freshPrefix = args.take(1).map(_.pp).mkString("_")
             freshExistentialsSubst = refreshVars(asnExistentials.toList, goal.vars, prefix = freshPrefix)
             // Make sure that can unfold only once
             actualAssertion = asn.subst(freshExistentialsSubst).subst(substArgs)
@@ -302,7 +302,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           val isPrim = pred.startsWith("PRIM_")
           ruleAssert(env.predicates.contains(pred), s"Reborrow rule encountered undefined predicate: $pred")
           
-          val freshPrefix = args.take(1).map(_.pp).mkString("_") + "_"
+          val freshPrefix = args.take(1).map(_.pp).mkString("_")
           // Note: all vars not metioned in args are assumed to be equivalent (i.e. same refresh used for new pre and post)
           val (InductivePredicate(_, params, clauses), fresh_sbst) = env.predicates(pred).refreshExistentials(goal.vars, prefix = freshPrefix, mkBrrw = true)
           // [Cardinality] adjust cardinality of sub-clauses
