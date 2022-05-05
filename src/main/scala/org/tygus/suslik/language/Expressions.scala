@@ -529,6 +529,24 @@ object Expressions {
           case (left, right) => BinaryExpr(OpEq, left, right)
         }
       }
+      case OpAnd => {
+        (left.subst(sigma), right.subst(sigma)) match {
+          case (BoolConst(true), right) => right
+          case (left, BoolConst(true)) => left
+          case (BoolConst(false), right) => BoolConst(false)
+          case (left, BoolConst(false)) => BoolConst(false)
+          case (left, right) => BinaryExpr(OpAnd, left, right)
+        }
+      }
+      case OpOr => {
+        (left.subst(sigma), right.subst(sigma)) match {
+          case (BoolConst(true), right) => BoolConst(true)
+          case (left, BoolConst(true)) => BoolConst(true)
+          case (BoolConst(false), right) => right
+          case (left, BoolConst(false)) => left
+          case (left, right) => BinaryExpr(OpOr, left, right)
+        }
+      }
       case _ => BinaryExpr(op, left.subst(sigma), right.subst(sigma))
     }
     override def substUnknown(sigma: UnknownSubst): Expr = BinaryExpr(op, left.substUnknown(sigma), right.substUnknown(sigma))
