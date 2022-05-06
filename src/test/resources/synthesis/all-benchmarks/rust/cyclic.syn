@@ -1,0 +1,21 @@
+# -c 10 -o 10 -p true
+
+#####
+
+predicate PRIM_u8(loc name, int v) {
+| true => { v >= 0 && v < 128; emp }
+}
+
+predicate Enum(loc name, int v, int len) {
+| true => { PRIM_u8_GHOST(d, disc) ** EnumInternal_GHOST(i, disc, v, len) }
+}
+predicate EnumInternal(loc name, int disc, int v, int len) {
+| disc == 0 => { len == 0 ; emp }
+| disc == 1 => { len == len_p + 1 ; PRIM_u8(f, v) ** Enum(a, v, len_p) }
+}
+
+{ Enum(x, v, len) }
+void zero(loc x)
+{ Enum(result, 0, len) }
+
+#####

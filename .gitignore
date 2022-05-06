@@ -153,3 +153,7 @@ certify/
 trace.json
 *.trace.json
 *.db.json
+.bloop/
+.metals/
+metals.sbt
+.vscode/

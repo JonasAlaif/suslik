@@ -18,50 +18,67 @@ object Statements {
 
       val builder = new StringBuilder
 
-      def build(s: Statement, offset: Int = 2): Unit = {
+      def build(s: Statement, offset: Int = 2, sub: Subst = Map()): Subst = {
         s match {
-          case Skip =>
+          case Skip => sub
           case Hole =>
             builder.append(mkSpaces(offset))
             builder.append(s"??\n")
+            sub
           case Error =>
             builder.append(mkSpaces(offset))
-            builder.append(s"error;\n")
+            builder.append(s"unreachable();\n")
+            sub
+          case Sub(s) =>
+            sub ++ s.mapValues(_.subst(sub))
           case Malloc(to, _, sz) =>
             // Ignore type
             builder.append(mkSpaces(offset))
             builder.append(s"let ${to.pp} = malloc($sz);\n")
+            sub
           case Free(v) =>
             builder.append(mkSpaces(offset))
             builder.append(s"free(${v.pp});\n")
+            sub
           case Store(to, off, e) =>
             builder.append(mkSpaces(offset))
             val t = if (off <= 0) to.pp else s"(${to.pp} + $off)"
             builder.append(s"*$t = ${e.pp};\n")
+            sub
           case Load(to, _, from, off) =>
             builder.append(mkSpaces(offset))
             val f = if (off <= 0) from.pp else s"(${from.pp} + $off)"
             // Do not print the type annotation
             builder.append(s"let ${to.pp} = *$f;\n")
-          case Call(fun, args, _) =>
+            sub
+          case Construct(to, pred, args) =>
+            val Construct(to, pred, args) = s.subst(sub)
             builder.append(mkSpaces(offset))
-            val function_call = s"${fun.pp}(${args.map(_.pp).mkString(", ")});\n"
+            builder.append(s"let ${to.pp} = $pred(${args.map(_.pp).mkString(", ")});\n")
+            sub
+          case Call(fun, result, args, _) =>
+            builder.append(mkSpaces(offset))
+            val res = result.map(r => s"let ${r.pp} = ").getOrElse("")
+            val function_call = s"$res${fun.pp}(${args.map(_.pp).mkString(", ")});\n"
             builder.append(function_call)
+            sub
           case SeqComp(s1,s2) =>
-            build(s1, offset)
-            build(s2, offset)
+            val nSub = build(s1, offset, sub)
+            build(s2, offset, nSub)
           case If(cond, tb, eb) =>
             builder.append(mkSpaces(offset))
             builder.append(s"if (${cond.pp}) {\n")
-            build(tb, offset + 2)
+            build(tb, offset + 2, sub)
             builder.append(mkSpaces(offset)).append(s"} else {\n")
-            build(eb, offset + 2)
+            build(eb, offset + 2, sub)
             builder.append(mkSpaces(offset)).append(s"}\n")
+            sub
           case Guarded(cond, b) =>
             builder.append(mkSpaces(offset))
             builder.append(s"assume (${cond.pp}) {\n")
-            build(b, offset + 2)
+            build(b, offset + 2, sub)
             builder.append(mkSpaces(offset)).append(s"}\n")
+            sub
         }
       }
 
@@ -76,16 +93,19 @@ object Statements {
         case Skip => acc
         case Hole => acc
         case Error => acc
+        case Sub(_) => acc
         case Store(to, off, e) =>
           acc ++ to.collect(p) ++ e.collect(p)
         case Load(_, _, from, off) =>
           acc ++ from.collect(p)
+        case Construct(to, _, args) =>
+          acc ++ to.collect(p) ++ args.flatMap(_.collect(p)).toSet
         case Malloc(_, _, _) =>
           acc
         case Free(x) =>
           acc ++ x.collect(p)
-        case Call(fun, args, _) =>
-          acc ++ fun.collect(p) ++ args.flatMap(_.collect(p)).toSet
+        case Call(fun, res, args, _) =>
+          acc ++ fun.collect(p) ++ res.map(_.collect(p)).getOrElse(Set()) ++ args.flatMap(_.collect(p)).toSet
         case SeqComp(s1,s2) =>
           val acc1 = collector(acc)(s1)
           collector(acc1)(s2)
@@ -109,6 +129,9 @@ object Statements {
         assert(!sigma.keySet.contains(from) || sigma(from).isInstanceOf[Var])
         Load(to.subst(sigma).asInstanceOf[Var], tpe, from.subst(sigma).asInstanceOf[Var], offset)
       }
+      case Construct(to, pred, args) =>
+        assert(!sigma.keySet.contains(to) || sigma(to).isInstanceOf[Var])
+        Construct(to.subst(sigma).asInstanceOf[Var], pred, args.map(_.subst(sigma)))
       case Malloc(to, tpe, sz) => {
         assert(!sigma.keySet.contains(to) || sigma(to).isInstanceOf[Var])
         Malloc(to.subst(sigma).asInstanceOf[Var], tpe, sz)
@@ -117,7 +140,7 @@ object Statements {
         assert(!sigma.keySet.contains(x) || sigma(x).isInstanceOf[Var])
         Free(x.subst(sigma).asInstanceOf[Var])
       }
-      case Call(fun, args, companion) => Call(fun, args.map(_.subst(sigma)), companion)
+      case Call(fun, res, args, companion) => Call(fun, res.map(_.subst(sigma).asInstanceOf[Var]), args.map(_.subst(sigma)), companion)
       case SeqComp(s1, s2) => SeqComp(s1.subst(sigma), s2.subst(sigma))
       case If(cond, tb, eb) => If(cond.subst(sigma), tb.subst(sigma), eb.subst(sigma))
       case Guarded(cond, b) => Guarded(cond.subst(sigma), b.subst(sigma))
@@ -129,11 +152,13 @@ object Statements {
       case Skip => 0
       case Hole => 1
       case Error => 1
+      case Sub(_) => 0
       case Store(to, off, e) => 1 + to.size + e.size
       case Load(to, _, from, _) => 1 + to.size + from.size
+      case Construct(to, _, args) => 1 + to.size + args.map(_.size).sum
       case Malloc(to, _, _) => 1 + to.size
       case Free(x) => 1 + x.size
-      case Call(_, args, _) => 1 + args.map(_.size).sum
+      case Call(_, res, args, _) => 1 + res.size + args.map(_.size).sum
       case SeqComp(s1,s2) => s1.size + s2.size
       case If(cond, tb, eb) => 1 + cond.size + tb.size + eb.size
       case Guarded(cond, b) => 1 + cond.size + b.size
@@ -179,7 +204,7 @@ object Statements {
 
     // Companions of all calls inside this statement
     def companions: List[GoalLabel] = atomicStatements.flatMap {
-      case Call(_, _, Some(comp)) => List(comp)
+      case Call(_, _, _, Some(comp)) => List(comp)
       case _ => Nil
     }
 
@@ -214,14 +239,15 @@ object Statements {
     }
 
     // Shorten a variable v to its minimal prefix unused in the current statement.
-    def simplifyVariable(v: Var): (Var, Statement) = {
-      val used = this.vars
-      val prefixes = Range(1, v.name.length).map(n => v.name.take(n))
-      prefixes.find(p => !used.contains(Var(p))) match {
-        case None => (v, this) // All shorter names are taken
-        case Some(name) => (Var(name), this.subst(v, Var(name)))
-      }
-    }
+    def simplifyVariable(v: Var): (Var, Statement) = (v, this)
+    // {
+    //   val used = this.vars
+    //   val prefixes = Range(1, v.name.length).map(n => v.name.take(n))
+    //   prefixes.find(p => !used.contains(Var(p))) match {
+    //     case None => (v, this) // All shorter names are taken
+    //     case Some(name) => (Var(name), this.subst(v, Var(name)))
+    //   }
+    // }
   }
 
   // skip
@@ -233,6 +259,9 @@ object Statements {
   // assert false
   case object Error extends Statement
 
+  // substitute in past goals
+  case class Sub(sub: Subst) extends Statement
+
   // let to = malloc(n)
   case class Malloc(to: Var, tpe: SSLType, sz: Int = 1) extends Statement
 
@@ -243,11 +272,14 @@ object Statements {
   case class Load(to: Var, tpe: SSLType, from: Var,
                   offset: Int = 0) extends Statement
 
+  // let to = pred(args)
+  case class Construct(to: Var, pred: Ident, args: Seq[Expr]) extends Statement
+
   // *to.offset = e
   case class Store(to: Var, offset: Int, e: Expr) extends Statement
 
   // f(args)
-  case class Call(fun: Var, args: Seq[Expr], companion: Option[GoalLabel]) extends Statement
+  case class Call(fun: Var, result: Option[Var], args: Seq[Expr], companion: Option[GoalLabel]) extends Statement
 
   // s1; s2
   case class SeqComp(s1: Statement, s2: Statement) extends Statement {
@@ -280,8 +312,8 @@ object Statements {
     override def simplify: Statement = {
       (tb, eb) match {
         case (Skip, Skip) => Skip
-        case (Error, _) => eb
-        case (_, Error) => tb
+        // case (Error, _) => eb
+        // case (_, Error) => tb
         case (Guarded(gcond, gb), _) => Guarded(gcond, If(cond, gb, eb).simplify)
         case (_, Guarded(gcond, gb)) => Guarded(gcond, If(cond, tb, gb).simplify)
         case _ => this

@@ -387,6 +387,8 @@ object Expressions {
           case None => Some(gamma)
         }
       }
+      case Named(lft) => if (IntType.conformsTo(target)) lft.resolve(gamma, target) else None
+      case NilLifetime => if (IntType.conformsTo(target)) Some(gamma) else None
       case BoolConst(_) => if (BoolType.conformsTo(target)) Some(gamma) else None
       case LocConst(_) => if (LocType.conformsTo(target)) Some(gamma) else None
       case IntConst(_) => if (IntType.conformsTo(target)) Some(gamma) else None
@@ -468,6 +470,8 @@ object Expressions {
           expr.left.resolveOverloading(gamma),
           expr.right.resolveOverloading(gamma)).simplify
       case Var(_)
+      | Named(_)
+      | NilLifetime
       | BoolConst(_)
       | LocConst(_)
       | IntConst(_)
@@ -498,6 +502,26 @@ object Expressions {
     def varSubst(sigma: Map[Var, Var]): Var = subst(sigma).asInstanceOf[Var]
 
     def getType(gamma: Gamma): Option[SSLType] = gamma.get(this)
+  }
+
+  // Program-level lifetime
+  sealed abstract class Lifetime extends Expr {
+    def getNamed: Option[Named]
+    def isNil: Boolean = getNamed.isEmpty
+    def subst(sigma: Subst): Lifetime
+    override def getType(gamma: Gamma): Option[SSLType] = Some(IntType)
+  }
+  // Program-level variable: program-level or ghost
+  case class Named(name: Var) extends Lifetime {
+    override def pp: String = name.pp
+
+    override def getNamed: Option[Named] = Some(this)
+    override def subst(sigma: Subst): Lifetime =
+      sigma.getOrElse(name, this).asInstanceOf[Lifetime]
+  }
+  case object NilLifetime extends Lifetime {
+    override def getNamed: Option[Named] = None
+    override def subst(sigma: Subst): Lifetime = this
   }
 
   // Program-level constant

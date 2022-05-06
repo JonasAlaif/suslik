@@ -205,11 +205,13 @@ object SynStatUtil {
       case Statements.Skip => 0
       //case Statements.Hole =>
       case Statements.Error => 1
+      case Statements.Sub(_) => 0
       case Statements.Malloc(to, tpe, sz) => 1
       case Statements.Free(_) => 1
       case Statements.Load(_,_,_,_) => 1
+      case Statements.Construct(_,_,_) => 1
       case Statements.Store(_,_,_) => 1
-      case Statements.Call(_,_,_) => 1
+      case Statements.Call(_,_,_,_) => 1
       case Statements.SeqComp(s1, s2) => countInner(s1) + countInner(s2)
       case Statements.If(_, tb, eb) => 1 + countInner(tb) + countInner(eb)
       case Statements.Guarded(_, body) => 1 + countInner(body)

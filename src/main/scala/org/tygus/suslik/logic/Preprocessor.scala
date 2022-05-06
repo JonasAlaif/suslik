@@ -1,5 +1,6 @@
 package org.tygus.suslik.logic
 
+import org.tygus.suslik.language.Ident
 import org.tygus.suslik.language.Expressions._
 import org.tygus.suslik.language.Statements.Statement
 import org.tygus.suslik.logic.Specifications.Assertion
@@ -13,7 +14,7 @@ object Preprocessor extends SepLogicUtils {
     * Collect program declarations into an environment
     * TODO: type checking
     */
-  def preprocessProgram(prog: Program, params: SynConfig): (Seq[FunSpec], PredicateEnv, FunctionEnv, Statement) = {
+  def preprocessProgram(prog: Program, params: SynConfig): (Seq[FunSpec], PredicateEnv, PredicateCycles, FunctionEnv, Statement) = {
     val Program(preds, funs, goal) = prog
     val funMap = funs.map(fs => fs.name -> fs).toMap
 
@@ -22,7 +23,40 @@ object Preprocessor extends SepLogicUtils {
                    else preds.map(p => p.copy(clauses = p.clauses.map(addCardConstraints)))
 
     val predMap = newPreds.map(ps => ps.name -> ps).toMap
-    (List(goal.spec), predMap, funMap, goal.body)
+    val predCycles = cyclesFromSpec(predMap, goal.spec)
+    (List(goal.spec), predMap, predCycles, funMap, goal.body)
+  }
+
+  /**
+    * Collect program declarations into an environment
+    * TODO: type checking
+    */
+  def cyclesFromSpec(predMap: PredicateEnv, spec: FunSpec): PredicateCycles = {
+    val roots = (spec.pre.sigma.rapps ++ spec.post.sigma.rapps).map(_.pred)
+    val (cycles, visited) = roots.foldLeft((Set.empty[Ident], Set.empty[Ident]))((acc, pred) => {
+      val (cycles, visited) = calculateCycles(pred, List(), predMap, acc._2)
+      (acc._1 ++ cycles, visited)
+    })
+    val unusedPreds = predMap.keySet.filter(pred => !visited.contains(pred))
+    if (unusedPreds.size != 0) {
+      println(s"Defined predicates which can never be reached: ${unusedPreds.mkString(", ")}!")
+    }
+    cycles
+  }
+
+  def calculateCycles(curr: Ident, stack: List[Ident], predMap: PredicateEnv, visited: Set[Ident]): (PredicateCycles, Set[Ident]) = {
+    if (visited.contains(curr)) return (Set.empty, visited)
+    val cycle = stack.takeWhile(_ != curr)
+    if (cycle.length == stack.length) {
+      val nexts = predMap(curr).clauses.flatMap(_.asn.sigma.rapps.map(_.pred))
+      val (cycles, newVisited) = nexts.foldLeft((Set.empty[Ident], visited))((acc, pred) => {
+        val (cycles, visited) = calculateCycles(pred, curr :: stack, predMap, acc._2)
+        (acc._1 ++ cycles, visited)
+      })
+      (cycles, newVisited + curr)
+    } else {
+      (cycle.toSet + curr, visited + curr)
+    }
   }
 
   /**

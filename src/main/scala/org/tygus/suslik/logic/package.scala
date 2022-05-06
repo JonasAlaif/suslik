@@ -7,6 +7,7 @@ package object logic {
 
   type Formals = List[(Var, SSLType)]
   type PredicateEnv = Map[Ident, InductivePredicate]
+  type PredicateCycles = Set[Ident]
   type FunctionEnv = Map[Ident, FunSpec]
   type Gamma =  Map[Var, SSLType]
 }

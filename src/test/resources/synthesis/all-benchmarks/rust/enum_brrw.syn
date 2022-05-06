@@ -1,0 +1,24 @@
+# -c 10 -o 10 -p true
+
+#####
+
+predicate PRIM_u8(loc name, int v) {
+| true => { v >= 0 && v < 128; emp }
+}
+
+predicate Box_int(loc name, int v) {
+| true => { PRIM_u8(bv, v) }
+}
+predicate Enum(loc name, int v0, int v1) {
+| true => { PRIM_u8_GHOST(d, disc) ** EnumInternal_GHOST(i, disc, v0, v1) }
+}
+predicate EnumInternal(loc name, int disc, int v0, int v1) {
+| disc == 0 => { Box_int(a, v0) }
+| disc == 1 => { Box_int(b, v1) }
+}
+
+{ v0+1 < 128 && v1-1 > 0 ; BRRW_Enum(x, v0, v1)<a> }
+void box_and_swap(loc x)
+{ v1p == v1-1 && v0p == v0+1 ; BRRW_Enum(x, v0, v1)<a> ** Enum(result, v1p, v0p) }
+
+#####

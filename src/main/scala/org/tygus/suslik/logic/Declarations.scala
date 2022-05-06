@@ -43,6 +43,12 @@ case class FunSpec(name: Ident, rType: SSLType, params: Formals,
     gamma
   }
 
+  def result: Option[Var] = {
+    // TODO: handle returning multiple results
+    assert(post.sigma.owneds.length <= 1)
+    post.sigma.owneds.map(_.field).headOption
+  }
+
   def existentials() : List[Var] = {
     val params = this.params.map(_._1).toSet
     val formal_params = pre.ghosts(params)
@@ -147,8 +153,11 @@ case class InductiveClause(selector: Expr, asn: Assertion) extends PrettyPrintin
   * TODO: add higher-order predicates, e.g., a list parameterised by a predicate
   *
   */
-case class InductivePredicate(name: Ident, params: Formals, clauses: Seq[InductiveClause])
+case class InductivePredicate(full_name: Ident, params: Formals, clauses: Seq[InductiveClause])
     extends TopLevelDeclaration with PureLogicUtils {
+
+  def isPrim: Boolean = full_name.startsWith("PRIM_")
+  def name: Ident = full_name.stripPrefix("PRIM_")
 
   def resolve(gamma: Gamma, env:Environment):Option[Gamma] = {
     val init_gamma : Option[Gamma] = Some(gamma)
@@ -191,7 +200,9 @@ case class InductivePredicate(name: Ident, params: Formals, clauses: Seq[Inducti
 
   def vars: Set[Var] = clauses.flatMap(c => c.selector.vars ++ c.asn.vars).toSet
 
-  def existentials: Set[Var] = vars -- params.map(_._1).toSet -- Set(selfCardVar)
+  def fields: Set[Var] = clauses.flatMap(c => c.asn.sigma.rapps.map(_.field)).toSet
+
+  def existentials: Set[Var] = vars -- fields -- params.map(_._1).toSet -- Set(selfCardVar)
 
 }
 
@@ -214,6 +225,7 @@ case class Program(predicates: Seq[InductivePredicate],
   * (predicates, component functions, etc)
   */
 case class Environment(predicates: PredicateEnv,
+                       predicateCycles: PredicateCycles,
                        functions: FunctionEnv,
                        config: SynConfig,
                        stats: SynStats) {

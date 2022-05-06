@@ -120,6 +120,9 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
       case a ~ Some(l ~ r) => IfThenElse(a, l, r)
     }
 
+  def ref: Parser[Ref] =
+    ("&" ~> ident) ~ opt("mut") ^^ { case a ~ mut => Ref(Named(Var("&" + a)), mut.isDefined) }
+
   def identWithOffset: Parser[(Ident, Int)] = {
     val ov = ident ~ opt("+" ~> numericLit)
     ("(" ~> ov <~ ")" | ov) ^^ { case i ~ o =>
@@ -135,8 +138,11 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
     (identWithOffset <~ ":->") ~ expr ^^ { case (a, o) ~ b => PointsTo(Var(a), o, b) }
       ||| "[" ~> (ident ~ ("," ~> numericLit)) <~ "]" ^^ { case a ~ s => Block(Var(a), Integer.parseInt(s)) }
       ||| ident ~ ("(" ~> rep1sep(expr, ",") <~ ")") ~ opt("<" ~> expr <~ ">") ^^ {
-      case name ~ args ~ v => SApp(name, args, PTag(), v.getOrElse(defaultCardParameter))
-    }
+        case name ~ args ~ v => SApp(name, args, PTag(), v.getOrElse(defaultCardParameter))
+      }
+      ||| opt("priv") ~ (varParser <~ ":") ~ opt(ref) ~ ident ~ ("(" ~> rep1sep(expr, ",") <~ ")") ^^ {
+        case priv ~ field ~ r ~ pred ~ fnSpec => RApp(priv.isDefined, field, r, pred, fnSpec, NilLifetime, PTag())
+      }
     )
 
   def sigma: Parser[SFormula] = (
@@ -199,8 +205,8 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
       case to ~ from ~ offset_str => Load(to, IntType, from, Integer.parseInt(offset_str)) // todo: maybe not ignore type here
     }
       // Call
-      ||| varParser ~ ("(" ~> repsep(expr, ",") <~ ")" <~ ";") ^^ {
-      case fun ~ args => Call(fun, args.map(desugar), None)
+      ||| opt("let" ~> varParser <~ "=") ~ varParser ~ ("(" ~> repsep(expr, ",") <~ ")" <~ ";") ^^ {
+      case result ~ fun ~ args => Call(fun, result, args.map(desugar), None)
     }
       // if
       ||| ("if" ~> "(" ~> expr <~ ")") ~ ("{" ~> codeWithHoles <~ "}") ~ ("else" ~> "{" ~> codeWithHoles <~ "}") ^^ {

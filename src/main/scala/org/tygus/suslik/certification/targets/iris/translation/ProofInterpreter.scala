@@ -202,7 +202,7 @@ case class ProofInterpreter(spec: IFunSpec) extends Interpreter[SuslikProofStep,
       ctx = ctx withQueuedCall(newSpec)
       Result(List(), List(withNoDeferreds(ctx)))
 
-    case SuslikProofStep.Call(subst, Statements.Call(Var(funName), _, _)) =>
+    case SuslikProofStep.Call(subst, Statements.Call(Var(funName), _, _, _)) =>
       var (spec, ctx) = clientCtx.unqueueCall()
       val isSelfCall = (funName == irisSelf)
       val applyName = if (isSelfCall) s""""$irisSelf"""" else s"${funName}_spec"

@@ -29,6 +29,7 @@ object Specifications extends SepLogicUtils {
     def -(other: Assertion): Assertion = Assertion(PFormula(phi.conjuncts -- other.phi.conjuncts), sigma - other.sigma)
 
     def subst(s: Map[Var, Expr]): Assertion = Assertion(phi.subst(s), sigma.subst(s))
+    def setTagAndRef(h: RApp): Assertion = Assertion(phi, sigma.setTagAndRef(h))
 
     /**
       * @param takenNames  -- names that are already taken
@@ -104,6 +105,8 @@ object Specifications extends SepLogicUtils {
     */
   case class Goal(pre: Assertion,
                   post: Assertion,
+                  pre_unfoldable: Int, // if I unfold the 2nd SApp, I shouldn't be unfolding 0 or 1 in the future
+                  post_unfoldable: Int,
                   gamma: Gamma, // types of all variables (program, universal, and existential)
                   programVars: List[Var], // program-level variables
                   universalGhosts: Set[Var], // universally quantified ghost variables
@@ -167,13 +170,15 @@ object Specifications extends SepLogicUtils {
     // Turn this goal into a helper function call
     def toCall: Call = {
       val f = this.toFunSpec
-      Call(Var(f.name), f.params.map(_._1), None)
+      Call(Var(f.name), f.result, f.params.map(_._1), None)
     }
 
     def toFootprint: Footprint = Footprint(pre, post)
 
     def spawnChild(pre: Assertion = this.pre,
                    post: Assertion = this.post,
+                   pre_unfoldable: Int = this.pre_unfoldable,
+                   post_unfoldable: Int = this.post_unfoldable,
                    gamma: Gamma = this.gamma,
                    programVars: List[Var] = this.programVars,
                    childId: Option[Int] = None,
@@ -195,7 +200,7 @@ object Specifications extends SepLogicUtils {
 //      val newUniversalGhosts = this.universalGhosts.intersect(usedVars) ++ preSimple.vars -- programVars
       val newUniversalGhosts = this.universalGhosts ++ preSimple.vars -- programVars
 
-      Goal(preSimple, postSimple,
+      Goal(preSimple, postSimple, pre_unfoldable, post_unfoldable,
         gammaFinal, programVars, newUniversalGhosts,
         this.fname, this.label.bumpUp(childId), Some(this), env, sketch,
         callGoal, hasProgressed, isCompanion)
@@ -205,7 +210,15 @@ object Specifications extends SepLogicUtils {
     def unsolvableChild: Goal = spawnChild(post = Assertion(pFalse, emp))
 
     // Is this goal unsolvable and should be discarded?
-    def isUnsolvable: Boolean = post.phi == pFalse
+    def isUnsolvable: Boolean = post.phi == pFalse || {
+        // If there is a universal ghost in the post which can never be loaded
+        // TODO: Might not be complete in all cases
+        post.phi.vars.exists(v =>
+          // Cannot possibly get it as a PV
+          !possiblyProgramVars.contains(v) &&
+          // Will need to get it as a PV
+          universalGhosts.contains(v))
+    }
 
     def isTopLevel: Boolean = label == topLabel
 
@@ -220,17 +233,26 @@ object Specifications extends SepLogicUtils {
       case _ => false
     }
 
+    // If the entire RApp is FULLY existential (fnSpec is existential and unconstrained by phi)
+    // Such RApps should not be written to and should be expired eagerly
+    def isRAppExistential(r: RApp): Boolean = r.ref.map(!_.mut).getOrElse(false) || r.fnSpec.forall(a => {
+      a.isInstanceOf[Var] && existentials.contains(a.asInstanceOf[Var]) && !post.phi.vars.contains(a.asInstanceOf[Var])
+    })
+
     // All variables this goal has ever used
     def vars: Set[Var] = gamma.keySet
 
     // All universally-quantified variables this goal has ever used
     def allUniversals: Set[Var] = universalGhosts ++ programVars
 
+    // All universally-quantified variables this goal has ever used
+    def possiblyProgramVars: Set[Var] = pre.sigma.rapps.drop(pre_unfoldable).flatMap(_.vars).toSet ++ programVars
+
     // Variables currently used only in specs
     def ghosts: Set[Var] = pre.vars ++ post.vars -- programVars
 
     // Variables used in the suspended call (if it exists)
-    private def callVars: Set[Var] = callGoal.map(_.actualCall.args.flatMap(_.vars).toSet).getOrElse(Set())
+    private def callVars: Set[Var] = callGoal.map(_.actualCall.args.tail.flatMap(_.vars).toSet).getOrElse(Set())
 
     // Currently used ghosts that appear only in the postcondition (or suspened call)
     def existentials: Set[Var] = post.vars ++ callVars -- allUniversals
@@ -250,7 +272,7 @@ object Specifications extends SepLogicUtils {
     def isProgramLevelExistential(x:Var): Boolean = x.name.startsWith(progLevelPrefix) || (
       callGoal match {
         case None => false
-        case Some(cg) => cg.call.args.contains(x)
+        case Some(cg) => cg.call.args.tail.contains(x)
       })
 
     def getType(x: Var): SSLType = {
@@ -313,7 +335,7 @@ object Specifications extends SepLogicUtils {
     val post1 = post.resolveOverloading(gamma)
     val formalNames = formals.map(_._1)
     val ghostUniversals = pre1.vars -- formalNames
-    Goal(pre1, post1,
+    Goal(pre1, post1, 0, 0,
       gamma, formalNames, ghostUniversals,
       fname, topLabel, None, env.resolveOverloading(), sketch.resolveOverloading(gamma),
       None, hasProgressed = false, isCompanion = true)

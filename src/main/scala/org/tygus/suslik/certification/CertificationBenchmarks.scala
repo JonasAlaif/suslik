@@ -53,14 +53,14 @@ class CertificationBenchmarks(
     }
 
     val prog = res.get
-    val (specs, predEnv, funcEnv, body) = preprocessProgram(prog, params)
+    val (specs, predEnv, predCycles, funcEnv, body) = preprocessProgram(prog, params)
 
     if (specs.lengthCompare(1) != 0) {
       throw SynthesisException("Expected a single synthesis goal")
     }
 
     val spec = specs.head
-    val env = Environment(predEnv, funcEnv, params, new SynStats(params.timeOut))
+    val env = Environment(predEnv, predCycles, funcEnv, params, new SynStats(params.timeOut))
     val synthesizer = createSynthesizer(env)
 
     env.stats.start()

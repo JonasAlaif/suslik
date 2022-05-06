@@ -116,14 +116,14 @@ trait SynthesisRunnerUtil {
     }
 
     val prog = res.get
-    val (specs, predEnv, funcEnv, body) = preprocessProgram(prog, params)
+    val (specs, predEnv, predCycles, funcEnv, body) = preprocessProgram(prog, params)
 
     if (specs.lengthCompare(1) != 0) {
       throw SynthesisException("Expected a single synthesis goal")
     }
 
     val spec = specs.head
-    val env = Environment(predEnv, funcEnv, params, new SynStats(params.timeOut))
+    val env = Environment(predEnv, predCycles, funcEnv, params, new SynStats(params.timeOut))
     (spec, env, body)
   }
 
@@ -134,13 +134,13 @@ trait SynthesisRunnerUtil {
         if (env.config.simple)
           new InteractiveSimple(env.config, env.stats)
         else
-          new InteractivePhased(env.config, env.stats)
+          new InteractiveRust(env.config, env.stats)
       } else if (env.config.script.nonEmpty)
         new ReplaySynthesis(env.config)
       else if (env.config.simple)
         new AutomaticSimple(env.config)
       else
-        new AutomaticPhased(env.config)
+        new AutomaticRust(env.config)
     val trace : ProofTrace = if (env.config.certTarget != NoCert) new ProofTraceCert() else {
       env.config.traceToJsonFile match {
         case None => ProofTraceNone

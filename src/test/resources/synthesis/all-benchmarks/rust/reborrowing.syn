@@ -1,0 +1,21 @@
+# -c 10 -o 10 -p true
+
+#####
+
+predicate Enum(loc name, int v1, int v2, bool discchoice) {
+| true => { PRIM_u8_GHOST(d, disc) ** EnumInternal_GHOST(i, disc, v1, v2, discchoice) }
+}
+predicate EnumInternal(loc name, int disc, int v1, int v2, bool discchoice) {
+| disc == 0 => { discchoice; emp }
+| disc == 1 => { PRIM_u8(f1, v1) ** PRIM_u8(f2, v2) }
+}
+
+predicate PRIM_u8(loc name, int v) {
+| true => { v >= 0 && v < 128; emp }
+}
+
+{ v1 < 127; BRRW_Enum(x, v1, v2, false)<a> }
+void zero(loc x)
+{ BRRW_Enum(x, v1+1, v2, false)<a> }
+
+#####

@@ -21,6 +21,9 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
         args.foldLeft(acc)((a, e) => a ++ e.collect(p)) ++
           // [Cardinality] add the cardinality variable
           card.collect(p)
+      case RApp(_, field, ref, _, fnSpec, lft, _) =>
+        field.collect(p) ++ ref.map(_.lft.collect(p)).getOrElse(Set.empty) ++
+          fnSpec.foldLeft(acc)((a, e) => a ++ e.collect(p)) ++ lft.collect(p)
     }
 
     collector(Set.empty)(this)
@@ -57,6 +60,7 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
     case PointsTo(loc, _, value) => 1 + loc.size + value.size
     case Block(loc, _) => 1 + loc.size
     case SApp(_, args, _, _) => args.map(_.size).sum
+    case RApp(_, _, _, _, fnSpec, _, _) => 1 + fnSpec.map(_.size).sum
   }
 
   def cost: Int = this match {
@@ -150,6 +154,8 @@ case class PTag(calls: Int = 0, unrolls: Int = 0) extends PrettyPrinting {
     case PTag(0, 0) => "" // Default tag
     case _ => s"[$calls,$unrolls]"
   }
+  def incrUnrolls: PTag = this.copy(unrolls = unrolls+1)
+  def incrCalls: PTag = this.copy(calls = calls+1)
 }
 
 /**
@@ -158,7 +164,16 @@ case class PTag(calls: Int = 0, unrolls: Int = 0) extends PrettyPrinting {
   *
   *       Predicate application
   */
-case class SApp(pred: Ident, args: Seq[Expr], tag: PTag, card: Expr) extends Heaplet {
+case class SApp(pred_with_info: Ident, args: Seq[Expr], tag: PTag, card: Expr) extends Heaplet {
+  // Must be unfolded/reborrowed immediately
+  def isGhost = pred_with_info.endsWith("_GHOST")
+  // Use Open/Close or Reborrow
+  def isBorrow = pred_with_info.startsWith("BRRW_")
+  // Must be unfolded immediately
+  def isPrim = pred_with_info.startsWith("PRIM_")
+  // Ident to locate predicate from env
+  def pred_no_ghost: Ident = if (isGhost) pred_with_info.dropRight(6) else pred_with_info
+  def pred: Ident = if (isBorrow) pred_no_ghost.drop(5) else pred_no_ghost
 
   override def resolveOverloading(gamma: Gamma): Heaplet = this.copy(args = args.map(_.resolveOverloading(gamma)))
 
@@ -166,13 +181,13 @@ case class SApp(pred: Ident, args: Seq[Expr], tag: PTag, card: Expr) extends Hea
     def ppCard(e: Expr) = s"<${e.pp}>"
 
 //    s"$pred(${args.map(_.pp).mkString(", ")})${ppCard(card)}${tag.pp}"
-    s"$pred(${args.map(_.pp).mkString(", ")})${ppCard(card)}"
+    s"$pred_with_info(${args.map(_.pp).mkString(", ")})${ppCard(card)}"
   }
 
 
   override def compare(that: Heaplet): Int = that match {
     case SApp(pred1, args1, tag, card) =>
-      val c1 = this.pred.compareTo(pred1)
+      val c1 = this.pred_with_info.compareTo(pred1)
       val c2 = this.args.toString.compareTo(args1.toString)
       if (c1 != 0) return c1
       if (c2 != 0) return c2
@@ -208,13 +223,13 @@ case class SApp(pred: Ident, args: Seq[Expr], tag: PTag, card: Expr) extends Hea
   override def setTag(t: PTag): Heaplet = this.copy(tag = t)
 
   override def unify(that: Heaplet): Option[ExprSubst] = that match {
-    case SApp(p, as, _, c) if pred == p => Some((card :: args.toList).zip(c :: as.toList).toMap)
+    case SApp(p, as, _, c) if pred_with_info == p => Some((card :: args.toList).zip(c :: as.toList).toMap)
     case _ => None
   }
 
   override def unifySyntactic(that: Heaplet, unificationVars: Set[Var]): Option[Subst] = that match {
-    case SApp(p, Seq(), _, c) if pred == p => card.unifySyntactic(c, unificationVars)
-    case app@SApp(p, a +: as, _, _) if pred == p => for {
+    case SApp(p, Seq(), _, c) if pred_with_info == p => card.unifySyntactic(c, unificationVars)
+    case app@SApp(p, a +: as, _, _) if pred_with_info == p => for {
       sub1 <- args.head.unifySyntactic(a, unificationVars)
       sub2 <- this.copy(args = args.tail).subst(sub1).unifySyntactic(app.copy(args = as), unificationVars)
     } yield sub1 ++ sub2
@@ -223,6 +238,99 @@ case class SApp(pred: Ident, args: Seq[Expr], tag: PTag, card: Expr) extends Hea
 
 }
 
+case class Ref(lft: Lifetime, mut: Boolean) extends PrettyPrinting {
+  override def pp: String = if (mut) { s"${lft.pp} mut " } else { s"${lft.pp} " }
+  def subst(sigma: Map[Var, Expr]): Ref = {
+    this.copy(lft = lft.subst(sigma))
+  }
+}
+
+/**
+  *       Rust predicate application. For example:
+  *       x: &a mut i32(value)<&blocked_by>
+  */
+case class RApp(priv: Boolean, field: Var, ref: Option[Ref], pred: Ident, fnSpec: Seq[Expr], blocked: Lifetime, tag: PTag) extends Heaplet {
+  def toSApp: SApp = SApp(pred, fnSpec, tag, IntConst(0))
+
+  def isBorrow: Boolean = ref.isDefined
+
+  // If the entire fnSpec is existential, then no point writing
+  // def isWriteableBorrow(existentials: Set[Var]): Boolean = isBorrow && ref.get.mut && fnSpec.forall(_.vars.subsetOf(existentials))
+
+  // Can be copied out immediately
+  def isPrim(predicates: PredicateEnv): Boolean = predicates(pred).isPrim
+
+  // Should be folded/unfolded after non-cyclic things
+  def isCyclic(predicates: PredicateCycles): Boolean = predicates(pred)
+
+  override def resolveOverloading(gamma: Gamma): Heaplet = this.copy(fnSpec = fnSpec.map(_.resolveOverloading(gamma)))
+
+  override def pp: String = {
+    val privS = if (priv) "priv " else ""
+    val refS = ref.map(_.pp).getOrElse("")
+    s"$privS${field.pp} : $refS$pred(${fnSpec.map(_.pp).mkString(", ")})${blocked.getNamed.fold("")("<"+ _.pp +">")}${tag.pp}"
+  }
+
+
+  override def compare(that: Heaplet): Int = that match {
+    case RApp(_, field1, _, pred1, _, _, _) =>
+      if (pred.compareTo(pred1) != 0) return pred.compareTo(pred1)
+      assert(field.compareTo(field1) != 0)
+      return field.compareTo(field1)
+    case _ => super.compare(that)
+  }
+
+  def subst(sigma: Map[Var, Expr]): Heaplet = {
+    this.copy(
+      field = field.subst(sigma).asInstanceOf[Var],
+      ref = ref.map(_.subst(sigma)),
+      fnSpec = fnSpec.map(_.subst(sigma)),
+      blocked = blocked.subst(sigma)
+    )
+  }
+
+  def resolve(gamma: Gamma, env: Environment): Option[Gamma] = {
+    if (!(env.predicates contains pred)) {
+      throw SynthesisException(s"predicate $pred is undefined")
+    }
+
+    val newGamma =
+      if (ref.isDefined && ref.get.lft.getNamed.isDefined) gamma + (field -> LocType) + (ref.get.lft.getNamed.get.name -> IntType) 
+      else gamma + (field -> LocType)
+    val formals = env.predicates(pred).params
+    assert(formals.length == fnSpec.length)
+    if (formals.length == fnSpec.length) {
+      (formals, fnSpec).zipped.foldLeft[Option[Gamma]](Some(newGamma)) { case (go, (formal, actual)) => go match {
+        case None => None
+        case Some(g) => actual.resolve(g, Some(formal._2))
+      }
+      }
+    } else None
+  }
+
+  override def getTag: Option[PTag] = Some(tag)
+
+  override def setTag(t: PTag): Heaplet = this.copy(tag = t)
+
+  def setRef(newRef: Ref): RApp = {
+    assert(ref.isEmpty)
+    this.copy(ref = Some(newRef))
+  }
+
+  override def unify(that: Heaplet): Option[ExprSubst] = that match {
+    // Neither can be private. Also if exactly one lifetime is Nil,
+    // then relies on substitution kicking in before anything else for soundness!
+    case RApp(false, tgt, None, p, spec, lft, _) if pred == p && ref.isEmpty && !priv =>
+      Some((field :: blocked :: fnSpec.toList).zip(tgt :: lft :: spec.toList).toMap)
+    case RApp(pri, tgt, Some(r), p, spec, lft, _) if field == tgt => {
+      assert(pri == priv && p == pred && r == ref.get)
+      Some((blocked :: fnSpec.toList).zip(lft :: spec.toList).toMap)
+    }
+    case _ => None
+  }
+
+  override def unifySyntactic(that: Heaplet, unificationVars: Set[Var]): Option[Subst] = None
+}
 
 case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpressions[SFormula] {
   def resolveOverloading(gamma: Gamma): SFormula = {
@@ -232,7 +340,7 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   override def pp: Ident = if (chunks.isEmpty) "emp" else {
     def pt(l: List[Heaplet]) = l.map(_.pp).sortBy(x => x)
 
-    List(ptss, apps, blocks).flatMap(pt).mkString(" ** ")
+    List(ptss, apps, blocks, rapps).flatMap(pt).mkString(" ** ")
   }
 
   def blocks: List[Block] = for (b@Block(_, _) <- chunks) yield b
@@ -241,6 +349,12 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
 
   def ptss: List[PointsTo] = for (b@PointsTo(_, _, _) <- chunks) yield b
 
+  def rapps: List[RApp] = for (b@RApp(_, _, _, _, _, _, _) <- chunks) yield b
+
+  def borrows: List[RApp] = rapps.filter(_.isBorrow)
+  def owneds: List[RApp] = rapps.filter(!_.isBorrow)
+  def prims(predicates: PredicateEnv): List[RApp] = rapps.filter(_.isPrim(predicates))
+
   def subst(sigma: Map[Var, Expr]): SFormula = SFormula(chunks.map(_.subst(sigma)))
 
   // Collect certain sub-expressions
@@ -248,6 +362,10 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
     chunks.foldLeft(Set.empty[R])((a, h) => a ++ h.collect(p))
   }
 
+  def setTagAndRef(r: RApp): SFormula = SFormula(chunks.map {
+    case h@RApp(_, _, _, _, _, _, _) if r.isBorrow => h.setRef(r.ref.get).setTag(r.tag.incrUnrolls)
+    case h => h.setTag(r.tag.incrUnrolls)
+  })
   def setSAppTags(t: PTag): SFormula = SFormula(chunks.map(h => h.setTag(t)))
 
   def callTags: List[Int] = chunks.flatMap(_.getTag).map(_.calls)
@@ -285,10 +403,11 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   }
 
   lazy val profile: SProfile = {
-    val appProfile = apps.groupBy(_.pred).mapValues(_.length)
+    val rappProfile = owneds.groupBy(r => r.pred).mapValues(_.length)
+    val appProfile = apps.groupBy(_.pred_with_info).mapValues(_.length)
     val blockProfile = blocks.groupBy(_.sz).mapValues(_.length)
     val ptsProfile = ptss.groupBy(_.offset).mapValues(_.length)
-    SProfile(appProfile, blockProfile, ptsProfile)
+    SProfile(rappProfile, appProfile, blockProfile, ptsProfile)
   }
 
 
@@ -306,6 +425,6 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   * @param blocks how many blocks there are of each size?
   * @param ptss how many points-to chunks there are with each offset?
   */
-case class SProfile(apps: Map[Ident, Int], blocks: Map[Int, Int], ptss: Map[Int, Int])
+case class SProfile(rapps: Map[Ident, Int], apps: Map[Ident, Int], blocks: Map[Int, Int], ptss: Map[Int, Int])
 
 

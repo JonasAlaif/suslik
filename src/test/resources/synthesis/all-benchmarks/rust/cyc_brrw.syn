@@ -1,0 +1,18 @@
+# -c 4 -o 4 -p true
+
+#####
+
+predicate PRIM_u8(int v) {
+| true => { v >= 0 && v < 128; emp }
+}
+
+predicate Enum(int len) {
+| disc == 0 => { len == 0 ; priv d: u8(disc) ** f1: u8(v_f1) }
+| disc == 1 => { len == len_a + 1 ; priv d: u8(disc) ** f2: u8(v_f2) ** a: Enum(len_a) }
+}
+
+{ x: &a Enum(len_x) }
+void zero(loc x)
+{ len_x == len_result ; x: &a Enum(len_x_FUT) ** result: Enum(len_result) }
+
+#####

@@ -1,0 +1,26 @@
+# -c 10 -o 10 -p true
+
+#####
+
+predicate PRIM_u8(loc name, int v) {
+| true => { v >= 0 && v < 128; emp }
+}
+
+predicate Box_int(loc box, int v) {
+| true => { PRIM_u8(bv, v) }
+}
+predicate TupleA2_Boxint_Boxint(loc tpl, int v0, int v1) {
+| true => { Box_int(box0, v0) ** Box_int(box1, v1) }
+}
+predicate TupleB2_Boxint_Boxint(loc tpl, int v0, int v1) {
+| true => { Box_int(box0, v0) ** Box_int(box1, v1) }
+}
+predicate Box_Tuple2_Boxint_Boxint(loc root, int v0, int v1) {
+| true => { PRIM_u8(bv, f) ** TupleB2_Boxint_Boxint(tpl, v0, v1) }
+}
+
+{ v0 < 127 && v1 == (v0 > 10 ? 5 : 6) ; TupleA2_Boxint_Boxint(x, v0, v1) }
+void box_and_swap(loc x)
+{ (v0 <= 10 \/ v1 == 5) && v1p == v1+1 && v0p == v0+1 ; Box_Tuple2_Boxint_Boxint(result, v1p, v0p) }
+
+#####

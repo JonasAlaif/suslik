@@ -5,7 +5,7 @@ import scala.language.implicitConversions
 import scala.util.DynamicVariable
 import org.tygus.suslik.language.{Expressions, PrettyPrinting}
 import org.tygus.suslik.language.Expressions.{ExprSubst, Subst}
-import org.tygus.suslik.logic.{Block, Heaplet, PointsTo, SApp, Specifications}
+import org.tygus.suslik.logic.{Block, Heaplet, PointsTo, SApp, RApp, Specifications}
 import org.tygus.suslik.logic.Specifications.{Goal, SuspendedCallGoal}
 import org.tygus.suslik.synthesis.Memoization
 import org.tygus.suslik.synthesis.Memoization.GoalStatus
@@ -139,7 +139,7 @@ object ProofTraceJson {
     implicit val rw: RW[GoalEntry] = macroRW
 
     def apply(goal: Goal): GoalEntry = apply(goal.label.pp, goal.uid,
-      AssertionEntry(goal.pre), AssertionEntry(goal.post), goal.sketch.pp,
+      AssertionEntry(goal.pre, goal.pre_unfoldable), AssertionEntry(goal.post, goal.post_unfoldable), goal.sketch.pp,
       vars(goal, goal.programVars), vars(goal, goal.existentials),
       vars(goal, goal.universalGhosts), goal.callGoal.map(callInfo(goal, _)))
 
@@ -151,8 +151,8 @@ object ProofTraceJson {
       val funSpec = companion.toFunSpec
       val toActual = compose(callGoal.companionToFresh, callGoal.freshToActual)
       apply(callGoal.call.companion.get.pp, companion.uid,
-        AssertionEntry(funSpec.pre.subst(toActual)),
-        AssertionEntry(funSpec.post.subst(toActual)), callGoal.actualCall.pp,
+        AssertionEntry(funSpec.pre.subst(toActual), goal.pre_unfoldable),
+        AssertionEntry(funSpec.post.subst(toActual), goal.post_unfoldable), callGoal.actualCall.pp,
         Seq(), Seq(), Seq())
     }
 
@@ -164,8 +164,8 @@ object ProofTraceJson {
   object AssertionEntry {
     implicit val rw: RW[AssertionEntry] = macroRW
 
-    def apply(a: Specifications.Assertion): AssertionEntry =
-      apply(a.pp,
+    def apply(a: Specifications.Assertion, unfoldable_from: Int): AssertionEntry =
+      apply(a.pp + s"[$unfoldable_from]",
             a.phi.conjuncts.toSeq.map(AST.fromExpr),
             a.sigma.chunks.map(AST.fromHeaplet))
   }
@@ -263,6 +263,8 @@ object ProofTraceJson {
       case OverloadedBinaryExpr(op, left, right) => AST(labelOf(op), Seq(left, right).map(fromExpr))
       case SetLiteral(elems) => AST("{}", elems.map(fromExpr))
       case IfThenElse(cond, left, right) => AST("ite", Seq(cond, left, right).map(fromExpr))
+      case Named(lft) => fromExpr(lft)
+      case NilLifetime => AST("NilLifetime")
       case Unknown(name, params, pendingSubst) =>
         AST("Unknown", AST(name) +: params.toSeq.map(fromExpr) :+ fromSubst(pendingSubst))
     }
@@ -276,6 +278,9 @@ object ProofTraceJson {
       case Block(loc, sz) => AST("[]", Seq(fromExpr(loc), AST(sz)))
       case SApp(pred, args, tag, card) => AST("SApp",
         Seq(AST(pred), AST("()", args.map(fromExpr)), AST(tag.pp), fromExpr(card)))
+      case RApp(priv, field, ref, pred, fnSpec, lft, tag) => AST("RApp",
+        (if (priv) Seq(AST("priv")) else Seq()) ++
+          Seq(fromExpr(field), AST(ref.map(_.pp).getOrElse("")), AST(pred), AST("()", fnSpec.map(fromExpr)), fromExpr(lft), AST(tag.pp)))
     }
 
     object Leaf {

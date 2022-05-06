@@ -1,0 +1,67 @@
+# -c 10 -o 10 -p true
+
+#####
+predicate PRIM_u8(loc name, int v) {
+| true => { v >= 0 && v < 128; emp }
+}
+
+predicate Enum(loc name, int v, int len) {
+| true => { PRIM_u8_GHOST(d, disc) ** EnumInternal_GHOST(i, disc, v, len) }
+}
+predicate EnumInternal(loc name, int disc, int v, int len) {
+| disc == 0 => { len == 0 ; PRIM_u8(f, v) }
+| disc == 1 => { len == len_p + 1 ; Enum(a, v, len_p) }
+}
+
+{ BRRW_Enum(x, v, len)<a> }
+void cycbrrw(loc x)
+{ BLOCKED_Enum(x, v, len)<a> ** BRRW_PRIM_u8(result, v) }
+
+#####
+
+{ BRRW_Enum(x, v, len)<a> }
+
+a) { BLOCKED_Enum(x, v, len)<a, b> ** BRRW_PRIM_u8(f, v)<b> }
+- Done
+
+b) { BLOCKED_Enum(x, v, len)<a, b> ** BRRW_Enum(a, v, len-1)<b> }
+
+b) { BLOCKED_Enum(x, v, len)<a, b> ** BLOCKED_Enum(a, v, len-1)<b, c> ** BRRW_PRIM_u8(result, v)<c> }
+
+b) { BLOCKED_Enum(x, v, len)<a, b> ** BRRW_PRIM_u8(result, v)<c> }
+- Done
+
+{ BLOCKED_Enum(x, v, len)<a, b> ** BRRW_PRIM_u8(result, v)<b> }
+
+#####
+
+{ BRRW_Enum(x, v, len)<a> }
+{ BLOCKED_Enum(x, v, len)<a, b> ** BRRW_PRIM_u8(result, v)<b> }
+
+a) { BRRW_PRIM_u8(f, v)<a> }
+a) { BLOCKED_PRIM_u8(x, v, len)<a, b> ** BRRW_PRIM_u8(result, v)<b> }
+- Done
+
+b) { BRRW_Enum(a, v, len-1)<a> }
+b) { BLOCKED_Enum(a, v, len-1)<a, b> ** BRRW_PRIM_u8(result, v)<b> }
+
+b) { BLOCKED_Enum(a, v, len-1)<a, b'> ** BRRW_PRIM_u8(result, v)<b'> }
+b) { BLOCKED_Enum(a, v, len-1)<a, b> ** BRRW_PRIM_u8(result, v)<b> }
+
+#####
+
+{ BRRW_Enum(x, v, len)<a> }
+{ BLOCKED_Enum(x, {f == result.0}, len)<a, b> ** BRRW_PRIM_u8(result, v)<b> }
+
+a) { BRRW_PRIM_u8(f, v)<a> }
+a) { BLOCKED_PRIM_u8(x, v, len)<a, b> ** BRRW_PRIM_u8(result, v)<b> }
+- Done
+
+b) { BRRW_Enum(a, v, len-1)<a> }
+b) { BLOCKED_Enum(a, v, len-1)<a, b> ** BRRW_PRIM_u8(result, v)<b> }
+
+b) { BLOCKED_Enum(a, v, len-1)<a, b'> ** BRRW_PRIM_u8(result, v)<b'> }
+b) { BLOCKED_Enum(a, v, len-1)<a, b> ** BRRW_PRIM_u8(result, v)<b> }
+
+
+

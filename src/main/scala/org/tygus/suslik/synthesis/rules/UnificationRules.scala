@@ -9,6 +9,7 @@ import org.tygus.suslik.synthesis._
 import org.tygus.suslik.synthesis.rules.Rules._
 
 import scala.Function.tupled
+import org.tygus.suslik.language.LocType
 
 /**
   * The goal of unification rules is to eliminate existentials
@@ -35,7 +36,7 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
     def apply(goal: Goal): Seq[RuleResult] = {
       val pre = goal.pre
       val post = goal.post
-      if (!profilesMatch(pre.sigma, post.sigma, goal.callGoal.isEmpty)) return Nil
+      if (!profilesMatch(pre.sigma, post.sigma, !goal.env.config.canLeak && goal.callGoal.isEmpty)) return Nil
 
 //      val postCandidates = post.sigma.chunks.filter(p => p.vars.exists(goal.isExistential) && heapletFilter(p))
       val postCandidates = post.sigma.chunks.filter(p => heapletFilter(p))
@@ -102,6 +103,7 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
 
   object HeapUnifySimple extends SyntacticUnify with PhaseDisabled
 
+  object HeapUnifyBorrows extends HeapUnify with BorrowsPhase
   object HeapUnifyUnfolding extends HeapUnify with UnfoldingPhase
 
   object HeapUnifyBlock extends HeapUnify with BlockPhase
@@ -220,7 +222,8 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
       for {
         ex <- least(exCandidates) // since all existentials must go, no point trying them in different order
         v <- toSorted(uniCandidates(ex)) ++ constants
-        if goal.getType(ex) == v.getType(goal.gamma).get
+        // Don't pick for Locs (fields) - unification will do this
+        if goal.getType(ex) != LocType && goal.getType(ex) == v.getType(goal.gamma).get
         sigma = Map(ex -> v)
         newPost = goal.post.subst(sigma)
         newCallGoal = goal.callGoal.map(_.updateSubstitution(sigma))

@@ -185,6 +185,10 @@ object SynthesisRunner extends SynthesisRunnerUtil {
       conf => conf.copy(extendedPure = b, delegatePure = b || conf.delegatePure)
     }).text("use extended search space for pure synthesis with CVC4; default: false")
 
+    opt[Unit](name = "canLeak").action(cfg { _ =>
+      _.copy(canLeak = true)
+    }).text("can leak memory (e.g. useful for Rust); default: yes")
+
     opt[Unit](name = "simple").action(cfg { _ =>
       _.copy(simple = true)
     }).text("use simple, unphased rules (this is very slow); default: no")

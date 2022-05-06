@@ -29,6 +29,7 @@ case class SynConfig(
                       memoization: Boolean = true,
                       delegatePure: Boolean = false,
                       extendedPure: Boolean = false,
+                      canLeak: Boolean = true,
                       simple: Boolean = false,
                       // Timeout and logging
                       interactive: Boolean = false,
