@@ -54,7 +54,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       def loadVars(rapp: RApp): Seq[Var] =
         for { v@Var(_) <- rapp.fnSpec; if !goal.programVars.contains(v) } yield v
       // Take first prim, we will unfold all anyway
-      val prims = goal.pre.sigma.prims(goal.env.predicates).filter(h => !loadVars(h).isEmpty)
+      val prims = goal.pre.sigma.prims(goal.env.predicates).filter(h => !h.priv && !loadVars(h).isEmpty)
       if (prims.length == 0) return Seq()
       val prim = prims.head
       val asn = loadPrimPred(prim, goal.vars, goal.env.predicates)
@@ -94,7 +94,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             // True since we might satisfy the call termination requirement now
             hasProgressed = true,
             // If we reborrowed cannot be a companion since the borrows won't match up (need to expire first)
-            isCompanion = !h.isBorrow)
+            isCompanion = true)
         }}
         // TODO: this shouldn't be a flatMap (e.g. if fields in different branches alias)
         val nameSubs = goal.env.predicates(h.pred).clauses.flatMap(
@@ -174,9 +174,9 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             // OPTIMISATION: Once I start closing, don't open any of the current pre
             // Newly added to pre (e.g. by Call) can still be closed
             pre_unfoldable = goal.pre.sigma.rapps.length,
-            post_unfoldable = goal.post_unfoldable + i,
-            // False since we cannot satisfy the call termination requirement before another Open after this
-            hasProgressed = false, isCompanion = true)), kont, this, goal)
+            post_unfoldable = goal.post_unfoldable + i)), kont, this, goal)
+            // TODO: set `isCompanion` = true (so that the next goal and not the current one
+            // is considered as a companion)
       }
     }
   }
@@ -214,7 +214,9 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           goal.post.phi && phi,
           goal.post.sigma ** sigma - h
         )
-        RuleResult(List(goal.spawnChild(post = newPost, hasProgressed = false, isCompanion = true)), IdProducer, this, goal)
+        RuleResult(List(goal.spawnChild(post = newPost)), IdProducer, this, goal)
+            // TODO: set `isCompanion` = true (so that the next goal and not the current one
+            // is considered as a companion)
       }
     }
   }

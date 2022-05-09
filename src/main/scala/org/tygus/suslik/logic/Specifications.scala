@@ -201,8 +201,10 @@ object Specifications extends SepLogicUtils {
       val newUniversalGhosts = this.universalGhosts ++ preSimple.vars -- programVars
 
       // Cannot be a companion if there are outstanding non-expired borrows
+      // (note even though the `isCompanion` is set on the next/returned goal, it tells us if this
+      //  current goal should be considered as a companion)
       val validCompanion = isCompanion &&
-        preSimple.sigma.borrows.forall(b => postSimple.sigma.borrows.exists(_.field == b.field))
+        this.pre.sigma.borrows.forall(b => this.post.sigma.borrows.exists(_.field == b.field))
 
       Goal(preSimple, postSimple, pre_unfoldable, post_unfoldable,
         gammaFinal, programVars, newUniversalGhosts,

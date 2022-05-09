@@ -318,14 +318,15 @@ case class RApp(priv: Boolean, field: Var, ref: Option[Ref], pred: Ident, fnSpec
   }
 
   override def unify(that: Heaplet): Option[ExprSubst] = that match {
-    // Neither can be private. Also if exactly one lifetime is Nil,
-    // then relies on substitution kicking in before anything else for soundness!
-    case RApp(false, tgt, None, p, spec, lft, _) if pred == p && ref.isEmpty && !priv =>
-      Some((field :: blocked :: fnSpec.toList).zip(tgt :: lft :: spec.toList).toMap)
     case RApp(pri, tgt, Some(r), p, spec, lft, _) if field == tgt => {
       assert(pri == priv && p == pred && r == ref.get)
       Some((blocked :: fnSpec.toList).zip(lft :: spec.toList).toMap)
     }
+    // Neither can be private. Also if exactly one lifetime is Nil,
+    // then relies on substitution kicking in before anything else for soundness!
+    case RApp(false, tgt, r, p, spec, lft, _) if pred == p && r == ref && !priv =>
+      Some((field :: blocked :: fnSpec.toList).zip(tgt :: lft :: spec.toList).toMap)
+      // TODO: should only unify borrows (field -> tgt) if in a call goal!
     case _ => None
   }
 
