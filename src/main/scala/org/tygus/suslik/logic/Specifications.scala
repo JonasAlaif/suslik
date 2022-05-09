@@ -200,10 +200,14 @@ object Specifications extends SepLogicUtils {
 //      val newUniversalGhosts = this.universalGhosts.intersect(usedVars) ++ preSimple.vars -- programVars
       val newUniversalGhosts = this.universalGhosts ++ preSimple.vars -- programVars
 
+      // Cannot be a companion if there are outstanding non-expired borrows
+      val validCompanion = isCompanion &&
+        preSimple.sigma.borrows.forall(b => postSimple.sigma.borrows.exists(_.field == b.field))
+
       Goal(preSimple, postSimple, pre_unfoldable, post_unfoldable,
         gammaFinal, programVars, newUniversalGhosts,
         this.fname, this.label.bumpUp(childId), Some(this), env, sketch,
-        callGoal, hasProgressed, isCompanion)
+        callGoal, hasProgressed, validCompanion)
     }
 
     // Goal that is eagerly recognized by the search as unsolvable

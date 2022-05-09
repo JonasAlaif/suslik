@@ -28,7 +28,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     val prePostUniq = if (isPre) "O" else "F"
     val existentials_subst = ip.existentials.map(e => e -> Var(e.name + "_" + rapp.field.name + prePostUniq)).toMap
     // Fields should always alias (so that refs match up in pre/post)
-    val fields_subst = ip.vars.map(e => e -> Var(e.name + "_" + rapp.field.name)).toMap
+    val fields_subst = ip.fields.map(e => e -> Var(e.name + "_" + rapp.field.name)).toMap
     val subst = args_subst ++ existentials_subst ++ fields_subst
     val newIp = ip.copy(clauses = ip.clauses.map(c => InductiveClause(c.selector.subst(subst), c.asn.subst(subst).setTagAndRef(rapp))))
 
@@ -90,9 +90,6 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           goal.spawnChild(
             pre = Assertion(goal.pre.phi && clause.asn.phi && clause.selector, clause.asn.sigma ** goal.pre.sigma - h),
             pre_unfoldable = goal.pre_unfoldable + i,
-            // OPTIMISATION: Once I start opening, don't close any of the current post
-            // Newly added to post (e.g. by BrrwWrite) can still be closed
-            post_unfoldable = goal.post.sigma.owneds.length,
             childId = Some(j),
             // True since we might satisfy the call termination requirement now
             hasProgressed = true,
@@ -174,6 +171,9 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           AppendProducer(Construct(h.field, h.pred, construct_args)) >>
           ExtractHelper(goal)
         RuleResult(List(goal.spawnChild(post = newPost,
+            // OPTIMISATION: Once I start closing, don't open any of the current pre
+            // Newly added to pre (e.g. by Call) can still be closed
+            pre_unfoldable = goal.pre.sigma.rapps.length,
             post_unfoldable = goal.post_unfoldable + i,
             // False since we cannot satisfy the call termination requirement before another Open after this
             hasProgressed = false, isCompanion = true)), kont, this, goal)
@@ -214,15 +214,15 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           goal.post.phi && phi,
           goal.post.sigma ** sigma - h
         )
-        RuleResult(List(goal.spawnChild(post = newPost)), IdProducer, this, goal)
+        RuleResult(List(goal.spawnChild(post = newPost, hasProgressed = false, isCompanion = true)), IdProducer, this, goal)
       }
     }
   }
   object ExpireNoWrite extends Expire {
-    override def filter(r: RApp, goal: Goal): Boolean = goal.isRAppExistential(r)
+    override def filter(r: RApp, goal: Goal): Boolean = !goal.isRAppExistential(r)
   }
   object ExpireFinal extends Expire with InvertibleRule {
-    override def filter(r: RApp, goal: Goal): Boolean = !goal.isRAppExistential(r)
+    override def filter(r: RApp, goal: Goal): Boolean = goal.isRAppExistential(r)
   }
 
   /*
@@ -238,7 +238,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
 
       for {
         brrw <- goal.post.sigma.borrows
-        if goal.isRAppExistential(brrw) //brrw.isWriteableBorrow(goal.existentials)
+        if !goal.isRAppExistential(brrw) //brrw.isWriteableBorrow(goal.existentials)
       } yield {
         val newOwned = brrw.copy(field = Var(brrw.field.name + "_NV"), ref = None)
         val newBrrw = brrw.copy(fnSpec = brrw.fnSpec.zipWithIndex.map(i => Var(brrw.field.pp + i._2)))

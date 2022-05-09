@@ -40,7 +40,7 @@ class CVC4Tests extends FunSuite with SynthesisRunnerUtil with BeforeAndAfterAll
     "maxish",
     GoalLabel(List(1), Nil),
     None,
-    Environment(Map.empty, Map.empty, params, new SynStats(params.timeOut)),
+    Environment(Map.empty, Set.empty, Map.empty, params, new SynStats(params.timeOut)),
     Statements.Hole,
     None, false, false
   )
@@ -123,7 +123,7 @@ class CVC4Tests extends FunSuite with SynthesisRunnerUtil with BeforeAndAfterAll
     "foo",
     GoalLabel(List(1), Nil),
     None,
-    Environment(Map.empty, Map.empty, params,new SynStats(params.timeOut)),
+    Environment(Map.empty, Set.empty, Map.empty, params,new SynStats(params.timeOut)),
     Statements.Hole,
     None, false, false
   )
@@ -205,7 +205,7 @@ class CVC4Tests extends FunSuite with SynthesisRunnerUtil with BeforeAndAfterAll
     "maxish",
     GoalLabel(List(1), Nil),
     None,
-    Environment(Map.empty, Map.empty, params, new SynStats(params.timeOut)),
+    Environment(Map.empty, Set.empty, Map.empty, params, new SynStats(params.timeOut)),
     Statements.Hole,
     None, false, false
   )

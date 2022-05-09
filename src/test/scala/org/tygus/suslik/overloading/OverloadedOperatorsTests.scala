@@ -23,13 +23,13 @@ class OverloadedOperatorsTests extends FunSpec with Matchers with SynthesisRunne
       throw SynthesisException(s"Failed to parse the input:\n$res")
     }
     val prog = res.get
-    val (specs, predEnv, funcEnv, body) = preprocessProgram(prog, params)
+    val (specs, predEnv, predCycles, funcEnv, body) = preprocessProgram(prog, params)
     if (specs.lengthCompare(1) != 0) {
       throw SynthesisException("Expected a single synthesis goal")
     }
     val spec = specs.head
     val FunSpec(name, _, formals, pre, post, var_types) = spec
-    val env = Environment(predEnv, funcEnv, params, new SynStats(params.timeOut))
+    val env = Environment(predEnv, predCycles, funcEnv, params, new SynStats(params.timeOut))
     val goal = topLevelGoal(pre, post, formals, name, env, body, var_types)
     goal
   }
