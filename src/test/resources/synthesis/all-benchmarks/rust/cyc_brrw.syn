@@ -11,8 +11,12 @@ predicate Enum(int len) {
 | disc == 1 => { len == len_a + 1 ; priv d: u8(disc) ** f2: u8(v_f2) ** a: Enum(len_a) }
 }
 
-{ x: &a Enum(len_x) }
+predicate Box(int len) {
+| true => { bx: Enum(len) }
+}
+
+{ x: &a Box(len_x) }
 void zero(loc x)
-{ len_x == len_result ; x: &a Enum(len_x_FUT) ** result: Enum(len_result) }
+{ len_x == len_result ; x: &a Box(len_x_FUT) ** result: Box(len_result) }
 
 #####
