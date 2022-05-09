@@ -204,11 +204,6 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         (phi, sigma) <- if (clauses.length > 1) {
           val sel = selector.asInstanceOf[BinaryExpr]
           val disc = asn.sigma.rapps.find(d => d.fnSpec.length == 1 && d.fnSpec.head == sel.left).get
-          if (goal.pre.sigma.rapps.find(_.field == disc.field).isEmpty) {
-            println("Couldn't find disc in pre:")
-            println(goal.pre.pp)
-            println(goal.post.pp)
-          }
           val pre_disc = goal.pre.sigma.rapps.find(_.field == disc.field).get
           assert(pre_disc.fnSpec.length == 1)
           if (pre_disc.fnSpec.head.asInstanceOf[Const] == sel.right) {
