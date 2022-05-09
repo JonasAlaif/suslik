@@ -58,7 +58,7 @@ object Statements {
             sub
           case Call(fun, result, args, _) =>
             builder.append(mkSpaces(offset))
-            val function_call = s"let (${result.mkString(", ")}) = ${fun.pp}(${args.map(_.pp).mkString(", ")});\n"
+            val function_call = s"let (${result.map(_.pp).mkString(", ")}) = ${fun.pp}(${args.map(_.pp).mkString(", ")});\n"
             builder.append(function_call)
             sub
           case SeqComp(s1,s2) =>
