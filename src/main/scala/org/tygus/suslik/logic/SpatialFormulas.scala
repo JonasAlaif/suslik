@@ -403,11 +403,12 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   }
 
   lazy val profile: SProfile = {
-    val rappProfile = owneds.groupBy(r => r.pred).mapValues(_.length)
+    val rappOwnedsProfile = owneds.groupBy(r => r.pred).mapValues(_.length)
+    val rappBorrowsProfile = borrows.groupBy(r => r.pred).mapValues(_.length)
     val appProfile = apps.groupBy(_.pred_with_info).mapValues(_.length)
     val blockProfile = blocks.groupBy(_.sz).mapValues(_.length)
     val ptsProfile = ptss.groupBy(_.offset).mapValues(_.length)
-    SProfile(rappProfile, appProfile, blockProfile, ptsProfile)
+    SProfile((rappOwnedsProfile, rappBorrowsProfile), appProfile, blockProfile, ptsProfile)
   }
 
 
@@ -425,6 +426,6 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   * @param blocks how many blocks there are of each size?
   * @param ptss how many points-to chunks there are with each offset?
   */
-case class SProfile(rapps: Map[Ident, Int], apps: Map[Ident, Int], blocks: Map[Int, Int], ptss: Map[Int, Int])
+case class SProfile(rapps: (Map[Ident, Int], Map[Ident, Int]), apps: Map[Ident, Int], blocks: Map[Int, Int], ptss: Map[Int, Int])
 
 

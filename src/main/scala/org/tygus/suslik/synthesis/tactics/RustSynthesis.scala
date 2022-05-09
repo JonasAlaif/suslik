@@ -23,9 +23,9 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
       // FailRules.PostInconsistent,
       // FailRules.CheckPost
       ) ++
-      (if (goal.post.sigma.apps.nonEmpty)
-        List(LogicalRules.FrameUnfoldingFinal,
-          UnificationRules.HeapUnifyUnfolding)
+      (if (goal.post.sigma.rapps.nonEmpty)
+        List(LogicalRules.FrameBorrowsFinal,
+          UnificationRules.HeapUnifyBorrows)
       else
         List(UnfoldingRules.CallRule,
           UnificationRules.SubstRight,

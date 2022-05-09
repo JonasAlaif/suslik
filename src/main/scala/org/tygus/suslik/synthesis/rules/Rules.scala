@@ -70,9 +70,10 @@ object Rules {
     }
 
     def profilesMatch(pre: SFormula, post: SFormula, exact: Boolean): Boolean = {
-      pre.borrows.map(_.field).toSet == post.borrows.map(_.field).toSet &&
-      (if (exact) pre.profile.rapps == pre.profile.rapps
-      else multiSubset(pre.profile.rapps, pre.profile.rapps))
+      // pre.borrows.map(_.field).toSet == post.borrows.map(_.field).toSet &&
+      assert(!exact)
+      multiSubset(post.profile.rapps._1, pre.profile.rapps._1) &&
+        multiSubset(post.profile.rapps._2, pre.profile.rapps._2)
     }
   }
 

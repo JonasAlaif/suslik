@@ -126,7 +126,7 @@ object LogicalRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
     def apply(goal: Goal): Seq[RuleResult] = {
       val pre = goal.pre
       val post = goal.post
-      if (!profilesMatch(pre.sigma, post.sigma, goal.callGoal.isEmpty)) return Nil
+      if (!profilesMatch(pre.sigma, post.sigma, !goal.env.config.canLeak && goal.callGoal.isEmpty)) return Nil
 
       def isMatch(hPre: Heaplet, hPost: Heaplet): Boolean = hPre.eqModTags(hPost) && heapletFilter(hPost)
 
