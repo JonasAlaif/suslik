@@ -241,5 +241,6 @@ case class Environment(predicates: PredicateEnv,
       functions=functions.map{case (k,v) => (k, v.resolveOverloading(this))})
   }
 
+  def is_cyclic(r: RApp): Boolean = predicateCycles(r.pred)
 }
 

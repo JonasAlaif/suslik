@@ -30,7 +30,7 @@ class CVC4Tests extends FunSuite with SynthesisRunnerUtil with BeforeAndAfterAll
         BinaryExpr(Expressions.OpEq,Expressions.Var("y"),Expressions.Var("m"))
       ))),
       SFormula(List(PointsTo(Expressions.Var("r"),0,Expressions.Var("m"))))), //post
-    0, 0,
+    UnfoldConstraints(),
     Map(Expressions.Var("r") -> LocType,
       Expressions.Var("x") -> IntType,
       Expressions.Var("y") -> IntType,
@@ -111,7 +111,7 @@ class CVC4Tests extends FunSuite with SynthesisRunnerUtil with BeforeAndAfterAll
     Assertion(PFormula(Set[Expr](BinaryExpr(Expressions.OpSetEq,BinaryExpr(Expressions.OpUnion,SetLiteral(List(Expressions.Var("v"))),Expressions.Var("S1")),
       BinaryExpr(Expressions.OpUnion, SetLiteral(List(Expressions.Var("v1"))),Expressions.Var("S11"))))),
       SFormula(Nil)), //post
-    0, 0,
+    UnfoldConstraints(),
     Map(Expressions.Var("x") -> LocType,
       Expressions.Var("S1") -> IntSetType,
       Expressions.Var("v") -> IntType,
@@ -195,7 +195,7 @@ class CVC4Tests extends FunSuite with SynthesisRunnerUtil with BeforeAndAfterAll
     Assertion(PFormula(Set[Expr](BinaryExpr(Expressions.OpLeq,Expressions.Var("x"),Expressions.Var("m")),
       BinaryExpr(Expressions.OpLeq,Expressions.Var("y"),Expressions.Var("m")))),
       SFormula(List(PointsTo(Expressions.Var("r"),0,Expressions.Var("m"))))), //post
-    0, 0,
+    UnfoldConstraints(),
     Map(Expressions.Var("r") -> LocType,
       Expressions.Var("x") -> IntType,
       Expressions.Var("y") -> IntType,

@@ -79,7 +79,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
 
     def apply(goal: Goal): Seq[RuleResult] = {
       for {
-        (h, i) <- goal.pre.sigma.rapps.drop(goal.pre_unfoldable).zipWithIndex
+        (h, c) <- goal.constraints.canUnfoldPre(goal)
         if !h.priv // Must be non-private
         // Only for non-primitive types
         if !h.isPrim(goal.env.predicates)
@@ -89,7 +89,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val newGoals = clauses.zipWithIndex.map { case (clause, j) => {
           goal.spawnChild(
             pre = Assertion(goal.pre.phi && clause.asn.phi && clause.selector, clause.asn.sigma ** goal.pre.sigma - h),
-            pre_unfoldable = goal.pre_unfoldable + i,
+            constraints = c,
             childId = Some(j),
             // True since we might satisfy the call termination requirement now
             hasProgressed = true,
@@ -150,7 +150,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     def apply(goal: Goal): Seq[RuleResult] = {
       for {
         // TODO: Could potentially be a create-borrow rule as well for local lifetimes
-        (h, i) <- goal.post.sigma.owneds.drop(goal.post_unfoldable).zipWithIndex
+        (h, c) <- goal.constraints.canUnfoldPost(goal)
         if h.tag.unrolls < goal.env.config.maxCloseDepth
         val (clauses, _, fresh_subst) = loadPred(h, goal.vars, goal.env.predicates, false)
         InductiveClause(selector, asn) <- clauses
@@ -173,8 +173,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         RuleResult(List(goal.spawnChild(post = newPost,
             // OPTIMISATION: Once I start closing, don't open any of the current pre
             // Newly added to pre (e.g. by Call) can still be closed
-            pre_unfoldable = goal.pre.sigma.rapps.length,
-            post_unfoldable = goal.post_unfoldable + i,
+            constraints = c.blockAllPre(goal),
             // Hasn't progressed since we didn't progress toward termination
             // Could be used as a companion, but currently won't since it isn't possible to make progess after closing (no more open)
             hasProgressed = false, isCompanion = true)), kont, this, goal)

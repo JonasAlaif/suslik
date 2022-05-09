@@ -139,7 +139,7 @@ object ProofTraceJson {
     implicit val rw: RW[GoalEntry] = macroRW
 
     def apply(goal: Goal): GoalEntry = apply(goal.label.pp, goal.uid,
-      AssertionEntry(goal.pre, goal.pre_unfoldable), AssertionEntry(goal.post, goal.post_unfoldable), goal.sketch.pp,
+      AssertionEntry(goal.pre, goal.constraints.pre_noncyc, goal.constraints.pre_cyc), AssertionEntry(goal.post, goal.constraints.post_noncyc, goal.constraints.post_cyc), goal.sketch.pp,
       vars(goal, goal.programVars), vars(goal, goal.existentials),
       vars(goal, goal.universalGhosts), goal.callGoal.map(callInfo(goal, _)))
 
@@ -151,8 +151,8 @@ object ProofTraceJson {
       val funSpec = companion.toFunSpec
       val toActual = compose(callGoal.companionToFresh, callGoal.freshToActual)
       apply(callGoal.call.companion.get.pp, companion.uid,
-        AssertionEntry(funSpec.pre.subst(toActual), goal.pre_unfoldable),
-        AssertionEntry(funSpec.post.subst(toActual), goal.post_unfoldable), callGoal.actualCall.pp,
+        AssertionEntry(funSpec.pre.subst(toActual), goal.constraints.pre_noncyc, goal.constraints.pre_cyc),
+        AssertionEntry(funSpec.post.subst(toActual), goal.constraints.post_noncyc, goal.constraints.post_cyc), callGoal.actualCall.pp,
         Seq(), Seq(), Seq())
     }
 
@@ -164,8 +164,8 @@ object ProofTraceJson {
   object AssertionEntry {
     implicit val rw: RW[AssertionEntry] = macroRW
 
-    def apply(a: Specifications.Assertion, unfoldable_from: Int): AssertionEntry =
-      apply(a.pp + s"[$unfoldable_from]",
+    def apply(a: Specifications.Assertion, unfoldable_noncyc: Int, unfoldable_cyc: Int): AssertionEntry =
+      apply(a.pp + s"[$unfoldable_noncyc/$unfoldable_cyc]",
             a.phi.conjuncts.toSeq.map(AST.fromExpr),
             a.sigma.chunks.map(AST.fromHeaplet))
   }

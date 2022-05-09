@@ -100,13 +100,41 @@ object Specifications extends SepLogicUtils {
     }
   }
 
+  case class UnfoldConstraints(pre_noncyc: Int = 0, // Of all non-cyc rapps
+                               pre_cyc: Int = 0, // Of all cyc rapps
+                               post_noncyc: Int = 0, // Of all non-cyc owneds
+                               post_cyc: Int = 0, // Of all cyc owneds
+    ) {
+      def getPre(g: Goal): (List[RApp], List[RApp]) =
+        g.pre.sigma.rapps.partition(r => g.env.predicateCycles(r.pred))
+      // Borrow or not
+      def canUnfoldPre(g: Goal): List[(RApp, UnfoldConstraints)] = {
+        val (cyc, non) = getPre(g)
+        if (non.length > pre_noncyc)
+          non.drop(pre_noncyc).zipWithIndex.map(ri => (ri._1, this.copy(pre_noncyc = this.pre_noncyc + ri._2)))
+        else cyc.drop(pre_cyc).zipWithIndex.map(ri => (ri._1, this.copy(pre_cyc = this.pre_cyc + ri._2)))
+      }
+      // Only owneds
+      def canUnfoldPost(g: Goal): List[(RApp, UnfoldConstraints)] = {
+        val owneds = g.post.sigma.owneds
+        val (cyc, non) = owneds.partition(r => g.env.predicateCycles(r.pred))
+        if (non.length > post_noncyc)
+          non.drop(post_noncyc).zipWithIndex.map(ri => (ri._1, this.copy(post_noncyc = this.post_noncyc + ri._2)))
+        else cyc.drop(post_cyc).zipWithIndex.map(ri => (ri._1, this.copy(post_cyc = this.post_cyc + ri._2)))
+      }
+      def blockAllPre(g: Goal): UnfoldConstraints =
+        this.copy(pre_noncyc = getPre(g)._2.length, pre_cyc = getPre(g)._1.length)
+
+      def nonBlockedPre(g: Goal): List[RApp] =
+        getPre(g)._2.drop(pre_noncyc) ++ getPre(g)._1.drop(pre_cyc)
+  }
+
   /**
     * Main class for contextual Hoare-style specifications
     */
   case class Goal(pre: Assertion,
                   post: Assertion,
-                  pre_unfoldable: Int, // if I unfold the 2nd SApp, I shouldn't be unfolding 0 or 1 in the future
-                  post_unfoldable: Int,
+                  constraints: UnfoldConstraints, // if I unfold the 2nd SApp, I shouldn't be unfolding 0 or 1 in the future
                   gamma: Gamma, // types of all variables (program, universal, and existential)
                   programVars: List[Var], // program-level variables
                   universalGhosts: Set[Var], // universally quantified ghost variables
@@ -177,8 +205,7 @@ object Specifications extends SepLogicUtils {
 
     def spawnChild(pre: Assertion = this.pre,
                    post: Assertion = this.post,
-                   pre_unfoldable: Int = this.pre_unfoldable,
-                   post_unfoldable: Int = this.post_unfoldable,
+                   constraints: UnfoldConstraints = this.constraints,
                    gamma: Gamma = this.gamma,
                    programVars: List[Var] = this.programVars,
                    childId: Option[Int] = None,
@@ -206,7 +233,7 @@ object Specifications extends SepLogicUtils {
       val validCompanion = isCompanion &&
         preSimple.sigma.borrows.forall(b => postSimple.sigma.borrows.exists(_.field == b.field))
 
-      Goal(preSimple, postSimple, pre_unfoldable, post_unfoldable,
+      Goal(preSimple, postSimple, constraints,
         gammaFinal, programVars, newUniversalGhosts,
         this.fname, this.label.bumpUp(childId), Some(this), env, sketch,
         callGoal, hasProgressed, validCompanion)
@@ -258,7 +285,7 @@ object Specifications extends SepLogicUtils {
     def allUniversals: Set[Var] = universalGhosts ++ programVars
 
     // All universally-quantified variables this goal has ever used
-    def possiblyProgramVars: Set[Var] = pre.sigma.rapps.drop(pre_unfoldable).flatMap(_.vars).toSet ++ programVars
+    def possiblyProgramVars: Set[Var] = constraints.nonBlockedPre(this).flatMap(_.vars).toSet ++ programVars
 
     // Variables currently used only in specs
     def ghosts: Set[Var] = pre.vars ++ post.vars -- programVars
@@ -347,7 +374,7 @@ object Specifications extends SepLogicUtils {
     val post1 = post.resolveOverloading(gamma)
     val formalNames = formals.map(_._1)
     val ghostUniversals = pre1.vars -- formalNames
-    Goal(pre1, post1, 0, 0,
+    Goal(pre1, post1, UnfoldConstraints(),
       gamma, formalNames, ghostUniversals,
       fname, topLabel, None, env.resolveOverloading(), sketch.resolveOverloading(gamma),
       None, hasProgressed = false, isCompanion = true)
