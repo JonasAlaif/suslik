@@ -205,8 +205,8 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
       case to ~ from ~ offset_str => Load(to, IntType, from, Integer.parseInt(offset_str)) // todo: maybe not ignore type here
     }
       // Call
-      ||| opt("let" ~> varParser <~ "=") ~ varParser ~ ("(" ~> repsep(expr, ",") <~ ")" <~ ";") ^^ {
-      case result ~ fun ~ args => Call(fun, result, args.map(desugar), None)
+      ||| opt("let" ~> ("(" ~> repsep(varParser, ",") <~ ")") <~ "=") ~ varParser ~ ("(" ~> repsep(expr, ",") <~ ")" <~ ";") ^^ {
+      case result ~ fun ~ args => Call(fun, result.getOrElse(List.empty), args.map(desugar), None)
     }
       // if
       ||| ("if" ~> "(" ~> expr <~ ")") ~ ("{" ~> codeWithHoles <~ "}") ~ ("else" ~> "{" ~> codeWithHoles <~ "}") ^^ {

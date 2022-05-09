@@ -94,7 +94,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             // True since we might satisfy the call termination requirement now
             hasProgressed = true,
             // If we reborrowed cannot be a companion since the borrows won't match up (need to expire first)
-            isCompanion = true)
+            isCompanion = !h.isBorrow)
         }}
         // TODO: this shouldn't be a flatMap (e.g. if fields in different branches alias)
         val nameSubs = goal.env.predicates(h.pred).clauses.flatMap(
@@ -174,9 +174,10 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             // OPTIMISATION: Once I start closing, don't open any of the current pre
             // Newly added to pre (e.g. by Call) can still be closed
             pre_unfoldable = goal.pre.sigma.rapps.length,
-            post_unfoldable = goal.post_unfoldable + i)), kont, this, goal)
-            // TODO: set `isCompanion` = true (so that the next goal and not the current one
-            // is considered as a companion)
+            post_unfoldable = goal.post_unfoldable + i,
+            // Hasn't progressed since we didn't progress toward termination
+            // Could be used as a companion, but currently won't since it isn't possible to make progess after closing (no more open)
+            hasProgressed = false, isCompanion = true)), kont, this, goal)
       }
     }
   }
@@ -203,6 +204,11 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         (phi, sigma) <- if (clauses.length > 1) {
           val sel = selector.asInstanceOf[BinaryExpr]
           val disc = asn.sigma.rapps.find(d => d.fnSpec.length == 1 && d.fnSpec.head == sel.left).get
+          if (goal.pre.sigma.rapps.find(_.field == disc.field).isEmpty) {
+            println("Couldn't find disc in pre:")
+            println(goal.pre.pp)
+            println(goal.post.pp)
+          }
           val pre_disc = goal.pre.sigma.rapps.find(_.field == disc.field).get
           assert(pre_disc.fnSpec.length == 1)
           if (pre_disc.fnSpec.head.asInstanceOf[Const] == sel.right) {
@@ -214,9 +220,9 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           goal.post.phi && phi,
           goal.post.sigma ** sigma - h
         )
-        RuleResult(List(goal.spawnChild(post = newPost)), IdProducer, this, goal)
-            // TODO: set `isCompanion` = true (so that the next goal and not the current one
-            // is considered as a companion)
+        RuleResult(List(goal.spawnChild(post = newPost,
+            // Hasn't progressed since we didn't progress toward termination, but can be companion
+            hasProgressed = false, isCompanion = true)), IdProducer, this, goal)
       }
     }
   }

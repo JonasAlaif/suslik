@@ -95,7 +95,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
         if (goal.env.config.maxCalls :: goal.pre.sigma.callTags).min < goal.env.config.maxCalls
 
         newGamma = goal.gamma ++ (f.params ++ f.var_decl).toMap // Add f's (fresh) variables to gamma
-        call = Call(Var(f.name), None, f.params.map(_._1), l)
+        call = Call(Var(f.name), List.empty, f.params.map(_._1), l)
         calleePostSigma = f.post.sigma.setSAppTags(PTag(1, 0))
         callePost = Assertion(f.post.phi, calleePostSigma)
         suspendedCallGoal = Some(SuspendedCallGoal(goal.pre, goal.post, callePost, call, freshSub))

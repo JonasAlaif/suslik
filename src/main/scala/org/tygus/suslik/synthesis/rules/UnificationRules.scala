@@ -165,31 +165,29 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
       val s2 = goal.post.sigma
 
       // Can e be substituted with d?
-      def canSubst(e: Expr, d: Expr) = e match {
-        case x@Var(_) =>
-          // e must be an existential var:
-          goal.isExistential(x) &&
-          // if it's a program-level existential, then all vars in d must be program-level
-          (!goal.isProgramLevelExistential(x) || d.vars.subsetOf(goal.programVars.toSet))
-        case _ => false
-      }
+      def canSubst(e: Var, d: Expr) =
+        // e must be an existential var:
+        goal.isExistential(e) &&
+        // e must not occur in d:
+        !d.vars.contains(e) &&
+        // if it's a program-level existential, then all vars in d must be program-level
+        (!goal.isProgramLevelExistential(e) || d.vars.subsetOf(goal.programVars.toSet))
 
-      def extractSides(l: Expr, r: Expr): Option[(Var, Expr)] =
-        if (l.vars.intersect(r.vars).isEmpty) {
-          if (canSubst(l, r)) Some(l.asInstanceOf[Var], r)
-          else if (canSubst(r, l)) Some(r.asInstanceOf[Var], l)
-          else None
-        } else None
+      def extractSides(l: Expr, r: Expr): Option[(Var, Expr)] = (l, r) match {
+        case (l@Var(_), r) if canSubst(l, r) => Some(l, r)
+        case (r, l@Var(_)) if canSubst(l, r) => Some(l, r)
+        case _ => None
+      }
 
       findConjunctAndRest(e => extractEquality(e).flatMap(tupled(extractSides)), p2)
       match {
-        case Some(((x, e), rest2)) => {
-          val sigma = Map(x -> e)
+        case Some((sub, rest2)) => {
+          val sigma = Map(sub)
           val _p2 = rest2.subst(sigma)
           val _s2 = s2.subst(sigma)
           val newCallGoal = goal.callGoal.map(_.updateSubstitution(sigma))
           val newGoal = goal.spawnChild(post = Assertion(_p2, _s2), callGoal = newCallGoal)
-          val kont = SubstProducer(x, e) >> IdProducer >> ExtractHelper(goal)
+          val kont = SubstMapProducer(sigma) >> IdProducer >> ExtractHelper(goal)
           ProofTrace.current.add(ProofTrace.DerivationTrail.withSubst(goal, Seq(newGoal), this, sigma))
           List(RuleResult(List(newGoal), kont, this, goal))
         }

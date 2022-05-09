@@ -58,8 +58,7 @@ object Statements {
             sub
           case Call(fun, result, args, _) =>
             builder.append(mkSpaces(offset))
-            val res = result.map(r => s"let ${r.pp} = ").getOrElse("")
-            val function_call = s"$res${fun.pp}(${args.map(_.pp).mkString(", ")});\n"
+            val function_call = s"let (${result.mkString(", ")}) = ${fun.pp}(${args.map(_.pp).mkString(", ")});\n"
             builder.append(function_call)
             sub
           case SeqComp(s1,s2) =>
@@ -105,7 +104,7 @@ object Statements {
         case Free(x) =>
           acc ++ x.collect(p)
         case Call(fun, res, args, _) =>
-          acc ++ fun.collect(p) ++ res.map(_.collect(p)).getOrElse(Set()) ++ args.flatMap(_.collect(p)).toSet
+          acc ++ fun.collect(p) ++ res.flatMap(_.collect(p)).toSet ++ args.flatMap(_.collect(p)).toSet
         case SeqComp(s1,s2) =>
           val acc1 = collector(acc)(s1)
           collector(acc1)(s2)
@@ -279,7 +278,7 @@ object Statements {
   case class Store(to: Var, offset: Int, e: Expr) extends Statement
 
   // f(args)
-  case class Call(fun: Var, result: Option[Var], args: Seq[Expr], companion: Option[GoalLabel]) extends Statement
+  case class Call(fun: Var, result: List[Var], args: Seq[Expr], companion: Option[GoalLabel]) extends Statement
 
   // s1; s2
   case class SeqComp(s1: Statement, s2: Statement) extends Statement {
@@ -288,8 +287,6 @@ object Statements {
         case (Skip, _) => s2.simplify // Remove compositions with skip
 //        case (_, Skip) => s1.simplify
         case (SeqComp(s11, s12), _) => SeqComp(s11, SeqComp(s12, s2)).simplify // Left-nested compositions are transformed to right-nested
-        case (Guarded(_, _), _) => { assert(false, "Guarded statement on LHS of seq comp"); this}
-        case (If(_, _, _), _) => { assert(false, "Conditional on LHS of seq comp"); this }
         case (_, Guarded(cond, b)) // Guards are propagated to the top but not beyond the definition of any var in their cond
             if cond.vars.intersect(s1.definedVars).isEmpty => Guarded(cond, SeqComp(s1, b).simplify)
         case (Load(y, tpe, from, offset), _) => simplifyBinding(y, newY => Load(newY, tpe, from, offset))

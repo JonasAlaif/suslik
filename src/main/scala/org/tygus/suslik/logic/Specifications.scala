@@ -204,7 +204,7 @@ object Specifications extends SepLogicUtils {
       // (note even though the `isCompanion` is set on the next/returned goal, it tells us if this
       //  current goal should be considered as a companion)
       val validCompanion = isCompanion &&
-        this.pre.sigma.borrows.forall(b => this.post.sigma.borrows.exists(_.field == b.field))
+        preSimple.sigma.borrows.forall(b => postSimple.sigma.borrows.exists(_.field == b.field))
 
       Goal(preSimple, postSimple, pre_unfoldable, post_unfoldable,
         gammaFinal, programVars, newUniversalGhosts,
@@ -216,15 +216,21 @@ object Specifications extends SepLogicUtils {
     def unsolvableChild: Goal = spawnChild(post = Assertion(pFalse, emp))
 
     // Is this goal unsolvable and should be discarded?
-    def isUnsolvable: Boolean = post.phi == pFalse || {
-        // If there is a universal ghost in the post which can never be loaded
-        // TODO: Might not be complete in all cases
-        post.phi.vars.exists(v =>
-          // Cannot possibly get it as a PV
-          !possiblyProgramVars.contains(v) &&
-          // Will need to get it as a PV
-          universalGhosts.contains(v))
-    }
+    def isUnsolvable: Boolean = post.phi == pFalse
+
+    // Is this goal very tricky to solve (TODO: think about this more)
+    def isProbablyUnsolvable: Boolean =
+      // If there is a universal ghost in the post which can never be loaded
+      // TODO: Might not be complete in all cases
+      post.phi.vars.exists(v =>
+        // Cannot possibly get it as a PV
+        !(pre.vars ++ programVars).contains(v) &&
+        // This doesn't work since we might have { x: Enum(len) }{ len+1 == lenR+1 res: Enum(lenR) }
+        // with x not allowed to be opened anymore, but can still be solved by unif
+        // !possiblyProgramVars.contains(v) &&
+
+        // Will need to get it as a PV
+        universalGhosts.contains(v))
 
     def isTopLevel: Boolean = label == topLabel
 

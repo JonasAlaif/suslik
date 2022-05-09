@@ -43,10 +43,8 @@ case class FunSpec(name: Ident, rType: SSLType, params: Formals,
     gamma
   }
 
-  def result: Option[Var] = {
-    // TODO: handle returning multiple results
-    assert(post.sigma.owneds.length <= 1)
-    post.sigma.owneds.map(_.field).headOption
+  def result: List[Var] = {
+    post.sigma.owneds.map(_.field)
   }
 
   def existentials() : List[Var] = {
