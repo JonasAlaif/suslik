@@ -304,7 +304,7 @@ object Specifications extends SepLogicUtils {
       }
     }
 
-    def formals: Formals = programVars.map(v => (v, getType(v)))
+    def formals: Formals = pre.sigma.rapps.map(_.field).map(v => (v, getType(v)))
 
     def depth: Int = ancestors.length
 
