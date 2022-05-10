@@ -37,6 +37,16 @@ object Expressions {
     override def outputType: SSLType = IntType
   }
 
+  object OpTakeRef extends UnOp {
+    override def pp: String = "&"
+    override def inputType: SSLType = LocType
+    override def outputType: SSLType = LocType
+  }
+  object OpDeRef extends UnOp {
+    override def pp: String = "*"
+    override def inputType: SSLType = LocType
+    override def outputType: SSLType = LocType
+  }
 
   sealed abstract class BinOp extends OverloadedBinOp {
     def lType:SSLType
@@ -298,6 +308,13 @@ object Expressions {
     def lType: SSLType = IntervalType
     def rType: SSLType = IntervalType
   }
+  object OpField extends BinOp {
+    def level: Int = 4
+    override def pp: String = "."
+    def lType: SSLType = LocType
+    def rType: SSLType = LocType
+    override def resType: SSLType = LocType
+  }
 
 
   sealed abstract class Expr extends PrettyPrinting with HasExpressions[Expr] with Ordered[Expr] {
@@ -490,6 +507,8 @@ object Expressions {
       case (v@Var(_), _) if unificationVars.contains(v)           => Some(Map(v -> that))
       case _ => None
     }
+
+    def simplify: Expr = this
   }
 
   // Program-level variable: program-level or ghost
@@ -510,6 +529,7 @@ object Expressions {
     def isNil: Boolean = getNamed.isEmpty
     def subst(sigma: Subst): Lifetime
     override def getType(gamma: Gamma): Option[SSLType] = Some(IntType)
+    def rustLft: Option[String] = None
   }
   // Program-level variable: program-level or ghost
   case class Named(name: Var) extends Lifetime {
@@ -518,6 +538,7 @@ object Expressions {
     override def getNamed: Option[Named] = Some(this)
     override def subst(sigma: Subst): Lifetime =
       sigma.getOrElse(name, this).asInstanceOf[Lifetime]
+    override def rustLft: Option[String] = Some("'" + pp.substring(1))
   }
   case object NilLifetime extends Lifetime {
     override def getNamed: Option[Named] = None
@@ -546,29 +567,27 @@ object Expressions {
 
   case class BinaryExpr(op: BinOp, left: Expr, right: Expr) extends Expr {
     def subst(sigma: Subst): Expr = BinaryExpr(op, left.subst(sigma), right.subst(sigma)).simplify
-    def simplify: Expr = op match {
-      case OpEq => {
-        (left, right) match {
-          case (IntConst(left), IntConst(right)) if left != right => BoolConst(false)
-          case _ if left == right => BoolConst(true)
-          case _ => this
-        }
+    override def simplify: Expr = op match {
+      case OpEq => (left, right) match {
+        case (IntConst(left), IntConst(right)) if left != right => BoolConst(false)
+        case _ if left == right => BoolConst(true)
+        case _ => this
       }
-      case OpAnd => {
-        (left, right) match {
-          case (BoolConst(true), _) => right
-          case (_, BoolConst(true)) => left
-          case (BoolConst(false), _) | (_, BoolConst(false)) => BoolConst(false)
-          case _ => this
-        }
+      case OpAnd => (left, right) match {
+        case (BoolConst(true), _) => right
+        case (_, BoolConst(true)) => left
+        case (BoolConst(false), _) | (_, BoolConst(false)) => BoolConst(false)
+        case _ => this
       }
-      case OpOr => {
-        (left, right) match {
-          case (BoolConst(true), _) | (_, BoolConst(true)) => BoolConst(true)
-          case (BoolConst(false), _) => right
-          case (_, BoolConst(false)) => left
-          case _ => this
-        }
+      case OpOr => (left, right) match {
+        case (BoolConst(true), _) | (_, BoolConst(true)) => BoolConst(true)
+        case (BoolConst(false), _) => right
+        case (_, BoolConst(false)) => left
+        case _ => this
+      }
+      case OpField => left match {
+        case UnaryExpr(OpTakeRef, left) => BinaryExpr(OpField, left, right).simplify
+        case _ => this
       }
       case _ => this
     }
@@ -645,7 +664,11 @@ object Expressions {
   }
 
   case class UnaryExpr(op: UnOp, arg: Expr) extends Expr {
-    def subst(sigma: Subst): Expr = UnaryExpr(op, arg.subst(sigma))
+    def subst(sigma: Subst): Expr = UnaryExpr(op, arg.subst(sigma)).simplify
+    override def simplify: Expr = (op, arg) match {
+      case (OpDeRef, UnaryExpr(OpTakeRef, arg)) => arg.simplify
+      case _ => this
+    }
     override def substUnknown(sigma: UnknownSubst): Expr = UnaryExpr(op, arg.substUnknown(sigma))
     override def level = 5
     override def pp: String = s"${op.pp} ${arg.printInContext(this)}"
@@ -662,7 +685,7 @@ object Expressions {
     override def level: Int = 0
     override def pp: String = s"${cond.printInContext(this)} ? ${left.printInContext(this)} : ${right.printInContext(this)}"
     override def subst(sigma: Subst): Expr = IfThenElse(cond.subst(sigma), left.subst(sigma), right.subst(sigma)).simplify
-    def simplify: Expr = cond match {
+    override def simplify: Expr = cond match {
       case BoolConst(true) => left
       case BoolConst(false) => right
       case _ => this

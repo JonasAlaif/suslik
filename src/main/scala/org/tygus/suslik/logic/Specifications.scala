@@ -100,33 +100,50 @@ object Specifications extends SepLogicUtils {
     }
   }
 
-  case class UnfoldConstraints(pre_noncyc: Int = 0, // Of all non-cyc rapps
-                               pre_cyc: Int = 0, // Of all cyc rapps
-                               post_noncyc: Int = 0, // Of all non-cyc owneds
-                               post_cyc: Int = 0, // Of all cyc owneds
+  // Newly added to pre (e.g. by Call) can still be closed
+  case class UnfoldConstraints(preNoncyc: Int = 0, // Of all non-cyc rapps
+                               preCyc: Int = 0, // Of all cyc rapps
+                               postNoncyc: Int = 0, // Of all non-cyc owneds
+                               postCyc: Int = 0, // Of all cyc owneds
     ) {
       def getPre(g: Goal): (List[RApp], List[RApp]) =
         g.pre.sigma.rapps.partition(r => g.env.predicateCycles(r.pred))
       // Borrow or not
       def canUnfoldPre(g: Goal): List[(RApp, UnfoldConstraints)] = {
         val (cyc, non) = getPre(g)
-        if (non.length > pre_noncyc)
-          non.drop(pre_noncyc).zipWithIndex.map(ri => (ri._1, this.copy(pre_noncyc = this.pre_noncyc + ri._2)))
-        else cyc.drop(pre_cyc).zipWithIndex.map(ri => (ri._1, this.copy(pre_cyc = this.pre_cyc + ri._2)))
+        if (non.length > preNoncyc)
+          non.drop(preNoncyc).zipWithIndex.map(ri => (ri._1, this.copy(preNoncyc = this.preNoncyc + ri._2)))
+        else cyc.drop(preCyc).zipWithIndex.map(ri => (ri._1, this.copy(
+          // Can no longer open non-cyclic
+            preNoncyc = non.length,
+            preCyc = this.preCyc + ri._2
+          ))
+        )
       }
       // Only owneds
       def canUnfoldPost(g: Goal): List[(RApp, UnfoldConstraints)] = {
         val owneds = g.post.sigma.owneds
         val (cyc, non) = owneds.partition(r => g.env.predicateCycles(r.pred))
-        if (non.length > post_noncyc)
-          non.drop(post_noncyc).zipWithIndex.map(ri => (ri._1, this.copy(post_noncyc = this.post_noncyc + ri._2)))
-        else cyc.drop(post_cyc).zipWithIndex.map(ri => (ri._1, this.copy(post_cyc = this.post_cyc + ri._2)))
+        if (non.length > postNoncyc)
+          non.drop(postNoncyc).zipWithIndex.map(ri =>
+            // Optimization: once closing non-cyclic cannot open non-cyclic
+            (ri._1, this.copy(postNoncyc = this.postNoncyc + ri._2).blockNoncycPre(g))
+          )
+        else cyc.drop(postCyc).zipWithIndex.map(ri => (ri._1, this.copy(
+          // Can no longer close non-cyclic
+            postNoncyc = non.length,
+            postCyc = this.postCyc + ri._2
+          // Optimization: once closing cyclic cannot open
+          ).blockAllPre(g))
+        )
       }
+      def blockNoncycPre(g: Goal): UnfoldConstraints =
+        this.copy(preNoncyc = getPre(g)._2.length)
       def blockAllPre(g: Goal): UnfoldConstraints =
-        this.copy(pre_noncyc = getPre(g)._2.length, pre_cyc = getPre(g)._1.length)
+        this.copy(preNoncyc = getPre(g)._2.length, preCyc = getPre(g)._1.length)
 
       def nonBlockedPre(g: Goal): List[RApp] =
-        getPre(g)._2.drop(pre_noncyc) ++ getPre(g)._1.drop(pre_cyc)
+        getPre(g)._2.drop(preNoncyc) ++ getPre(g)._1.drop(preCyc)
   }
 
   /**
@@ -291,7 +308,7 @@ object Specifications extends SepLogicUtils {
     def ghosts: Set[Var] = pre.vars ++ post.vars -- programVars
 
     // Variables used in the suspended call (if it exists)
-    private def callVars: Set[Var] = callGoal.map(_.actualCall.args.tail.flatMap(_.vars).toSet).getOrElse(Set())
+    private def callVars: Set[Var] = callGoal.map(_.actualCall.args.flatMap(_.vars).toSet).getOrElse(Set())
 
     // Currently used ghosts that appear only in the postcondition (or suspened call)
     def existentials: Set[Var] = post.vars ++ callVars -- allUniversals
@@ -311,7 +328,7 @@ object Specifications extends SepLogicUtils {
     def isProgramLevelExistential(x:Var): Boolean = x.name.startsWith(progLevelPrefix) || (
       callGoal match {
         case None => false
-        case Some(cg) => cg.call.args.tail.contains(x)
+        case Some(cg) => cg.call.args.contains(x)
       })
 
     def getType(x: Var): SSLType = {
@@ -331,7 +348,7 @@ object Specifications extends SepLogicUtils {
       }
     }
 
-    def formals: Formals = pre.sigma.rapps.map(_.field).map(v => (v, getType(v)))
+    def formals: Formals = pre.sigma.sigRapps.map(_.field).map(v => (v, getType(v)))
 
     def depth: Int = ancestors.length
 

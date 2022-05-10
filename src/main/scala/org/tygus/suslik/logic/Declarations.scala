@@ -43,9 +43,11 @@ case class FunSpec(name: Ident, rType: SSLType, params: Formals,
     gamma
   }
 
-  def result: List[Var] = {
-    post.sigma.owneds.map(_.field)
-  }
+  def rustParams: RustFormals = pre.sigma.sigRapps.map(r => (r.field, r.ref, r.pred))
+  def rustReturns: RustFormals = post.sigma.rapps.filter(r => pre.sigma.rapps.forall(_.field != r.field)).map(r => (r.field, r.ref, r.pred))
+  def lfts: Set[String] = post.sigma.sigRapps.flatMap(_.ref).map(_.lft.rustLft.get).toSet
+
+  def result: List[Var] = rustReturns.map(_._1)
 
   def existentials() : List[Var] = {
     val params = this.params.map(_._1).toSet

@@ -124,7 +124,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
       val call = callGoal.call
       // In case of a non-recursive call, there might be no predicates in the callee post, and hence no call tags:
       val callTag = (0 :: (callGoal.callerPre.sigma - goal.pre.sigma).callTags).max + 1
-      val noGhostArgs = call.args.tail.forall(_.vars.subsetOf(goal.programVars.toSet))
+      val noGhostArgs = call.args.forall(_.vars.subsetOf(goal.programVars.toSet))
 
       if (post.sigma.isEmp &&                                   // companion's transformed pre-heap is empty
         goal.existentials.isEmpty &&                            // no existentials
@@ -135,8 +135,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
         val calleePostSigma = callGoal.calleePost.sigma.setSAppTags(PTag(callTag))
         val newPre = Assertion(pre.phi && callGoal.calleePost.phi, pre.sigma ** calleePostSigma)
         val newPost = callGoal.callerPost
-        val newProgramVars = call.args.head.asInstanceOf[Var] :: goal.programVars;
-        val newGoal = goal.spawnChild(pre = newPre, post = newPost, programVars = newProgramVars, callGoal = None, isCompanion = true)
+        val newGoal = goal.spawnChild(pre = newPre, post = newPost, programVars = goal.programVars ++ call.result, callGoal = None, isCompanion = true)
         val postCallTransition = Transition(goal, newGoal)
         val kont: StmtProducer = SubstMapProducer(callGoal.freshToActual) >> PrependProducer(call) >> ExtractHelper(goal)
 

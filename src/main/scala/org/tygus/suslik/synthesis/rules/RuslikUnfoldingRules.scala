@@ -64,8 +64,8 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         programVars = goal.programVars ++ newVars
       )
       assert(newVars.length == 1)
-      // TODO: ensure that for primitive refs as arguments (eg. "&i32") the * is inserted
-      val kont = SubstProducer(newVars.head, prim.field) >> ExtractHelper(goal)
+      val field = if (prim.isBorrow) UnaryExpr(OpDeRef, prim.field) else prim.field
+      val kont = SubstProducer(newVars.head, field) >> ExtractHelper(goal)
       Seq(RuleResult(List(newGoal), kont, this, goal))
     }
   }
@@ -87,9 +87,11 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       } yield {
         val (clauses, sbst, fresh_subst) = loadPred(h, goal.vars, goal.env.predicates, true)
         val newGoals = clauses.zipWithIndex.map { case (clause, j) => {
+          val newVars = clause.asn.sigma.rapps.map(_.field)
           goal.spawnChild(
-            pre = Assertion(goal.pre.phi && clause.asn.phi && clause.selector, clause.asn.sigma ** goal.pre.sigma - h),
+            pre = Assertion(goal.pre.phi && clause.asn.phi && clause.selector, goal.pre.sigma ** clause.asn.sigma - h),
             constraints = c,
+            programVars = goal.programVars ++ newVars,
             childId = Some(j),
             // True since we might satisfy the call termination requirement now
             hasProgressed = true,
@@ -98,10 +100,11 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         }}
         // TODO: this shouldn't be a flatMap (e.g. if fields in different branches alias)
         val nameSubs = goal.env.predicates(h.pred).clauses.flatMap(
-          _.asn.sigma.rapps.map(a => Var(a.field + "_" + h.field) -> Var(h.field + "." + a.field))
+          _.asn.sigma.rapps.map(a => Var(a.field.name + "_" + h.field.name) -> BinaryExpr(OpField, h.field, a.field))
         ).toMap
+        val nSubsRef = if (h.isBorrow) nameSubs.map(m => m._1 -> UnaryExpr(OpTakeRef, m._2)) else nameSubs
         val kont = BranchProducer(Some(h.toSApp), fresh_subst, sbst, clauses.map(_.selector)) >>
-          SubstMapProducer(nameSubs) >> ExtractHelper(goal)
+          SubstMapProducer(nSubsRef) >> ExtractHelper(goal)
         RuleResult(newGoals, kont, this, goal)
       }
     }
@@ -165,15 +168,12 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           goal.post.phi && asn.phi && selector,
           goal.post.sigma ** noDisc - h
         )
-        val construct_args = if (h.isPrim(goal.env.predicates)) h.fnSpec.tail else asn.sigma.rapps.map(_.field)
+        val construct_args = if (h.isPrim(goal.env.predicates)) h.fnSpec else asn.sigma.rapps.map(_.field)
         val kont =
           UnfoldProducer(h.toSApp, selector, Assertion(asn.phi, asn.sigma), fresh_subst) >>
           AppendProducer(Construct(h.field, h.pred, construct_args)) >>
           ExtractHelper(goal)
-        RuleResult(List(goal.spawnChild(post = newPost,
-            // OPTIMISATION: Once I start closing, don't open any of the current pre
-            // Newly added to pre (e.g. by Call) can still be closed
-            constraints = c.blockAllPre(goal),
+        RuleResult(List(goal.spawnChild(post = newPost, constraints = c,
             // Hasn't progressed since we didn't progress toward termination
             // Could be used as a companion, but currently won't since it isn't possible to make progess after closing (no more open)
             hasProgressed = false, isCompanion = true)), kont, this, goal)

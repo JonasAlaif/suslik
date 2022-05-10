@@ -30,6 +30,8 @@ object Statements {
             builder.append(s"unreachable();\n")
             sub
           case Sub(s) =>
+            // builder.append(mkSpaces(offset))
+            // builder.append(s"// subst(${s.map(m => s"${m._1.pp} -> ${m._2.pp}").mkString(", ")})\n")
             sub ++ s.mapValues(_.subst(sub))
           case Malloc(to, _, sz) =>
             // Ignore type
@@ -57,8 +59,12 @@ object Statements {
             builder.append(s"let ${to.pp} = $pred(${args.map(_.pp).mkString(", ")});\n")
             sub
           case Call(fun, result, args, _) =>
+            val Call(fun, result, args, _) = s.subst(sub)
             builder.append(mkSpaces(offset))
-            val function_call = s"let (${result.map(_.pp).mkString(", ")}) = ${fun.pp}(${args.map(_.pp).mkString(", ")});\n"
+            val res = if (result.length == 0) "_"
+              else if (result.length == 1) result.head.pp
+              else "(" + result.map(_.pp).mkString(", ") + ")"
+            val function_call = s"let $res = ${fun.pp}(${args.map(_.pp).mkString(", ")});\n"
             builder.append(function_call)
             sub
           case SeqComp(s1,s2) =>
@@ -92,7 +98,7 @@ object Statements {
         case Skip => acc
         case Hole => acc
         case Error => acc
-        case Sub(_) => acc
+        case Sub(s) => acc ++ s.values.flatMap(_.collect(p))
         case Store(to, off, e) =>
           acc ++ to.collect(p) ++ e.collect(p)
         case Load(_, _, from, off) =>
@@ -331,7 +337,19 @@ object Statements {
     
     val (name: String, tp: SSLType, formals: Formals) = (f.name, f.rType, f.params)
 
-    def pp: String =
+    def pp: String = {
+      val generics = if (f.lfts.size == 0) "" else s"<${f.lfts.mkString(", ")}>"
+      val returns =
+        if (f.rustReturns.length == 0) ""
+        else if (f.rustReturns.length == 1) s"-> ${f.rustReturns.head._2.map(_.sig).getOrElse("")}${f.rustReturns.head._3} "
+        else s"-> (${f.rustReturns.map(r => r._2.map(_.sig).getOrElse("") + r._3).mkString(", ")}) "
+      s"""
+          |fn $name$generics(${f.rustParams.map { case (f, r, t) => s"${f.pp}: ${r.map(_.sig).getOrElse("")}$t" }.mkString(", ")}) $returns{
+          |${body.pp}}
+      """.stripMargin
+    }
+
+    def ppOld: String =
       s"""
          |${tp.pp} $name (${formals.map { case (i, t) => s"${t.pp} ${i.pp}" }.mkString(", ")}) {
          |${body.pp}}
@@ -339,6 +357,8 @@ object Statements {
 
     // Shorten parameter names
     def simplifyParams: Procedure = {
+      // TODO: enable simplification
+      return this
       type Acc = (FunSpec, Statement)
       def updateParam(formal: (Var, SSLType), acc: Acc): Acc = {
         val (newParam, newBody) = acc._2.simplifyVariable(formal._1)

@@ -243,6 +243,7 @@ case class Ref(lft: Lifetime, mut: Boolean) extends PrettyPrinting {
   def subst(sigma: Map[Var, Expr]): Ref = {
     this.copy(lft = lft.subst(sigma))
   }
+  def sig: String = if (mut) { s"&${lft.rustLft.get} mut " } else { s"&${lft.rustLft.get} " }
 }
 
 /**
@@ -351,6 +352,9 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   def ptss: List[PointsTo] = for (b@PointsTo(_, _, _) <- chunks) yield b
 
   def rapps: List[RApp] = for (b@RApp(_, _, _, _, _, _, _) <- chunks) yield b
+
+  // RApps for the function signature
+  def sigRapps: List[RApp] = for (b@RApp(false, _, _, _, _, _, _) <- chunks) yield b
 
   def borrows: List[RApp] = rapps.filter(_.isBorrow)
   def owneds: List[RApp] = rapps.filter(!_.isBorrow)

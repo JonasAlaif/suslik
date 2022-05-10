@@ -166,13 +166,13 @@ trait Noop {
 case class SubstProducer(from: Var, to: Expr) extends StmtProducer {
   val arity: Int = 1
   val fn: Kont = liftToSolutions(stmts => {
-    SeqComp(stmts.head, Sub( Map(from -> to) )).simplify
+    SeqComp(Sub( Map(from -> to) ), stmts.head).simplify
   })
 }
 case class SubstMapProducer(subst: Subst) extends StmtProducer {
   val arity: Int = 1
   val fn: Kont = liftToSolutions(stmts => {
-    SeqComp(stmts.head, Sub(subst)).simplify
+    SeqComp(Sub(subst), stmts.head).simplify
   })
 }
 
