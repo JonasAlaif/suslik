@@ -140,8 +140,9 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
       ||| ident ~ ("(" ~> rep1sep(expr, ",") <~ ")") ~ opt("<" ~> expr <~ ">") ^^ {
         case name ~ args ~ v => SApp(name, args, PTag(), v.getOrElse(defaultCardParameter))
       }
-      ||| opt("priv") ~ (varParser <~ ":") ~ opt(ref) ~ ident ~ ("(" ~> rep1sep(expr, ",") <~ ")") ^^ {
-        case priv ~ field ~ r ~ pred ~ fnSpec => RApp(priv.isDefined, field, r, pred, fnSpec, NilLifetime, PTag())
+      ||| opt("priv") ~ (varParser <~ ":") ~ opt(ref) ~ ident ~ ("(" ~> repsep(expr, ",") <~ ")") ~ opt("<" ~> ident <~ ">") ^^ {
+        case priv ~ field ~ r ~ pred ~ fnSpec ~ None => RApp(priv.isDefined, field, r, pred, fnSpec, NilLifetime, PTag())
+        case priv ~ field ~ r ~ pred ~ fnSpec ~ Some(b) => RApp(priv.isDefined, field, r, pred, fnSpec, Named(Var("&" + b)), PTag())
       }
     )
 
