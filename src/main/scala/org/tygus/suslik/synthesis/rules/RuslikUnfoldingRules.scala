@@ -80,6 +80,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     def apply(goal: Goal): Seq[RuleResult] = {
       for {
         (h, c) <- goal.constraints.canUnfoldPre(goal)
+        // TODO: these checks are redundant (done in canUnfoldPre)
         if !h.priv // Must be non-private
         // Only for non-primitive types
         if !h.isPrim(goal.env.predicates)
@@ -154,6 +155,8 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       for {
         // TODO: Could potentially be a create-borrow rule as well for local lifetimes
         (h, c) <- goal.constraints.canUnfoldPost(goal)
+        // TODO: we might get stuck here
+        // (canUnfoldPost only returns non-cyclic, but none of those are unfoldable, so can never get to unfolding non-cyclic)
         if h.tag.unrolls < goal.env.config.maxCloseDepth
         val (clauses, _, fresh_subst) = loadPred(h, goal.vars, goal.env.predicates, false)
         InductiveClause(selector, asn) <- clauses

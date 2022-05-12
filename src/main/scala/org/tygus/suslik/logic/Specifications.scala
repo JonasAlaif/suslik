@@ -107,7 +107,11 @@ object Specifications extends SepLogicUtils {
                                postCyc: Int = 0, // Of all cyc owneds
     ) {
       def getPre(g: Goal): (List[RApp], List[RApp]) =
-        g.pre.sigma.rapps.partition(r => g.env.predicateCycles(r.pred))
+        g.pre.sigma.rapps.filter(r =>
+          !r.priv &&
+          !r.isPrim(g.env.predicates) &&
+          r.tag.unrolls < g.env.config.maxOpenDepth
+        ).partition(r => g.env.predicateCycles(r.pred))
       // Borrow or not
       def canUnfoldPre(g: Goal): List[(RApp, UnfoldConstraints)] = {
         val (cyc, non) = getPre(g)
