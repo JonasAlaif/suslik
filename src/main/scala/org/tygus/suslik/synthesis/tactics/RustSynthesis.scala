@@ -13,8 +13,6 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
     val goal = node.goal
     // Might still be solvable by "Inconsistency"
     if (goal.isUnsolvable) List(LogicalRules.Inconsistency)
-    // TODO: there is an optimization here that is not always complete, this might cause issues
-    else if (goal.isProbablyUnsolvable) anyPhaseRules
     else if (goal.callGoal.nonEmpty) callAbductionRules(goal)
     else anyPhaseRules ++ specBasedRules(node)
   }
@@ -64,6 +62,8 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
           LogicalRules.FrameBorrowsFinal,
           UnificationRules.HeapUnifyBorrows,
         )
+      // TODO: there is an optimization here that is not always complete, this might cause issues
+      else if (goal.isProbablyUnsolvable) List()
       else
         List(
           LogicalRules.FrameBorrows,

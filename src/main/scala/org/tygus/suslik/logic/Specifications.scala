@@ -131,7 +131,8 @@ object Specifications extends SepLogicUtils {
         if (non.length > postNoncyc)
           non.drop(postNoncyc).zipWithIndex.map(ri =>
             // Optimization: once closing non-cyclic cannot open non-cyclic
-            (ri._1, this.copy(postNoncyc = this.postNoncyc + ri._2).blockNoncycPre(g))
+            // (ri._1, this.copy(postNoncyc = this.postNoncyc + ri._2).blockNoncycPre(g))
+            (ri._1, this.copy(postNoncyc = this.postNoncyc + ri._2).blockAllPre(g))
           )
         else cyc.drop(postCyc).zipWithIndex.map(ri => (ri._1, this.copy(
           // Can no longer close non-cyclic

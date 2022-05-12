@@ -217,11 +217,12 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
 //        goal.allUniversals.intersect(goal.pre.vars ++ goal.post.vars)
       }
 
+      assert(exCandidates.forall(ex => goal.getType(ex) != LocType))
       for {
         ex <- least(exCandidates) // since all existentials must go, no point trying them in different order
         v <- toSorted(uniCandidates(ex)) ++ constants
         // Don't pick for Locs (fields) - unification will do this
-        if goal.getType(ex) != LocType && goal.getType(ex) == v.getType(goal.gamma).get
+        if goal.getType(ex) == v.getType(goal.gamma).get
         sigma = Map(ex -> v)
         newPost = goal.post.subst(sigma)
         newCallGoal = goal.callGoal.map(_.updateSubstitution(sigma))
