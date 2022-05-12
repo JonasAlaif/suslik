@@ -113,15 +113,15 @@ object Specifications extends SepLogicUtils {
           r.tag.unrolls < g.env.config.maxOpenDepth
         ).partition(r => g.env.predicateCycles(r.pred))
       // Borrow or not
-      def canUnfoldPre(g: Goal): List[(RApp, UnfoldConstraints)] = {
+      def canUnfoldPre(g: Goal): List[(RApp, UnfoldConstraints, Boolean)] = {
         val (cyc, non) = getPre(g)
         if (non.length > preNoncyc)
-          non.drop(preNoncyc).zipWithIndex.map(ri => (ri._1, this.copy(preNoncyc = this.preNoncyc + ri._2)))
+          non.drop(preNoncyc).zipWithIndex.map(ri => (ri._1, this.copy(preNoncyc = this.preNoncyc + ri._2), false))
         else cyc.drop(preCyc).zipWithIndex.map(ri => (ri._1, this.copy(
           // Can no longer open non-cyclic
             preNoncyc = non.length,
             preCyc = this.preCyc + ri._2
-          ))
+          ), true)
         )
       }
       // Only owneds
@@ -131,8 +131,8 @@ object Specifications extends SepLogicUtils {
         if (non.length > postNoncyc)
           non.drop(postNoncyc).zipWithIndex.map(ri =>
             // Optimization: once closing non-cyclic cannot open non-cyclic
-            // (ri._1, this.copy(postNoncyc = this.postNoncyc + ri._2).blockNoncycPre(g))
-            (ri._1, this.copy(postNoncyc = this.postNoncyc + ri._2).blockAllPre(g))
+            (ri._1, this.copy(postNoncyc = this.postNoncyc + ri._2).blockNoncycPre(g))
+            // (ri._1, this.copy(postNoncyc = this.postNoncyc + ri._2).blockAllPre(g))
           )
         else cyc.drop(postCyc).zipWithIndex.map(ri => (ri._1, this.copy(
           // Can no longer close non-cyclic

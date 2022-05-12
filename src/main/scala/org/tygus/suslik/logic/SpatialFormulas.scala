@@ -255,6 +255,7 @@ case class RApp(priv: Boolean, field: Var, ref: Option[Ref], pred: Ident, fnSpec
   def toSApp: SApp = SApp(pred, fnSpec, tag, IntConst(0))
 
   def isBorrow: Boolean = ref.isDefined
+  def isBlocked: Boolean = blocked.getNamed.isDefined
 
   // If the entire fnSpec is existential, then no point writing
   // def isWriteableBorrow(existentials: Set[Var]): Boolean = isBorrow && ref.get.mut && fnSpec.forall(_.vars.subsetOf(existentials))
@@ -326,8 +327,10 @@ case class RApp(priv: Boolean, field: Var, ref: Option[Ref], pred: Ident, fnSpec
     }
     // Neither can be private. Also if exactly one lifetime is Nil,
     // then relies on substitution kicking in before anything else for soundness!
-    case RApp(false, tgt, r, p, spec, lft, _) if pred == p && r == ref && !priv =>
-      Some((field :: blocked :: fnSpec.toList).zip(tgt :: lft :: spec.toList).toMap)
+    case RApp(false, tgt, r, p, spec, lft, _) if pred == p && r.map(_.mut) == ref.map(_.mut) && !priv =>
+      val subs = (field :: blocked :: fnSpec.toList).zip(tgt :: lft :: spec.toList).toMap
+      val subsLft = if (r.isDefined) subs + (ref.get.lft.getNamed.get -> r.get.lft.getNamed.get) else subs
+      Some(subsLft)
       // TODO: should only unify borrows (field -> tgt) if in a call goal!
     case _ => None
   }
@@ -368,10 +371,10 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
     chunks.foldLeft(Set.empty[R])((a, h) => a ++ h.collect(p))
   }
 
-  def setTagAndRef(r: RApp): SFormula = SFormula(chunks.map {
-    case h@RApp(_, _, _, _, _, _, _) if r.isBorrow => h.setRef(r.ref.get).setTag(r.tag.incrUnrolls)
-    case h => h.setTag(r.tag.incrUnrolls)
-  })
+  def setTagAndRef(r: RApp): SFormula = SFormula(chunks.map(_.setTag(r.tag.incrUnrolls) match {
+    case h@RApp(_, _, _, _, _, _, _) if r.isBorrow => h.setRef(r.ref.get)
+    case h => h
+  }))
   def setSAppTags(t: PTag): SFormula = SFormula(chunks.map(h => h.setTag(t)))
 
   def callTags: List[Int] = chunks.flatMap(_.getTag).map(_.calls)

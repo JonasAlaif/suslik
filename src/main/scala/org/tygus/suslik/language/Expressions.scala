@@ -326,6 +326,11 @@ object Expressions {
 
       def collector(acc: Set[R])(exp: Expr): Set[R] = exp match {
         case v@Var(_) if p(v) => acc + v.asInstanceOf[R]
+        case n@Named(v) => {
+          val acc1 = if (p(n)) acc + n.asInstanceOf[R] else acc
+          collector(acc1)(v)
+        }
+        case NilLifetime if p(NilLifetime) => acc + NilLifetime.asInstanceOf[R]
         case c@IntConst(_) if p(c) => acc + c.asInstanceOf[R]
         case c@LocConst(_) if p(c) => acc + c.asInstanceOf[R]
         case c@BoolConst(_) if p(c) => acc + c.asInstanceOf[R]
@@ -536,9 +541,16 @@ object Expressions {
     override def pp: String = name.pp
 
     override def getNamed: Option[Named] = Some(this)
-    override def subst(sigma: Subst): Lifetime =
-      sigma.getOrElse(name, this).asInstanceOf[Lifetime]
-    override def rustLft: Option[String] = Some("'" + pp.substring(1))
+    override def subst(sigma: Subst): Lifetime = sigma.get(this.name) match {
+      case Some(NilLifetime) => NilLifetime
+      case Some(IntConst(i)) if i == 0 => NilLifetime
+      case Some(e) => Named(e.asInstanceOf[Var])
+      case None => this
+    }
+      
+    override def rustLft: Option[String] = Some("'" + pp.dropRight(1))
+    
+    def refresh(field: String): Named = Named(Var(field + "_" + name.name))
   }
   case object NilLifetime extends Lifetime {
     override def getNamed: Option[Named] = None

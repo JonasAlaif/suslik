@@ -120,8 +120,10 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
       case a ~ Some(l ~ r) => IfThenElse(a, l, r)
     }
 
+  def lft: Parser[Named] = ident ^^ (l => Named(Var(l + "'")))
+
   def ref: Parser[Ref] =
-    ("&" ~> ident) ~ opt("mut") ^^ { case a ~ mut => Ref(Named(Var("&" + a)), mut.isDefined) }
+    ("&" ~> lft) ~ opt("mut") ^^ { case l ~ mut => Ref(l, mut.isDefined) }
 
   def identWithOffset: Parser[(Ident, Int)] = {
     val ov = ident ~ opt("+" ~> numericLit)
@@ -140,9 +142,9 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
       ||| ident ~ ("(" ~> rep1sep(expr, ",") <~ ")") ~ opt("<" ~> expr <~ ">") ^^ {
         case name ~ args ~ v => SApp(name, args, PTag(), v.getOrElse(defaultCardParameter))
       }
-      ||| opt("priv") ~ (varParser <~ ":") ~ opt(ref) ~ ident ~ ("(" ~> repsep(expr, ",") <~ ")") ~ opt("<" ~> ident <~ ">") ^^ {
+      ||| opt("priv") ~ (varParser <~ ":") ~ opt(ref) ~ ident ~ ("(" ~> repsep(expr, ",") <~ ")") ~ opt("<" ~> lft <~ ">") ^^ {
         case priv ~ field ~ r ~ pred ~ fnSpec ~ None => RApp(priv.isDefined, field, r, pred, fnSpec, NilLifetime, PTag())
-        case priv ~ field ~ r ~ pred ~ fnSpec ~ Some(b) => RApp(priv.isDefined, field, r, pred, fnSpec, Named(Var("&" + b)), PTag())
+        case priv ~ field ~ r ~ pred ~ fnSpec ~ Some(b) => RApp(priv.isDefined, field, r, pred, fnSpec, b, PTag())
       }
     )
 

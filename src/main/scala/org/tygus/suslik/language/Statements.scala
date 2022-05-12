@@ -73,9 +73,15 @@ object Statements {
           case If(cond, tb, eb) =>
             builder.append(mkSpaces(offset))
             builder.append(s"if (${cond.pp}) {\n")
-            build(tb, offset + 2, sub)
+            val resT = build(tb, offset + 2, sub)
+            // Result true:
+            builder.append(mkSpaces(offset + 2))
+            if (resT.contains(Var("result"))) builder.append(s"${resT(Var("result")).pp}\n")
             builder.append(mkSpaces(offset)).append(s"} else {\n")
-            build(eb, offset + 2, sub)
+            val resF = build(eb, offset + 2, sub)
+            // Result false:
+            builder.append(mkSpaces(offset + 2))
+            if (resF.contains(Var("result"))) builder.append(s"${resF(Var("result")).pp}\n")
             builder.append(mkSpaces(offset)).append(s"}\n")
             sub
           case Guarded(cond, b) =>
@@ -87,7 +93,8 @@ object Statements {
         }
       }
 
-      build(this)
+      val res = build(this)
+      if (res.contains(Var("result"))) builder.append(s"  ${res(Var("result")).pp}\n")
       builder.toString()
     }
 

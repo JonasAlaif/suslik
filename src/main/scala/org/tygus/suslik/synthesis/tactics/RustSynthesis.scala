@@ -73,6 +73,7 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
           RuslikUnfoldingRules.Close,
           RuslikUnfoldingRules.BrrwWrite,
           RuslikUnfoldingRules.ExpireNoWrite,
+          RuslikUnfoldingRules.UnifyLft,
         )
     } else {
       List(
