@@ -103,7 +103,7 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
         }
         case Some(Succeeded(sol, id)) =>
         { // Same goal has succeeded before: return the same solution
-          log.print(s"Recalled solution ${sol._1.pp}", Console.RED)
+          log.print(s"Recalled solution ${sol._1.pp()}", Console.RED)
           // This seems to always hold in practice because we always get to the companion
           // before we get to any of its children;
           // if this ever fails, we can either:

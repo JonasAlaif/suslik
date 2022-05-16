@@ -14,87 +14,88 @@ object Statements {
   sealed abstract class Statement extends HasExpressions[Statement] {
 
     // Pretty-printer
-    def pp: String = {
+    def pp(res: List[Var] = Nil): String = {
 
       val builder = new StringBuilder
 
-      def build(s: Statement, offset: Int = 2, sub: Subst = Map()): Subst = {
+      def build(s: Statement, offset: Int = 2, sub: Subst = Map(), res: List[Var]): (Subst, Boolean) = {
         s match {
-          case Skip => sub
+          case Skip => (sub, true)
           case Hole =>
             builder.append(mkSpaces(offset))
             builder.append(s"??\n")
-            sub
+            (sub, true)
           case Error =>
             builder.append(mkSpaces(offset))
             builder.append(s"unreachable();\n")
-            sub
+            (sub, false)
           case Sub(s) =>
-            builder.append(mkSpaces(offset))
-            builder.append(s"// subst(${s.map(m => s"${m._1.pp} -> ${m._2.pp}").mkString(", ")})\n")
-            sub ++ s.mapValues(_.subst(sub))
+            // builder.append(mkSpaces(offset))
+            // builder.append(s"// subst(${s.map(m => s"${m._1.pp} -> ${m._2.pp}").mkString(", ")})\n")
+            (sub ++ s.mapValues(_.subst(sub)), true)
           case Malloc(to, _, sz) =>
             // Ignore type
             builder.append(mkSpaces(offset))
             builder.append(s"let ${to.pp} = malloc($sz);\n")
-            sub
+            (sub, true)
           case Free(v) =>
             builder.append(mkSpaces(offset))
             builder.append(s"free(${v.pp});\n")
-            sub
+            (sub, true)
           case Store(to, off, e) =>
             builder.append(mkSpaces(offset))
             val t = if (off <= 0) to.pp else s"(${to.pp} + $off)"
             builder.append(s"*$t = ${e.pp};\n")
-            sub
+            (sub, true)
           case Load(to, _, from, off) =>
             builder.append(mkSpaces(offset))
             val f = if (off <= 0) from.pp else s"(${from.pp} + $off)"
             // Do not print the type annotation
             builder.append(s"let ${to.pp} = *$f;\n")
-            sub
+            (sub, true)
           case Construct(to, pred, args) =>
             val Construct(to, pred, args) = s.subst(sub)
             builder.append(mkSpaces(offset))
             builder.append(s"let ${to.pp} = $pred(${args.map(_.pp).mkString(", ")});\n")
-            sub
+            (sub, true)
           case Call(fun, result, args, _) =>
             val Call(fun, result, args, _) = s.subst(sub)
             builder.append(mkSpaces(offset))
             val res = if (result.length == 0) "let _ = "
-              else if (result.length == 1) (if (result.head.name == "result") "" else s"let ${result.head.pp} = ")
+              else if (result.length == 1) s"let ${result.head.pp} = "
               else "let (" + result.map(_.pp).mkString(", ") + ") = "
             val function_call = s"$res${fun.pp}(${args.map(_.pp).mkString(", ")});\n"
             builder.append(function_call)
-            sub
+            (sub, true)
           case SeqComp(s1,s2) =>
-            val nSub = build(s1, offset, sub)
-            build(s2, offset, nSub)
+            val (nSub, mustRet) = build(s1, offset, sub, res)
+            assert(mustRet)
+            build(s2, offset, nSub, res)
           case If(cond, tb, eb) =>
             builder.append(mkSpaces(offset))
             builder.append(s"if (${cond.pp}) {\n")
-            val resT = build(tb, offset + 2, sub)
+            val (_, mustRetT) = build(tb, offset + 2, sub, res)
             // Result true:
-            if (resT.contains(Var("result")))
-              builder.append(mkSpaces(offset + 2)).append(s"${resT(Var("result")).pp}\n")
+            if (mustRetT)
+              builder.append(mkSpaces(offset + 2)).append(s"${res.map(_.pp).mkString("(", ", ", ")")}\n")
             builder.append(mkSpaces(offset)).append(s"} else {\n")
-            val resF = build(eb, offset + 2, sub)
+            val (_, mustRetF) = build(eb, offset + 2, sub, res)
             // Result false:
-            if (resF.contains(Var("result")))
-              builder.append(mkSpaces(offset + 2)).append(s"${resF(Var("result")).pp}\n")
+            if (mustRetF)
+              builder.append(mkSpaces(offset + 2)).append(s"${res.map(_.pp).mkString("(", ", ", ")")}\n")
             builder.append(mkSpaces(offset)).append(s"}\n")
-            sub
+            (sub, false)
           case Guarded(cond, b) =>
             builder.append(mkSpaces(offset))
             builder.append(s"assume (${cond.pp}) {\n")
-            build(b, offset + 2, sub)
+            build(b, offset + 2, sub, res)
             builder.append(mkSpaces(offset)).append(s"}\n")
-            sub
+            (sub, true)
         }
       }
 
-      val res = build(this)
-      if (res.contains(Var("result"))) builder.append(s"  ${res(Var("result")).pp}\n")
+      val (_, mustRet) = build(this, res = res)
+      if (mustRet) builder.append(s"  ${res.map(_.pp).mkString("(", ", ", ")")}\n")
       builder.toString()
     }
 
@@ -352,14 +353,14 @@ object Statements {
         else s"-> (${f.rustReturns.map(r => r._2.map(_.sig).getOrElse("") + r._3).mkString(", ")}) "
       s"""
           |fn $name$generics(${f.rustParams.map { case (f, r, t) => s"${f.pp}: ${r.map(_.sig).getOrElse("")}$t" }.mkString(", ")}) $returns{
-          |${body.pp}}
+          |${body.pp(f.result)}}
       """.stripMargin
     }
 
     def ppOld: String =
       s"""
          |${tp.pp} $name (${formals.map { case (i, t) => s"${t.pp} ${i.pp}" }.mkString(", ")}) {
-         |${body.pp}}
+         |${body.pp(f.result)}}
     """.stripMargin
 
     // Shorten parameter names
