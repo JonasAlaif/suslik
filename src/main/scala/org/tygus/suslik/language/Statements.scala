@@ -30,8 +30,8 @@ object Statements {
             builder.append(s"unreachable();\n")
             sub
           case Sub(s) =>
-            // builder.append(mkSpaces(offset))
-            // builder.append(s"// subst(${s.map(m => s"${m._1.pp} -> ${m._2.pp}").mkString(", ")})\n")
+            builder.append(mkSpaces(offset))
+            builder.append(s"// subst(${s.map(m => s"${m._1.pp} -> ${m._2.pp}").mkString(", ")})\n")
             sub ++ s.mapValues(_.subst(sub))
           case Malloc(to, _, sz) =>
             // Ignore type
@@ -61,10 +61,10 @@ object Statements {
           case Call(fun, result, args, _) =>
             val Call(fun, result, args, _) = s.subst(sub)
             builder.append(mkSpaces(offset))
-            val res = if (result.length == 0) "_"
-              else if (result.length == 1) result.head.pp
-              else "(" + result.map(_.pp).mkString(", ") + ")"
-            val function_call = s"let $res = ${fun.pp}(${args.map(_.pp).mkString(", ")});\n"
+            val res = if (result.length == 0) "let _ = "
+              else if (result.length == 1) (if (result.head.name == "result") "" else s"let ${result.head.pp} = ")
+              else "let (" + result.map(_.pp).mkString(", ") + ") = "
+            val function_call = s"$res${fun.pp}(${args.map(_.pp).mkString(", ")});\n"
             builder.append(function_call)
             sub
           case SeqComp(s1,s2) =>
@@ -75,13 +75,13 @@ object Statements {
             builder.append(s"if (${cond.pp}) {\n")
             val resT = build(tb, offset + 2, sub)
             // Result true:
-            builder.append(mkSpaces(offset + 2))
-            if (resT.contains(Var("result"))) builder.append(s"${resT(Var("result")).pp}\n")
+            if (resT.contains(Var("result")))
+              builder.append(mkSpaces(offset + 2)).append(s"${resT(Var("result")).pp}\n")
             builder.append(mkSpaces(offset)).append(s"} else {\n")
             val resF = build(eb, offset + 2, sub)
             // Result false:
-            builder.append(mkSpaces(offset + 2))
-            if (resF.contains(Var("result"))) builder.append(s"${resF(Var("result")).pp}\n")
+            if (resF.contains(Var("result")))
+              builder.append(mkSpaces(offset + 2)).append(s"${resF(Var("result")).pp}\n")
             builder.append(mkSpaces(offset)).append(s"}\n")
             sub
           case Guarded(cond, b) =>
