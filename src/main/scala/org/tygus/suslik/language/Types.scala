@@ -64,6 +64,10 @@ case object LocType extends SSLType {
   }
 }
 
+case object LifetimeType extends SSLType {
+  override def pp: String = "lft"
+}
+
 case object IntSetType extends SSLType {
   override def pp: String = "intset"
 }

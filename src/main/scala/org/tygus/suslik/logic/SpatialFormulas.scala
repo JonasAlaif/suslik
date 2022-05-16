@@ -298,7 +298,7 @@ case class RApp(priv: Boolean, field: Var, ref: Option[Ref], pred: Ident, fnSpec
     }
 
     val newGamma =
-      if (ref.isDefined && ref.get.lft.getNamed.isDefined) gamma + (field -> LocType) + (ref.get.lft.getNamed.get.name -> IntType) 
+      if (ref.isDefined && ref.get.lft.getNamed.isDefined) gamma + (field -> LocType) + (ref.get.lft.getNamed.get.name -> LifetimeType) 
       else gamma + (field -> LocType)
     val formals = env.predicates(pred).params
     assert(formals.length == fnSpec.length)

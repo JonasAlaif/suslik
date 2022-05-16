@@ -295,7 +295,7 @@ object ProofTraceJson {
     val BINOP = Map("==" -> OpOverloadedEq, "<=" -> OpOverloadedLeq, "-" -> OpOverloadedMinus,
       "+" -> OpOverloadedPlus, "*" -> OpOverloadedStar, "in" -> OpOverloadedIn,
       "!=" -> OpNotEqual, ">" -> OpGt, ">=" -> OpGeq,
-      "==[bool]" -> OpBoolEq, "->" -> OpImplication,
+      "==[bool]" -> OpBoolEq, "==[lft]" -> OpLftEq, "->" -> OpImplication,
       "<=[int]" -> OpLeq, "<" -> OpLt, "&&" -> OpAnd, "||" -> OpOr,
       "+[int]" -> OpPlus, "-[int]" -> OpMinus, "*[int]" -> OpMultiply,
       "++" -> OpUnion, "--" -> OpDiff, "*[set[int]]" -> OpIntersect,

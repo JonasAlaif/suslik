@@ -85,6 +85,7 @@ object Expressions {
       (IntSetType, IntSetType) -> OpSetEq,
       (IntervalType, IntervalType) -> OpIntervalEq,
       (BoolType, BoolType) -> OpBoolEq,
+      (LifetimeType, LifetimeType) -> OpLftEq,
     )
 
     override def default: BinOp = OpEq
@@ -214,6 +215,13 @@ object Expressions {
     override def pp: String = "=="
     def lType: SSLType = BoolType
     def rType: SSLType = BoolType
+  }
+
+  object OpLftEq extends RelOp with SymmetricOp {
+    def level: Int = 3
+    override def pp: String = "=="
+    def lType: SSLType = LifetimeType
+    def rType: SSLType = LifetimeType
   }
 
   object OpLeq extends RelOp {
@@ -409,8 +417,8 @@ object Expressions {
           case None => Some(gamma)
         }
       }
-      case Named(lft) => if (IntType.conformsTo(target)) lft.resolve(gamma, target) else None
-      case NilLifetime => if (IntType.conformsTo(target)) Some(gamma) else None
+      case Named(lft) => if (LifetimeType.conformsTo(target)) lft.resolve(gamma, target) else None
+      case NilLifetime => if (LifetimeType.conformsTo(target)) Some(gamma) else None
       case BoolConst(_) => if (BoolType.conformsTo(target)) Some(gamma) else None
       case LocConst(_) => if (LocType.conformsTo(target)) Some(gamma) else None
       case IntConst(_) => if (IntType.conformsTo(target)) Some(gamma) else None
@@ -533,7 +541,7 @@ object Expressions {
     def getNamed: Option[Named]
     def isNil: Boolean = getNamed.isEmpty
     def subst(sigma: Subst): Lifetime
-    override def getType(gamma: Gamma): Option[SSLType] = Some(IntType)
+    override def getType(gamma: Gamma): Option[SSLType] = Some(LifetimeType)
     def rustLft: Option[String] = None
   }
   // Program-level variable: program-level or ghost
@@ -580,9 +588,13 @@ object Expressions {
   case class BinaryExpr(op: BinOp, left: Expr, right: Expr) extends Expr {
     def subst(sigma: Subst): Expr = BinaryExpr(op, left.subst(sigma), right.subst(sigma)).simplify
     override def simplify: Expr = op match {
+      case OpEq | OpBoolEq | OpLftEq if left == right => BoolConst(true)
       case OpEq => (left, right) match {
         case (IntConst(left), IntConst(right)) if left != right => BoolConst(false)
-        case _ if left == right => BoolConst(true)
+        case _ => this
+      }
+      case OpBoolEq => (left, right) match {
+        case (BoolConst(left), BoolConst(right)) if left != right => BoolConst(false)
         case _ => this
       }
       case OpAnd => (left, right) match {
