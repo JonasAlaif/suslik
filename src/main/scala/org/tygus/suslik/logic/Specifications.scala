@@ -296,7 +296,7 @@ object Specifications extends SepLogicUtils {
 
     // If the entire RApp is FULLY existential (fnSpec is existential and unconstrained by phi)
     // Such RApps should not be written to and should be expired eagerly
-    def isRAppExistential(r: RApp): Boolean = r.ref.map(!_.mut).getOrElse(false) || r.fnSpec.forall(a => {
+    def isRAppExistential(r: RApp): Boolean = r.ref.map(!_.mut).getOrElse(false) || r.priv || r.fnSpec.forall(a => {
       a.isInstanceOf[Var] && existentials.contains(a.asInstanceOf[Var]) && !post.phi.vars.contains(a.asInstanceOf[Var])
     })
 
