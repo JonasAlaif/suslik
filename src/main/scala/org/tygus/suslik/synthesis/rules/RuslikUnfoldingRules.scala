@@ -40,7 +40,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     // There should be no existentials in a primitive pred (so `isPre` is irrelevant)
     val (pred_clauses, _, subst) = loadPred(rapp, vars, predicates, true)
     assert(subst.isEmpty)
-    assert(pred_clauses.length == 1)
+    assert(pred_clauses.length == 1 && pred_clauses.head.selector == BoolConst(true))
     pred_clauses.head.asn
   }
 
@@ -161,7 +161,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         if h.tag.unrolls < goal.env.config.maxCloseDepth
         val (clauses, _, fresh_subst) = loadPred(h, goal.vars, goal.env.predicates, false)
         InductiveClause(selector, asn) <- clauses
-        if asn.sigma.rapps.filter(_.priv).length == (if (clauses.length > 1) 1 else 0)
+        if asn.sigma.rapps.filter(_.priv).length == (if (selector == BoolConst(true)) 0 else 1)
       } yield {
         assert(!h.isBlocked)
         // TODO: hacky way to remove discriminant
@@ -207,7 +207,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val (clauses, sbst, fresh_subst) = loadPred(h, goal.vars, goal.env.predicates, false)
         InductiveClause(selector, asn) <- clauses
         // Hacky way to ensure we can only Expire the correct enum variant:
-        if clauses.length == 1 || {
+        if selector == BoolConst(true) || {
           val sel = selector.asInstanceOf[BinaryExpr]
           val disc = asn.sigma.rapps.find(d => d.fnSpec.length == 1 && d.fnSpec.head == sel.left).get
           val pre_disc = goal.pre.sigma.rapps.find(_.field == disc.field).get
