@@ -215,17 +215,13 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           assert(pre_disc.fnSpec.length == 1)
           pre_disc.fnSpec.head.asInstanceOf[Const] == sel.right
         }
-        (phi, sigma) = if (clauses.length == 1) (asn.phi, asn.sigma) else {
-          val sel = selector.asInstanceOf[BinaryExpr]
-          val disc = asn.sigma.rapps.find(d => d.fnSpec.length == 1 && d.fnSpec.head == sel.left).get
-          (asn.phi, asn.sigma ** disc.subst(sel.left.asInstanceOf[Var], sel.right) - disc)
-        }
         // If I'm blocked, one of my children must've been blocked
-        sigmaWithBlock <- if (!h.isBlocked) Seq(sigma)
-          else sigma.rapps.map(r => (sigma - r) ** r.copy(blocked = h.blocked))
+        sigmaWithBlock <- if (!h.isBlocked) Seq(asn.sigma)
+          else asn.sigma.rapps.map(r => (asn.sigma - r) ** r.copy(blocked = h.blocked))
       } yield {
         val newPost = Assertion(
-          goal.post.phi && phi,
+          // Assumption: selector will be substituted in (since it's an equality when clauses.length != 1)
+          goal.post.phi && asn.phi && selector,
           goal.post.sigma ** sigmaWithBlock - h
         )
         RuleResult(List(goal.spawnChild(post = newPost,
