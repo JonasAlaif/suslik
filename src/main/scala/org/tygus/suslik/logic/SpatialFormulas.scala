@@ -23,7 +23,7 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
           card.collect(p)
       case RApp(_, field, ref, _, fnSpec, lft, _) =>
         field.collect(p) ++ ref.map(_.lft.collect(p)).getOrElse(Set.empty) ++
-          fnSpec.foldLeft(acc)((a, e) => a ++ e.collect(p)) ++ lft.collect(p)
+          fnSpec.foldLeft(acc)((a, e) => a ++ e.collect(p)) ++ lft.foldLeft(acc)((a, e) => a ++ e.collect(p))
     }
 
     collector(Set.empty)(this)
@@ -239,10 +239,12 @@ case class SApp(pred_with_info: Ident, args: Seq[Expr], tag: PTag, card: Expr) e
 
 }
 
-case class Ref(lft: Lifetime, mut: Boolean) extends PrettyPrinting {
+case class Ref(lft: Named, mut: Boolean) extends PrettyPrinting {
   override def pp: String = if (mut) { s"${lft.pp} mut " } else { s"${lft.pp} " }
-  def subst(sigma: Map[Var, Expr]): Ref = {
-    this.copy(lft = lft.subst(sigma))
+  def subst(sigma: Map[Var, Expr]): Option[Ref] = {
+    for {
+      lft <- lft.subst(sigma).getNamed
+    } yield this.copy(lft = lft)    
   }
   def sig: String = if (mut) { s"&${lft.rustLft.get} mut " } else { s"&${lft.rustLft.get} " }
 }
@@ -251,11 +253,13 @@ case class Ref(lft: Lifetime, mut: Boolean) extends PrettyPrinting {
   *       Rust predicate application. For example:
   *       x: &a mut i32(value)<&blocked_by>
   */
-case class RApp(priv: Boolean, field: Var, ref: Option[Ref], pred: Ident, fnSpec: Seq[Expr], blocked: Lifetime, tag: PTag) extends Heaplet {
+case class RApp(priv: Boolean, field: Var, ref: Option[Ref], pred: Ident, fnSpec: Seq[Expr], blocked: Set[Named], tag: PTag) extends Heaplet {
   def toSApp: SApp = SApp(pred, fnSpec, tag, IntConst(0))
 
   def isBorrow: Boolean = ref.isDefined
-  def isBlocked: Boolean = blocked.getNamed.isDefined
+  def hasBlocker: Boolean = blocked.nonEmpty
+
+  def isWriteableRef(existentials: Set[Var]): Boolean = !priv && blocked.forall(b => existentials(b.name)) && isBorrow && ref.get.mut
 
   // If the entire fnSpec is existential, then no point writing
   // def isWriteableBorrow(existentials: Set[Var]): Boolean = isBorrow && ref.get.mut && fnSpec.forall(_.vars.subsetOf(existentials))
@@ -266,12 +270,18 @@ case class RApp(priv: Boolean, field: Var, ref: Option[Ref], pred: Ident, fnSpec
   // Should be folded/unfolded after non-cyclic things
   def isCyclic(predicates: PredicateCycles): Boolean = predicates(pred)
 
+  def block: RApp = {
+    assert(!hasBlocker)
+    this.copy(blocked = Set(Named(Var(field.name + "-L"))))
+  }
+
   override def resolveOverloading(gamma: Gamma): Heaplet = this.copy(fnSpec = fnSpec.map(_.resolveOverloading(gamma)))
 
   override def pp: String = {
     val privS = if (priv) "priv " else ""
     val refS = ref.map(_.pp).getOrElse("")
-    s"$privS${field.pp} : $refS$pred(${fnSpec.map(_.pp).mkString(", ")})${blocked.getNamed.fold("")("<"+ _.pp +">")}${tag.pp}"
+    val ppBlocked = if (hasBlocker) blocked.map(_.pp).mkString("< ", " + ", " >") else ""
+    s"$privS${field.pp} : $refS$pred(${fnSpec.map(_.pp).mkString(", ")})$ppBlocked${tag.pp}"
   }
 
 
@@ -283,13 +293,18 @@ case class RApp(priv: Boolean, field: Var, ref: Option[Ref], pred: Ident, fnSpec
     case _ => super.compare(that)
   }
 
-  def subst(sigma: Map[Var, Expr]): Heaplet = {
-    this.copy(
+  def subst(sigma: Map[Var, Expr]): Heaplet =
+    throw new SynthesisException(s"Trying to subst `$pp`")
+  def substKill(sigma: Map[Var, Expr]): Option[Heaplet] = {
+    val r = ref.flatMap(_.subst(sigma))
+    // My lft was killed
+    if (isBorrow && r.isEmpty) None
+    else Some(this.copy(
       field = field.subst(sigma).asInstanceOf[Var],
-      ref = ref.map(_.subst(sigma)),
+      ref = r,
       fnSpec = fnSpec.map(_.subst(sigma)),
-      blocked = blocked.subst(sigma)
-    )
+      blocked = blocked.flatMap(_.subst(sigma).getNamed)
+    ))
   }
 
   def resolve(gamma: Gamma, env: Environment): Option[Gamma] = {
@@ -321,16 +336,23 @@ case class RApp(priv: Boolean, field: Var, ref: Option[Ref], pred: Ident, fnSpec
   }
 
   override def unify(that: Heaplet): Option[ExprSubst] = that match {
-    case RApp(pri, tgt, Some(r), p, spec, lft, _) if field == tgt => {
+    // Cannot unify if tgt is blocked.
+    case o@RApp(pri, tgt, Some(r), p, spec, _, _) if field == tgt && !o.hasBlocker => {
       assert(pri == priv && p == pred && r == ref.get)
-      Some((blocked :: fnSpec.toList).zip(lft :: spec.toList).toMap)
+      Some((fnSpec.toList).zip(spec.toList).toMap)
     }
-    // Neither can be private. Also if exactly one lifetime is Nil,
-    // then relies on substitution kicking in before anything else for soundness!
-    case RApp(false, tgt, r, p, spec, lft, _) if pred == p && r.map(_.mut) == ref.map(_.mut) && !priv =>
-      val subs = (field :: blocked :: fnSpec.toList).zip(tgt :: lft :: spec.toList).toMap
+    // Neither can be private.
+    case o@RApp(false, tgt, r, p, spec, _, _)
+      if pred == p &&
+        r.isEmpty == ref.isEmpty &&
+        // Either tgt is immut or src is mut
+        r.map(!_.mut || ref.get.mut).getOrElse(true) &&
+        // Can try to set blocker lft to nil (only if existential)
+        !priv && o.blocked.size <= 1 =>
+      val subs = (field :: fnSpec.toList).zip(tgt :: spec.toList).toMap
       val subsLft = if (r.isDefined) subs + (ref.get.lft.getNamed.get -> r.get.lft.getNamed.get) else subs
-      Some(subsLft)
+      val subsLftBlocker = if (o.blocked.size == 1) subs + (o.blocked.head.name -> NilLifetime) else subs
+      Some(subsLftBlocker)
       // TODO: should only unify borrows (field -> tgt) if in a call goal!
     case _ => None
   }
@@ -364,7 +386,15 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   def owneds: List[RApp] = rapps.filter(!_.isBorrow)
   def prims(predicates: PredicateEnv): List[RApp] = rapps.filter(_.isPrim(predicates))
 
-  def subst(sigma: Map[Var, Expr]): SFormula = SFormula(chunks.map(_.subst(sigma)))
+  def blockRapps: SFormula = SFormula(chunks.map {
+    case b@RApp(false, _, _, _, _, _, _) => b.block
+    case h => h
+  })
+
+  def subst(sigma: Map[Var, Expr]): SFormula = SFormula(chunks.flatMap {
+    case b@RApp(_, _, _, _, _, _, _) => b.substKill(sigma)
+    case h => Some(h.subst(sigma))
+  })
 
   // Collect certain sub-expressions
   def collect[R <: Expr](p: Expr => Boolean): Set[R] = {

@@ -34,13 +34,14 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
 
   def typeParser: Parser[SSLType] =
     ("int" ^^^ IntType
+      | "lft" ^^^ LifetimeType
       | "bool" ^^^ BoolType
       | "loc" ^^^ LocType
       | "set" ^^^ IntSetType
       | "interval" ^^^ IntervalType
       | "void" ^^^ VoidType)
 
-  def formal: Parser[(Var, SSLType)] = typeParser ~ ident ^^ { case a ~ b => (Var(b), a) }
+  def formal: Parser[(Var, SSLType)] = typeParser ~ varParser ^^ { case a ~ b => (b, a) }
 
   def locLiteral: Parser[Const] =
     "null" ^^ (_ => NilPtr)
@@ -63,7 +64,7 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
     "[" ~> intervalInternal <~ "]"
   }
 
-  def varParser: Parser[Var] = ident ^^ Var
+  def varParser: Parser[Var] = "&" ~> ident ^^ { v => Var(v + "-L") } ||| ident ^^ Var
 
   def unOpParser: Parser[UnOp] =
     ("not" ^^^ OpNot ||| "-" ^^^ OpUnaryMinus ||| "lower" ^^^ OpLower ||| "upper" ^^^ OpUpper)
@@ -120,7 +121,7 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
       case a ~ Some(l ~ r) => IfThenElse(a, l, r)
     }
 
-  def lft: Parser[Named] = ident ^^ (l => Named(Var(l + "'")))
+  def lft: Parser[Named] = ident ^^ (l => Named(Var(l + "-L")))
 
   def ref: Parser[Ref] =
     ("&" ~> lft) ~ opt("mut") ^^ { case l ~ mut => Ref(l, mut.isDefined) }
@@ -142,9 +143,9 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
       ||| ident ~ ("(" ~> rep1sep(expr, ",") <~ ")") ~ opt("<" ~> expr <~ ">") ^^ {
         case name ~ args ~ v => SApp(name, args, PTag(), v.getOrElse(defaultCardParameter))
       }
-      ||| opt("priv") ~ (varParser <~ ":") ~ opt(ref) ~ ident ~ ("(" ~> repsep(expr, ",") <~ ")") ~ opt("<" ~> lft <~ ">") ^^ {
-        case priv ~ field ~ r ~ pred ~ fnSpec ~ None => RApp(priv.isDefined, field, r, pred, fnSpec, NilLifetime, PTag())
-        case priv ~ field ~ r ~ pred ~ fnSpec ~ Some(b) => RApp(priv.isDefined, field, r, pred, fnSpec, b, PTag())
+      ||| opt("priv") ~ (varParser <~ ":") ~ opt(ref) ~ ident ~ ("(" ~> repsep(expr, ",") <~ ")") ~ opt("<" ~> rep1sep(lft, "+") <~ ">") ^^ {
+        case priv ~ field ~ r ~ pred ~ fnSpec ~ None => RApp(priv.isDefined, field, r, pred, fnSpec, Set(), PTag())
+        case priv ~ field ~ r ~ pred ~ fnSpec ~ Some(b) => RApp(priv.isDefined, field, r, pred, fnSpec, b.toSet, PTag())
       }
     )
 

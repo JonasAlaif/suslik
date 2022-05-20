@@ -21,7 +21,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
   val exceptionQualifier: String = "rule-unfolding"
 
   def loadPred(rapp: RApp, vars: Set[Var], predicates: PredicateEnv, isPre: Boolean): (Seq[InductiveClause], Subst, SubstVar) = {
-    assert(!isPre || rapp.blocked.getNamed.isEmpty)
+    assert(!isPre || !rapp.hasBlocker)
     val ip = predicates(rapp.pred)
     assert(ip.params.length == rapp.fnSpec.length)
     val args_subst = ip.params.map(_._1).zip(rapp.fnSpec).toMap
@@ -55,7 +55,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       def loadVars(rapp: RApp): Seq[Var] =
         for { v@Var(_) <- rapp.fnSpec; if !goal.programVars.contains(v) } yield v
       // Take first prim, we will unfold all anyway
-      val prims = goal.pre.sigma.prims(goal.env.predicates).filter(h => !h.priv && !h.isBlocked && !loadVars(h).isEmpty)
+      val prims = goal.pre.sigma.prims(goal.env.predicates).filter(h => !h.priv && !h.hasBlocker && !loadVars(h).isEmpty)
       if (prims.length == 0) return Seq()
       val prim = prims.head
       val asn = loadPrimPred(prim, goal.vars, goal.env.predicates)
@@ -82,7 +82,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       for {
         (h, c, isCyc) <- goal.constraints.canUnfoldPre(goal)
         // TODO: these checks are redundant (done in canUnfoldPre)
-        if !h.priv && !h.isBlocked // Must be non-private and non-blocked
+        if !h.priv && !h.hasBlocker // Must be non-private and non-blocked
         // Only for non-primitive types
         if !h.isPrim(goal.env.predicates)
         if h.tag.unrolls < goal.env.config.maxOpenDepth
@@ -98,7 +98,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             // True since we might satisfy the call termination requirement now
             hasProgressed = true,
             // If we reborrowed cannot be a companion since the borrows won't match up (need to expire first)
-            isCompanion = !h.isBorrow)
+            isCompanionNB = !h.isBorrow)
         }}
         // TODO: this shouldn't be a flatMap (e.g. if fields in different branches alias)
         val nameSubs = goal.env.predicates(h.pred).clauses.flatMap(
@@ -163,7 +163,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         InductiveClause(selector, asn) <- clauses
         if asn.sigma.rapps.filter(_.priv).length == (if (selector == BoolConst(true)) 0 else 1)
       } yield {
-        assert(!h.isBlocked)
+        assert(!h.hasBlocker)
         // TODO: hacky way to remove discriminant
         val noDisc = SFormula(asn.sigma.chunks.filter {
           case RApp(true, _, _, _, _, _, _) => false
@@ -181,7 +181,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         RuleResult(List(goal.spawnChild(post = newPost, constraints = c,
             // Hasn't progressed since we didn't progress toward termination
             // Could be used as a companion, but currently won't since it isn't possible to make progess after closing (no more open)
-            hasProgressed = false, isCompanion = true)), kont, this, goal)
+            hasProgressed = false, isCompanionNB = true)), kont, this, goal)
       }
     }
   }
@@ -215,10 +215,9 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           assert(pre_disc.fnSpec.length == 1)
           pre_disc.fnSpec.head.asInstanceOf[Const] == sel.right
         }
-        // If I'm blocked, one of my children must've been blocked
-        sigmaWithBlock <- if (!h.isBlocked) Seq(asn.sigma)
-          else asn.sigma.rapps.map(r => (asn.sigma - r) ** r.copy(blocked = h.blocked))
       } yield {
+        // If I'm blocked, one of my children must've been blocked
+        val sigmaWithBlock = if (!h.hasBlocker) asn.sigma else asn.sigma.blockRapps
         val newPost = Assertion(
           // Assumption: selector will be substituted in (since it's an equality when clauses.length != 1)
           goal.post.phi && asn.phi && selector,
@@ -226,39 +225,45 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         )
         RuleResult(List(goal.spawnChild(post = newPost,
             // Hasn't progressed since we didn't progress toward termination, but can be companion
-            hasProgressed = false, isCompanion = true)), IdProducer, this, goal)
+            hasProgressed = false, isCompanionNB = true)), IdProducer, this, goal)
       }
     }
   }
   object ExpireNoWrite extends Expire {
-    override def filter(r: RApp, goal: Goal): Boolean = !goal.isRAppExistential(r)
+    override def filter(r: RApp, goal: Goal): Boolean = !goal.isRAppExistential(r) || goal.hasPotentialReborrows(r)
   }
   object ExpireFinal extends Expire with InvertibleRule {
-    override def filter(r: RApp, goal: Goal): Boolean = goal.isRAppExistential(r)
+    override def filter(r: RApp, goal: Goal): Boolean = goal.isRAppExistential(r) && !goal.hasPotentialReborrows(r)
   }
 
+  // i.e. from { 'a >= 'b ; x: &'a mut i32(val_x) } { x: &'a mut i32(FA_val_result)<'tmp> ** result: &'b mut i32(val_result) }
+  //        to { 'a >= 'b ; x: &'a mut i32(val_x) } { 'a >= 'b ; x: &'a mut i32(FA_val_result)<'tmp> }
   /*
-  Unify lfts rule: drop a borrow in the post
+  Reborrow rule: reborrow in post to unify with post
    */
-  object UnifyLft extends SynthesisRule {
+  object Reborrow extends SynthesisRule {
 
-    override def toString: Ident = "UnifyLft"
+    override def toString: Ident = "Reborrow"
 
     def apply(goal: Goal): Seq[RuleResult] = {
-      val preBorrows = goal.pre.sigma.borrows.map(_.field)
+      val reborrowSrcs = goal.post.sigma.borrows.filter(b => !goal.existentials(b.field))
       for {
-        h <- goal.post.sigma.borrows
-        // Only unify if cannot expire:
-        if preBorrows.contains(h.field)
-        b <- h.blocked.getNamed
+        src <- reborrowSrcs
+        (tgt, subs) <- goal.potentialReborrows(src)
       } yield {
+        val tgtPred = goal.env.predicates(tgt.pred)
+        assert(tgtPred.params.length == src.fnSpec.length)
+        val futures = tgtPred.params.zip(src.fnSpec).map(p => (Var(s"${p._1._1.name}_${tgt.field.name}_new_FA") |===| p._2)).toSet
         val newPost = Assertion(
-          goal.post.phi && (h.ref.get.lft.getNamed.get.name |=| b.name).simplify,
-          goal.post.sigma - h
+          goal.post.phi && PFormula(futures).resolveOverloading(goal.gamma),
+          (goal.post.sigma - tgt - src) ** src.copy(fnSpec = tgt.fnSpec, blocked = Set())
         )
+        val kont =
+          SubstProducer(tgt.field, src.field) >>
+          ExtractHelper(goal)
         RuleResult(List(goal.spawnChild(post = newPost,
             // Hasn't progressed since we didn't progress toward termination, but can be companion
-            hasProgressed = false, isCompanion = true)), ExtractHelper(goal), this, goal)
+            hasProgressed = false, isCompanionNB = true)), kont, this, goal)
       }
     }
   }
@@ -278,8 +283,8 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         brrw <- goal.post.sigma.borrows
         if !goal.isRAppExistential(brrw) //brrw.isWriteableBorrow(goal.existentials)
       } yield {
-        val newOwned = brrw.copy(field = Var(brrw.field.name + "_NV"), ref = None)
-        val newBrrw = brrw.copy(fnSpec = brrw.fnSpec.zipWithIndex.map(i => Var(brrw.field.pp + i._2)))
+        val newOwned = brrw.copy(field = Var(brrw.field.name + "_NV"), ref = None, blocked = Set())
+        val newBrrw = brrw.copy(fnSpec = brrw.fnSpec.zipWithIndex.map(i => Var(brrw.field.pp + i._2)), blocked = Set())
         val newPost = Assertion(post.phi, (post.sigma ** newOwned - brrw) ** newBrrw)
 
         val kont = AppendProducer(Store(brrw.field, 0, newOwned.field))

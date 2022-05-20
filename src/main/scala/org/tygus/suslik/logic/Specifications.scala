@@ -167,7 +167,7 @@ object Specifications extends SepLogicUtils {
                   sketch: Statement, // sketch
                   callGoal: Option[SuspendedCallGoal],
                   hasProgressed: Boolean,
-                  isCompanion: Boolean
+                  isCompanionNB: Boolean
                  )
 
     extends PrettyPrinting with PureLogicUtils {
@@ -235,7 +235,7 @@ object Specifications extends SepLogicUtils {
                    sketch: Statement = this.sketch,
                    callGoal: Option[SuspendedCallGoal] = this.callGoal,
                    hasProgressed: Boolean = false,
-                   isCompanion: Boolean = false): Goal = {
+                   isCompanionNB: Boolean = false): Goal = {
 
       // Resolve types
       val gammaFinal = resolvePrePost(gamma, env, pre, post)
@@ -249,16 +249,10 @@ object Specifications extends SepLogicUtils {
 //      val newUniversalGhosts = this.universalGhosts.intersect(usedVars) ++ preSimple.vars -- programVars
       val newUniversalGhosts = this.universalGhosts ++ preSimple.vars -- programVars
 
-      // Cannot be a companion if there are outstanding non-expired borrows
-      // (note even though the `isCompanion` is set on the next/returned goal, it tells us if this
-      //  current goal should be considered as a companion)
-      val validCompanion = isCompanion &&
-        preSimple.sigma.borrows.forall(b => postSimple.sigma.borrows.exists(_.field == b.field))
-
       Goal(preSimple, postSimple, constraints,
         gammaFinal, programVars, newUniversalGhosts,
         this.fname, this.label.bumpUp(childId), Some(this), env, sketch,
-        callGoal, hasProgressed, validCompanion)
+        callGoal, hasProgressed, isCompanionNB)
     }
 
     // Goal that is eagerly recognized by the search as unsolvable
@@ -271,7 +265,7 @@ object Specifications extends SepLogicUtils {
     def isProbablyUnsolvable: Boolean =
       // If there is a universal ghost in the post which can never be loaded
       // TODO: Might not be complete in all cases
-      post.phi.vars.exists(v =>
+      post.phi.nonfaVars.exists(v =>
         // Cannot possibly get it as a PV
         !(pre.vars ++ programVars).contains(v) &&
         // This doesn't work since we might have { x: Enum(len) }{ len+1 == lenR+1 res: Enum(lenR) }
@@ -280,6 +274,10 @@ object Specifications extends SepLogicUtils {
 
         // Will need to get it as a PV
         universalGhosts.contains(v))
+
+    def borrowsMatch: Boolean = pre.sigma.borrows.forall(b => post.sigma.borrows.exists(_.field == b.field))
+    // Cannot be a companion if there are outstanding non-expired borrows
+    def isCompanion: Boolean = isCompanionNB && borrowsMatch
 
     def isTopLevel: Boolean = label == topLabel
 
@@ -296,9 +294,16 @@ object Specifications extends SepLogicUtils {
 
     // If the entire RApp is FULLY existential (fnSpec is existential and unconstrained by phi)
     // Such RApps should not be written to and should be expired eagerly
-    def isRAppExistential(r: RApp): Boolean = r.ref.map(!_.mut).getOrElse(false) || r.priv || r.fnSpec.forall(a => {
+    def isRAppExistential(r: RApp): Boolean = !r.isWriteableRef(existentials) || r.fnSpec.forall(a => {
       a.isInstanceOf[Var] && existentials.contains(a.asInstanceOf[Var]) && !post.phi.vars.contains(a.asInstanceOf[Var])
     })
+    def hasPotentialReborrows(r: RApp): Boolean = !potentialReborrows(r).isEmpty
+    def potentialReborrows(r: RApp): List[(RApp, ExprSubst)] = post.sigma.borrows.filter(b =>
+      r.hasBlocker && existentials(b.field) && pre.phi.collect(_ match {
+          case BinaryExpr(OpOutlives, short, long) if short == b.ref.get.lft.name && long == r.ref.get.lft.name => true
+          case _ => false
+      }).size > 0
+    ).flatMap(tgt => r.unify(tgt).map((tgt, _)))
 
     // All variables this goal has ever used
     def vars: Set[Var] = gamma.keySet
@@ -395,11 +400,11 @@ object Specifications extends SepLogicUtils {
     val pre1 = pre.resolveOverloading(gamma)
     val post1 = post.resolveOverloading(gamma)
     val formalNames = formals.map(_._1)
-    val ghostUniversals = pre1.vars -- formalNames
+    val ghostUniversals = pre1.vars -- formalNames ++ post1.faVars
     Goal(pre1, post1, UnfoldConstraints(),
       gamma, formalNames, ghostUniversals,
       fname, topLabel, None, env.resolveOverloading(), sketch.resolveOverloading(gamma),
-      None, hasProgressed = false, isCompanion = true)
+      None, hasProgressed = false, isCompanionNB = true)
   }
 
   /**

@@ -161,9 +161,10 @@ object Expressions {
 
   object OpOverloadedLeq extends OverloadedBinOp {
     override def level: Int = 3
-    override def pp: String = "<="
+    override def pp: String = "<=ovr"
     override def opFromTypes: Map[(SSLType, SSLType), BinOp] = Map(
       (IntType, IntType) -> OpLeq,
+      (LifetimeType, LifetimeType) -> OpOutlives,
       (IntSetType, IntSetType) -> OpSubset,
       (IntervalType, IntervalType) -> OpSubinterval,
     )
@@ -316,6 +317,12 @@ object Expressions {
     def lType: SSLType = IntervalType
     def rType: SSLType = IntervalType
   }
+  object OpOutlives extends RelOp {
+    def level: Int = 3
+    override def pp: String = "<="
+    def lType: SSLType = LifetimeType
+    def rType: SSLType = LifetimeType
+  }
   object OpField extends BinOp {
     def level: Int = 4
     override def pp: String = "."
@@ -407,7 +414,8 @@ object Expressions {
     def substUnknown(sigma: UnknownSubst): Expr = this
 
     def resolve(gamma: Gamma, target: Option[SSLType]): Option[Gamma] = this match {
-      case v@Var(_) => gamma.get(v) match {
+      case v@Var(_) if v.name.endsWith("-L") => if (LifetimeType.conformsTo(target)) Some(gamma + (v -> LifetimeType)) else None
+      case v@Var(_) => (if (v.name.endsWith("_FA")) gamma.get(Var(v.name.dropRight(3))) else gamma.get(v)) match {
         case Some(t) => t.subtype(target) match {
           case None => None
           case Some(t1) => Some(gamma + (v -> t1))
@@ -556,7 +564,7 @@ object Expressions {
       case None => this
     }
       
-    override def rustLft: Option[String] = Some("'" + pp.dropRight(1))
+    override def rustLft: Option[String] = Some("'" + pp.dropRight(2))
     
     def refresh(field: String): Named = Named(Var(field + "_" + name.name))
   }

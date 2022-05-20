@@ -281,7 +281,7 @@ object ProofTraceJson {
         Seq(AST(pred), AST("()", args.map(fromExpr)), AST(tag.pp), fromExpr(card)))
       case RApp(priv, field, ref, pred, fnSpec, lft, tag) => AST("RApp",
         (if (priv) Seq(AST("priv")) else Seq()) ++
-          Seq(fromExpr(field), AST(ref.map(_.pp).getOrElse("")), AST(pred), AST("()", fnSpec.map(fromExpr)), fromExpr(lft), AST(tag.pp)))
+          Seq(fromExpr(field), AST(ref.map(_.pp).getOrElse("")), AST(pred), AST("()", fnSpec.map(fromExpr)), AST("()", lft.toSeq.map(fromExpr)), AST(tag.pp)))
     }
 
     object Leaf {
@@ -296,7 +296,7 @@ object ProofTraceJson {
       "+" -> OpOverloadedPlus, "*" -> OpOverloadedStar, "in" -> OpOverloadedIn,
       "!=" -> OpNotEqual, ">" -> OpGt, ">=" -> OpGeq,
       "==[bool]" -> OpBoolEq, "==[lft]" -> OpLftEq, "->" -> OpImplication,
-      "<=[int]" -> OpLeq, "<" -> OpLt, "&&" -> OpAnd, "||" -> OpOr,
+      "<=[int]" -> OpLeq, "<=[lft]" -> OpOutlives, "<" -> OpLt, "&&" -> OpAnd, "||" -> OpOr,
       "+[int]" -> OpPlus, "-[int]" -> OpMinus, "*[int]" -> OpMultiply,
       "++" -> OpUnion, "--" -> OpDiff, "*[set[int]]" -> OpIntersect,
       "in[int]" -> OpIn, "==[loc]" -> OpEq,

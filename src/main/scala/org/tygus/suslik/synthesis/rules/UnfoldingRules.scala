@@ -50,7 +50,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
           } yield (sel, goal.spawnChild(Assertion(newPrePhi, newPreSigma),
             childId = Some(clauses.indexOf(c)),
             hasProgressed = true,
-            isCompanion = true))
+            isCompanionNB = true))
 
           ProofTrace.current.add(ProofTrace.DerivationTrail(goal, newGoals.map(_._2), this,
             Map("pred" -> pred, "args" -> args.map(_.toString))))
@@ -135,7 +135,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
         val calleePostSigma = callGoal.calleePost.sigma.setSAppTags(PTag(callTag))
         val newPre = Assertion(pre.phi && callGoal.calleePost.phi, pre.sigma ** calleePostSigma)
         val newPost = callGoal.callerPost
-        val newGoal = goal.spawnChild(pre = newPre, post = newPost, programVars = goal.programVars ++ call.result, callGoal = None, isCompanion = true)
+        val newGoal = goal.spawnChild(pre = newPre, post = newPost, programVars = goal.programVars ++ call.result, callGoal = None, isCompanionNB = true)
         val postCallTransition = Transition(goal, newGoal)
         val kont: StmtProducer = SubstMapProducer(callGoal.freshToActual) >> PrependProducer(call) >> ExtractHelper(goal)
 
