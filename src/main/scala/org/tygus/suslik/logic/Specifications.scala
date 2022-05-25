@@ -60,6 +60,7 @@ object Specifications extends SepLogicUtils {
     def size: Int = phi.size + sigma.size
 
     def cost: Int = sigma.cost
+    def postCost: Int = sigma.postCost
   }
 
   /**
@@ -373,6 +374,8 @@ object Specifications extends SepLogicUtils {
     lazy val cost: Int = callGoal match {
         case None => 3*pre.cost + post.cost  // + existentials.size //
         case Some(cg) => 10 + 3*cg.callerPre.cost + cg.callerPost.cost // + (cg.callerPost.vars -- allUniversals).size //
+        case None => 3*pre.cost + 2*post.postCost  // + existentials.size //
+        case Some(cg) => 10 + 3*cg.callerPre.cost + 2*cg.callerPost.postCost // + (cg.callerPost.vars -- allUniversals).size //
       }
   }
 
