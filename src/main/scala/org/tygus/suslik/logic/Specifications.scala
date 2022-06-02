@@ -304,7 +304,7 @@ object Specifications extends SepLogicUtils {
           case BinaryExpr(OpOutlives, short, long) if short == b.ref.get.lft.name && long == r.ref.get.lft.name => true
           case _ => false
       }).size > 0
-    ).flatMap(tgt => r.unify(tgt).map((tgt, _)))
+    ).flatMap(tgt => tgt.unify(r).map((tgt, _)))
 
     // All variables this goal has ever used
     def vars: Set[Var] = gamma.keySet

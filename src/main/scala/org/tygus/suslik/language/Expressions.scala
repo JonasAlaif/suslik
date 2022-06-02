@@ -506,7 +506,7 @@ object Expressions {
         BinaryExpr(
           expr.inferConcreteOp(gamma),
           expr.left.resolveOverloading(gamma),
-          expr.right.resolveOverloading(gamma)).simplify
+          expr.right.resolveOverloading(gamma)).normalise
       case Var(_)
       | Named(_)
       | NilLifetime
@@ -515,11 +515,11 @@ object Expressions {
       | IntConst(_)
       | Unknown(_,_,_) => this
       case UnaryExpr(op, e) => UnaryExpr(op, e.resolveOverloading(gamma))
-      case BinaryExpr(op, l, r) => BinaryExpr(op, l.resolveOverloading(gamma), r.resolveOverloading(gamma)).simplify
+      case BinaryExpr(op, l, r) => BinaryExpr(op, l.resolveOverloading(gamma), r.resolveOverloading(gamma)).normalise
       case SetLiteral(elems) => SetLiteral(elems.map(_.resolveOverloading(gamma)))
       case IfThenElse(c, t, e) => IfThenElse(c.resolveOverloading(gamma),
                                             t.resolveOverloading(gamma),
-                                            e.resolveOverloading(gamma)).simplify
+                                            e.resolveOverloading(gamma)).normalise
 
     }
 
@@ -529,7 +529,7 @@ object Expressions {
       case _ => None
     }
 
-    def simplify: Expr = this
+    def normalise: Expr = this
   }
 
   // Program-level variable: program-level or ghost
@@ -594,11 +594,24 @@ object Expressions {
   }
 
   case class BinaryExpr(op: BinOp, left: Expr, right: Expr) extends Expr {
-    def subst(sigma: Subst): Expr = BinaryExpr(op, left.subst(sigma), right.subst(sigma)).simplify
-    override def simplify: Expr = op match {
+    def subst(sigma: Subst): Expr = BinaryExpr(op, left.subst(sigma), right.subst(sigma)).normalise
+    override def normalise: Expr =
+      (if (op.isInstanceOf[SymmetricOp] && left.isInstanceOf[Const] && !right.isInstanceOf[Const]) {
+        BinaryExpr(op, right, left)
+      } else if (op.isInstanceOf[AssociativeOp] && right.isInstanceOf[BinaryExpr] && right.asInstanceOf[BinaryExpr].op == op) {
+        BinaryExpr(op, BinaryExpr(op, left, right.asInstanceOf[BinaryExpr].left), right.asInstanceOf[BinaryExpr].right)
+      } else {
+        this
+      }).simplify
+
+    def simplify: Expr = op match {
       case OpEq | OpBoolEq | OpLftEq if left == right => BoolConst(true)
       case OpEq => (left, right) match {
         case (IntConst(left), IntConst(right)) if left != right => BoolConst(false)
+        case (BinaryExpr(OpPlus, left, IntConst(lval)), BinaryExpr(OpPlus, right, IntConst(rval))) =>
+          if (lval == rval) BinaryExpr(OpEq, left, right).simplify
+          else if (lval < rval) BinaryExpr(OpEq, left, BinaryExpr(OpPlus, IntConst(rval-lval), right)).simplify
+          else BinaryExpr(OpEq, BinaryExpr(OpPlus, IntConst(lval-rval), left), right).simplify
         case _ => this
       }
       case OpBoolEq => (left, right) match {
@@ -618,7 +631,7 @@ object Expressions {
         case _ => this
       }
       case OpField => left match {
-        case UnaryExpr(OpTakeRef, left) => BinaryExpr(OpField, left, right).simplify
+        case UnaryExpr(OpTakeRef, left) => BinaryExpr(OpField, left, right).normalise
         case _ => this
       }
       case _ => this
@@ -696,9 +709,9 @@ object Expressions {
   }
 
   case class UnaryExpr(op: UnOp, arg: Expr) extends Expr {
-    def subst(sigma: Subst): Expr = UnaryExpr(op, arg.subst(sigma)).simplify
-    override def simplify: Expr = (op, arg) match {
-      case (OpDeRef, UnaryExpr(OpTakeRef, arg)) => arg.simplify
+    def subst(sigma: Subst): Expr = UnaryExpr(op, arg.subst(sigma)).normalise
+    override def normalise: Expr = (op, arg) match {
+      case (OpDeRef, UnaryExpr(OpTakeRef, arg)) => arg.normalise
       case _ => this
     }
     override def substUnknown(sigma: UnknownSubst): Expr = UnaryExpr(op, arg.substUnknown(sigma))
@@ -716,8 +729,8 @@ object Expressions {
   case class IfThenElse(cond: Expr, left: Expr, right: Expr) extends Expr {
     override def level: Int = 0
     override def pp: String = s"${cond.printInContext(this)} ? ${left.printInContext(this)} : ${right.printInContext(this)}"
-    override def subst(sigma: Subst): Expr = IfThenElse(cond.subst(sigma), left.subst(sigma), right.subst(sigma)).simplify
-    override def simplify: Expr = cond match {
+    override def subst(sigma: Subst): Expr = IfThenElse(cond.subst(sigma), left.subst(sigma), right.subst(sigma)).normalise
+    override def normalise: Expr = cond match {
       case BoolConst(true) => left
       case BoolConst(false) => right
       case _ => this

@@ -347,12 +347,11 @@ case class RApp(priv: Boolean, field: Var, ref: Option[Ref], pred: Ident, fnSpec
         r.isEmpty == ref.isEmpty &&
         // Either tgt is immut or src is mut
         r.map(!_.mut || ref.get.mut).getOrElse(true) &&
-        // Can try to set blocker lft to nil (only if existential)
-        !priv && o.blocked.size <= 1 =>
+        // I can just unblock at any time in the post, I cannot just unblock in the pre
+        !priv && blocked.size == 0 =>
       val subs = (field :: fnSpec.toList).zip(tgt :: spec.toList).toMap
       val subsLft = if (r.isDefined) subs + (ref.get.lft.getNamed.get -> r.get.lft.getNamed.get) else subs
-      val subsLftBlocker = if (o.blocked.size == 1) subsLft + (o.blocked.head.name -> NilLifetime) else subsLft
-      Some(subsLftBlocker)
+      Some(subsLft)
       // TODO: should only unify borrows (field -> tgt) if in a call goal!
     case _ => None
   }

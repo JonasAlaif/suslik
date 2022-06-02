@@ -167,6 +167,8 @@ trait PureLogicUtils {
     case BinaryExpr(OpBoolEq, l, r) => Some(l, r)
     case BinaryExpr(OpSetEq, l, r) => Some(l, r)
     case BinaryExpr(OpIntervalEq, l, r) => Some(l, r)
+    case v@Var(_) => Some(v, BoolConst(true))
+    case UnaryExpr(OpNot, v@Var(_)) => Some(v, BoolConst(false))
     case _ => None
   }
 

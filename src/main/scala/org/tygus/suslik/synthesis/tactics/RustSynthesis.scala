@@ -43,6 +43,7 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
     LogicalRules.Inconsistency,
     LogicalRules.SubstLeft,
     UnificationRules.SubstRight,
+    LogicalRules.CaseSplit,
     RuslikUnfoldingRules.CopyOut,
     RuslikUnfoldingRules.ExpireFinal,
   )

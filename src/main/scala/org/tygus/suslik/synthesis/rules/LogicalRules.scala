@@ -261,6 +261,7 @@ object LogicalRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
           else if (isGhostVar(r)) Some(r.asInstanceOf[Var], l)
           // TODO: why was this for ghost only? (minimal change to get it to work with discriminants)
           else if (l.isInstanceOf[Var] && r.isInstanceOf[IntConst]) Some(l.asInstanceOf[Var], r)
+          else if (l.isInstanceOf[Var] && r.isInstanceOf[BoolConst]) Some(l.asInstanceOf[Var], r)
           else None
         } else None
 
@@ -323,4 +324,20 @@ object LogicalRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
 
   }
 
+  object CaseSplit extends SynthesisRule with InvertibleRule {
+    override def toString: String = "CaseSplit"
+
+    def apply(goal: Goal): Seq[RuleResult] = {
+      val ite = goal.pre.phi.collect[Expr](p => p.isInstanceOf[IfThenElse]) ++
+                goal.post.phi.collect(p => p.isInstanceOf[IfThenElse])
+      val splittableItes = ite.map(_.asInstanceOf[IfThenElse])
+                        .filter(c => c.cond.vars.subsetOf(goal.programVars.toSet))
+      if (splittableItes.headOption.isEmpty) return List()
+      val iteCond = splittableItes.head.cond
+      val t = goal.spawnChild(Assertion(goal.pre.phi && iteCond, goal.pre.sigma), childId = Some(0))
+      val f = goal.spawnChild(Assertion(goal.pre.phi && iteCond.not, goal.pre.sigma), childId = Some(1))
+      val kont = BranchProducer(None, Map(), Map(), Seq(iteCond, iteCond.not)) >> ExtractHelper(goal)
+      List(RuleResult(List(t, f), kont, this, goal))
+    }
+  }
 }
