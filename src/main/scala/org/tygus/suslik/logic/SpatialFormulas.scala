@@ -351,7 +351,7 @@ case class RApp(priv: Boolean, field: Var, ref: Option[Ref], pred: Ident, fnSpec
         !priv && o.blocked.size <= 1 =>
       val subs = (field :: fnSpec.toList).zip(tgt :: spec.toList).toMap
       val subsLft = if (r.isDefined) subs + (ref.get.lft.getNamed.get -> r.get.lft.getNamed.get) else subs
-      val subsLftBlocker = if (o.blocked.size == 1) subs + (o.blocked.head.name -> NilLifetime) else subs
+      val subsLftBlocker = if (o.blocked.size == 1) subsLft + (o.blocked.head.name -> NilLifetime) else subsLft
       Some(subsLftBlocker)
       // TODO: should only unify borrows (field -> tgt) if in a call goal!
     case _ => None
