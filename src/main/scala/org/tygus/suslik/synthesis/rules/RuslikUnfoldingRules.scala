@@ -253,7 +253,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       } yield {
         val tgtPred = goal.env.predicates(tgt.pred)
         assert(tgtPred.params.length == src.fnSpec.length)
-        val futures = tgtPred.params.zip(src.fnSpec).map(p => (Var(s"${p._1._1.name}_${tgt.field.name}_new_FA") |===| p._2)).toSet
+        val futures = tgtPred.params.zip(src.fnSpec).map(p => (Var(s"${p._1._1.name}_${tgt.field.name}_old_FA") |===| p._2)).toSet
         val newPost = Assertion(
           goal.post.phi && PFormula(futures).resolveOverloading(goal.gamma),
           (goal.post.sigma - tgt - src) ** src.copy(fnSpec = tgt.fnSpec, blocked = Set())
