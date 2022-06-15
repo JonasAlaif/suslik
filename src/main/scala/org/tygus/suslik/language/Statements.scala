@@ -43,7 +43,7 @@ object Statements {
             builder.append(s"free(${v.pp});\n")
             (sub, true)
           case Store(to, off, e) =>
-            val (toSub, eSub) = (UnaryExpr(OpDeRef, to.subst(sub)).simplify, e.subst(sub))
+            val (toSub, eSub) = (UnaryExpr(OpDeRef, to.subst(sub)).normalise, e.subst(sub))
             builder.append(mkSpaces(offset))
             assert(off == 0)
             builder.append(s"${toSub.pp} = ${eSub.pp};\n")
