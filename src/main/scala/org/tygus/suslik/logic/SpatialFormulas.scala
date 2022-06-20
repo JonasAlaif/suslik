@@ -270,6 +270,8 @@ case class RApp(priv: Boolean, field: Var, ref: Option[Ref], pred: Ident, fnSpec
   // Should be folded/unfolded after non-cyclic things
   def isCyclic(predicates: PredicateCycles): Boolean = predicates(pred)
 
+  def isOpaque(predicates: PredicateEnv): Boolean = predicates(pred).isOpaque
+
   def block: RApp = {
     assert(!hasBlocker)
     this.copy(blocked = Set(Named(Var(field.name + "-L"))))

@@ -86,8 +86,9 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         // Only for non-primitive types
         if !h.isPrim(goal.env.predicates)
         if h.tag.unrolls < goal.env.config.maxOpenDepth
+        (clauses, sbst, fresh_subst) = loadPred(h, goal.vars, goal.env.predicates, true)
+        if clauses.length > 0
       } yield {
-        val (clauses, sbst, fresh_subst) = loadPred(h, goal.vars, goal.env.predicates, true)
         val newGoals = clauses.zipWithIndex.map { case (clause, j) => {
           val newVars = clause.asn.sigma.rapps.map(_.field)
           goal.spawnChild(

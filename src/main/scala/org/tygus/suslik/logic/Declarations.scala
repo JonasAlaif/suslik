@@ -157,6 +157,7 @@ case class InductivePredicate(full_name: Ident, params: Formals, clauses: Seq[In
     extends TopLevelDeclaration with PureLogicUtils {
 
   def isPrim: Boolean = full_name.startsWith("PRIM_")
+  def isOpaque: Boolean = clauses.length == 0
   def name: Ident = full_name.stripPrefix("PRIM_")
 
   def resolve(gamma: Gamma, env:Environment):Option[Gamma] = {

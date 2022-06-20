@@ -110,6 +110,7 @@ object Specifications extends SepLogicUtils {
       def getPre(g: Goal): (List[RApp], List[RApp]) =
         g.pre.sigma.rapps.filter(r =>
           !r.priv &&
+          !r.isOpaque(g.env.predicates) &&
           !r.isPrim(g.env.predicates) &&
           r.tag.unrolls < g.env.config.maxOpenDepth
         ).partition(r => g.env.predicateCycles(r.pred))
@@ -127,7 +128,7 @@ object Specifications extends SepLogicUtils {
       }
       // Only owneds
       def canUnfoldPost(g: Goal): List[(RApp, UnfoldConstraints)] = {
-        val owneds = g.post.sigma.owneds
+        val owneds = g.post.sigma.owneds.filter(!_.isOpaque(g.env.predicates))
         val (cyc, non) = owneds.partition(r => g.env.predicateCycles(r.pred))
         if (non.length > postNoncyc)
           non.drop(postNoncyc).zipWithIndex.map(ri =>
@@ -374,8 +375,8 @@ object Specifications extends SepLogicUtils {
     lazy val cost: Int = callGoal match {
         case None => 3*pre.cost + post.cost  // + existentials.size //
         case Some(cg) => 10 + 3*cg.callerPre.cost + cg.callerPost.cost // + (cg.callerPost.vars -- allUniversals).size //
-        case None => 3*pre.cost + 2*post.postCost  // + existentials.size //
-        case Some(cg) => 10 + 3*cg.callerPre.cost + 2*cg.callerPost.postCost // + (cg.callerPost.vars -- allUniversals).size //
+        // case None => 3*pre.cost + 2*post.postCost  // + existentials.size //
+        // case Some(cg) => 10 + 3*cg.callerPre.cost + 2*cg.callerPost.postCost // + (cg.callerPost.vars -- allUniversals).size //
       }
   }
 

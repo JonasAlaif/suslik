@@ -165,7 +165,7 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
   def indPredicate: Parser[InductivePredicate] =
     ("predicate" ~> ident) ~ ("(" ~> repsep(formal, ",") <~ ")") ~
       opt("[" ~> ident <~ "]") ~
-      (("{" ~ opt("|")) ~> rep1sep(indClause, "|") <~ "}") ^^ {
+      (("{" ~ opt("|")) ~> repsep(indClause, "|") <~ "}") ^^ {
       case name ~ formals ~ card ~ clauses =>
         InductivePredicate(name, formals, clauses)
     }
