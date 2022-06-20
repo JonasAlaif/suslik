@@ -165,17 +165,18 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       } yield {
         assert(!h.hasBlocker)
         // TODO: hacky way to remove discriminant
-        val noDisc = SFormula(asn.sigma.chunks.filter {
+        val (noDisc, disc) = asn.sigma.chunks.partition {
           case RApp(true, _, _, _, _, _, _) => false
           case _ => true
-        })
+        }
         val newPost = Assertion(
           goal.post.phi && asn.phi && selector,
-          goal.post.sigma ** noDisc - h
+          goal.post.sigma ** SFormula(noDisc) - h
         )
         val construct_args = if (h.isPrim(goal.env.predicates)) h.fnSpec else asn.sigma.rapps.map(_.field)
         val kont =
           UnfoldProducer(h.toSApp, selector, Assertion(asn.phi, asn.sigma), fresh_subst) >>
+          (if (disc.length == 1) SubstProducer(disc.head.asInstanceOf[RApp].field, selector.asInstanceOf[BinaryExpr].left) else IdProducer) >>
           AppendProducer(Construct(h.field, h.pred, construct_args)) >>
           ExtractHelper(goal)
         RuleResult(List(goal.spawnChild(post = newPost, constraints = c,

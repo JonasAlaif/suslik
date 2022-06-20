@@ -32,7 +32,7 @@ object Statements {
           case Sub(s) =>
             // builder.append(mkSpaces(offset))
             // builder.append(s"// subst(${s.map(m => s"${m._1.pp} -> ${m._2.pp}").mkString(", ")})\n")
-            (sub ++ s.mapValues(_.subst(sub)), true)
+            (sub.mapValues(_.subst(s)) ++ s.mapValues(_.subst(sub)), true)
           case Malloc(to, _, sz) =>
             // Ignore type
             builder.append(mkSpaces(offset))
