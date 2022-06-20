@@ -618,6 +618,13 @@ object Expressions {
         case (BoolConst(left), BoolConst(right)) if left != right => BoolConst(false)
         case _ => this
       }
+      case OpLeq | OpLt => (left, right) match {
+        case (IntConst(left), IntConst(right)) => {
+          if (left < right || (left == right && op == OpLeq)) BoolConst(true)
+          else BoolConst(false)
+        }
+        case _ => this
+      }
       case OpAnd => (left, right) match {
         case (BoolConst(true), _) => right
         case (_, BoolConst(true)) => left
