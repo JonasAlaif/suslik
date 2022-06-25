@@ -19,7 +19,7 @@ object Statements {
       val builder = new StringBuilder
 
       def build(s: Statement, offset: Int = 2, sub: Subst = Map(), rets: List[Var]): (Subst, Boolean) = {
-        s match {
+        s.simplify match {
           case Skip => (sub, true)
           case Hole =>
             builder.append(mkSpaces(offset))
@@ -54,13 +54,13 @@ object Statements {
             // Do not print the type annotation
             builder.append(s"let ${to.pp} = *$f;\n")
             (sub, true)
-          case Construct(to, pred, args) =>
-            val Construct(to, pred, args) = s.subst(sub)
+          case c@Construct(_, _, _) =>
+            val Construct(to, pred, args) = c.subst(sub)
             builder.append(mkSpaces(offset))
             builder.append(s"let ${to.pp} = $pred(${args.map(_.pp).mkString(", ")});\n")
             (sub, true)
-          case Call(fun, result, args, _) =>
-            val Call(fun, result, args, _) = s.subst(sub)
+          case c@Call(_, _, _, _) =>
+            val Call(fun, result, args, _) = c.subst(sub)
             builder.append(mkSpaces(offset))
             val res = if (result.length == 0) "let _ = "
               else if (result.length == 1) s"let ${result.head.pp} = "
@@ -302,6 +302,7 @@ object Statements {
         case (Skip, _) => s2.simplify // Remove compositions with skip
 //        case (_, Skip) => s1.simplify
         case (SeqComp(s11, s12), _) => SeqComp(s11, SeqComp(s12, s2)).simplify // Left-nested compositions are transformed to right-nested
+        case (If(g, t, f), _) => If(g, SeqComp(t, s2).simplify, SeqComp(f, s2).simplify)
         case (_, Guarded(cond, b)) // Guards are propagated to the top but not beyond the definition of any var in their cond
             if cond.vars.intersect(s1.definedVars).isEmpty => Guarded(cond, SeqComp(s1, b).simplify)
         case (Load(y, tpe, from, offset), _) => simplifyBinding(y, newY => Load(newY, tpe, from, offset))

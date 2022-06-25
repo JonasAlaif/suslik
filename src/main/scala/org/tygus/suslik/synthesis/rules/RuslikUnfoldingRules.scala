@@ -162,7 +162,8 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         if h.tag.unrolls < goal.env.config.maxCloseDepth
         val (clauses, _, fresh_subst) = loadPred(h, goal.vars, goal.env.predicates, false)
         InductiveClause(selector, asn) <- clauses
-        if asn.sigma.rapps.filter(_.priv).length == (if (selector == BoolConst(true)) 0 else 1)
+        if selector != BoolConst(false)
+        if asn.sigma.rapps.filter(_.priv).length == (if (clauses.length > 1) 1 else 0)
       } yield {
         assert(!h.hasBlocker)
         // TODO: hacky way to remove discriminant
@@ -177,7 +178,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val construct_args = if (h.isPrim(goal.env.predicates)) h.fnSpec else asn.sigma.rapps.map(_.field)
         val kont =
           UnfoldProducer(h.toSApp, selector, Assertion(asn.phi, asn.sigma), fresh_subst) >>
-          (if (disc.length == 1) SubstProducer(disc.head.asInstanceOf[RApp].field, selector.asInstanceOf[BinaryExpr].left) else IdProducer) >>
+          (if (disc.length == 1) SubstProducer(disc.head.asInstanceOf[RApp].field, disc.head.asInstanceOf[RApp].fnSpec.head) else IdProducer) >>
           AppendProducer(Construct(h.field, h.pred, construct_args)) >>
           ExtractHelper(goal)
         RuleResult(List(goal.spawnChild(post = newPost, constraints = c,
@@ -208,6 +209,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         if !preBorrows.contains(h.field)
         val (clauses, sbst, fresh_subst) = loadPred(h, goal.vars, goal.env.predicates, false)
         InductiveClause(selector, asn) <- clauses
+        if selector != BoolConst(false)
         // Hacky way to ensure we can only Expire the correct enum variant:
         if selector == BoolConst(true) || {
           val sel = selector.asInstanceOf[BinaryExpr]
@@ -232,10 +234,17 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     }
   }
   object ExpireNoWrite extends Expire {
-    override def filter(r: RApp, goal: Goal): Boolean = !goal.isRAppExistential(r) || goal.hasPotentialReborrows(r)
+    override def filter(r: RApp, goal: Goal): Boolean = (!goal.isRAppExistential(r) && goal.env.predicates(r.pred).clauses.length > 1) || goal.hasPotentialReborrows(r)
   }
   object ExpireFinal extends Expire with InvertibleRule {
-    override def filter(r: RApp, goal: Goal): Boolean = goal.isRAppExistential(r) && !goal.hasPotentialReborrows(r)
+    override def filter(r: RApp, goal: Goal): Boolean =
+      // Don't need to try writing
+      (goal.isRAppExistential(r) ||
+      // Might as well expire if we have no choice; can write to it after expiry if we want to
+      // since all the fields will still be there (unlike if we did have an enum)
+      goal.env.predicates(r.pred).clauses.length <= 1) &&
+      // Don't need to try reborrowing
+      !goal.hasPotentialReborrows(r)
   }
 
   // i.e. from { 'a >= 'b ; x: &'a mut i32(val_x) } { x: &'a mut i32(FA_val_result)<'tmp> ** result: &'b mut i32(val_result) }

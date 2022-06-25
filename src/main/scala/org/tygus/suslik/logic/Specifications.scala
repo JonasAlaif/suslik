@@ -301,10 +301,17 @@ object Specifications extends SepLogicUtils {
     })
     def hasPotentialReborrows(r: RApp): Boolean = !potentialReborrows(r).isEmpty
     def potentialReborrows(r: RApp): List[(RApp, ExprSubst)] = post.sigma.borrows.filter(b =>
-      r.hasBlocker && existentials(b.field) && pre.phi.collect(_ match {
+      // Mutability matches
+      (r.ref.get.mut || !b.ref.get.mut) &&
+      // Optimization? The source should be potentially blocked
+      (!r.ref.get.mut || r.hasBlocker) &&
+      // Target should be getting created
+      existentials(b.field) &&
+      // Outlives relation satisfied
+      ((r.ref.get.lft == b.ref.get.lft) || pre.phi.collect(_ match {
           case BinaryExpr(OpOutlives, short, long) if short == b.ref.get.lft.name && long == r.ref.get.lft.name => true
           case _ => false
-      }).size > 0
+      }).size > 0)
     ).flatMap(tgt => tgt.unify(r).map((tgt, _)))
 
     // All variables this goal has ever used
@@ -373,10 +380,8 @@ object Specifications extends SepLogicUtils {
       */
     //    lazy val cost: Int = pre.cost.max(post.cost)
     lazy val cost: Int = callGoal match {
-        case None => 3*pre.cost + post.cost  // + existentials.size //
-        case Some(cg) => 10 + 3*cg.callerPre.cost + cg.callerPost.cost // + (cg.callerPost.vars -- allUniversals).size //
-        // case None => 3*pre.cost + 2*post.postCost  // + existentials.size //
-        // case Some(cg) => 10 + 3*cg.callerPre.cost + 2*cg.callerPost.postCost // + (cg.callerPost.vars -- allUniversals).size //
+        case None => pre.cost + post.postCost  // + existentials.size //
+        case Some(cg) => 10 + cg.callerPre.cost + cg.callerPost.postCost // + (cg.callerPost.vars -- allUniversals).size //
       }
   }
 
