@@ -263,6 +263,7 @@ object ProofTraceJson {
       case BinaryExpr(op, left, right) => AST(labelOf(op), Seq(left, right).map(fromExpr))
       case OverloadedBinaryExpr(op, left, right) => AST(labelOf(op), Seq(left, right).map(fromExpr))
       case SetLiteral(elems) => AST("{}", elems.map(fromExpr))
+      case TupleExpr(exprs) => AST("()", exprs.map(tpl => fromExpr(tpl._1)))
       case IfThenElse(cond, left, right) => AST("ite", Seq(cond, left, right).map(fromExpr))
       case Named(lft) => fromExpr(lft)
       case NilLifetime => AST("NilLifetime")

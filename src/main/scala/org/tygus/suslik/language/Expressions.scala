@@ -465,6 +465,13 @@ object Expressions {
             case Some(g) => e.resolve(g, Some(IntType))
           })
         } else None
+      case TupleExpr(exprs) =>
+        if (IntType.conformsTo(target)) {
+          exprs.foldLeft[Option[Gamma]](Some(gamma))((go, e) => go match {
+            case None => None
+            case Some(g) => e._1.resolve(g, e._2)
+          })
+        } else None
       case IfThenElse(c, t, e) =>
         for {
           gamma1 <- c.resolve(gamma, Some(BoolType))
@@ -517,6 +524,10 @@ object Expressions {
       case UnaryExpr(op, e) => UnaryExpr(op, e.resolveOverloading(gamma))
       case BinaryExpr(op, l, r) => BinaryExpr(op, l.resolveOverloading(gamma), r.resolveOverloading(gamma)).normalise
       case SetLiteral(elems) => SetLiteral(elems.map(_.resolveOverloading(gamma)))
+      case TupleExpr(exprs) => TupleExpr(exprs.map(tpl => {
+          val expr = tpl._1.resolveOverloading(gamma)
+          (expr, expr.getType(gamma).orElse(tpl._2))
+        }))
       case IfThenElse(c, t, e) => IfThenElse(c.resolveOverloading(gamma),
                                             t.resolveOverloading(gamma),
                                             e.resolveOverloading(gamma)).normalise
@@ -608,6 +619,11 @@ object Expressions {
       case OpEq | OpBoolEq | OpLftEq if left == right => BoolConst(true)
       case OpEq => (left, right) match {
         case (IntConst(left), IntConst(right)) if left != right => BoolConst(false)
+        case (TupleExpr(left), TupleExpr(right)) if left.length != right.length => BoolConst(false)
+        case (TupleExpr(left), TupleExpr(right)) =>
+          val both = left.zip(right)
+          val gamma = (left ++ right).foldLeft(Map.empty[Var, SSLType])((acc, tpl) => tpl._1.resolve(acc, tpl._2).get)
+          both.map(tpl => tpl._1._1 |===| tpl._2._1).fold(BoolConst(true))(_ && _).resolveOverloading(gamma)
         case (BinaryExpr(OpPlus, left, IntConst(lval)), BinaryExpr(OpPlus, right, IntConst(rval))) =>
           if (lval == rval) BinaryExpr(OpEq, left, right).simplify
           else if (lval < rval) BinaryExpr(OpEq, left, BinaryExpr(OpPlus, IntConst(rval-lval), right)).simplify
@@ -731,6 +747,12 @@ object Expressions {
     override def pp: String = s"{${elems.map(_.pp).mkString(", ")}}"
     override def subst(sigma: Subst): SetLiteral = SetLiteral(elems.map(_.subst(sigma)))
     def getType(gamma: Gamma): Option[SSLType] = Some(IntSetType)
+  }
+
+  case class TupleExpr(exprs: List[(Expr, Option[SSLType])]) extends Expr {
+    override def pp: String = s"(${exprs.map(_._1.pp).mkString(", ")})"
+    override def subst(sigma: Subst): TupleExpr = TupleExpr(exprs.map(e => (e._1.subst(sigma), e._2)))
+    def getType(gamma: Gamma): Option[SSLType] = Some(IntType)
   }
 
   case class IfThenElse(cond: Expr, left: Expr, right: Expr) extends Expr {

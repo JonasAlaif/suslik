@@ -100,7 +100,7 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
 
   def atom: Parser[Expr] = (
     unOpParser ~ atom ^^ { case op ~ a => UnaryExpr(op, a) }
-      | "(" ~> expr <~ ")"
+      | "(" ~> repsep(expr, ",") <~ ")" ^^ { case e::Nil => e; case es => TupleExpr(es.map((_, None))) }
       | intLiteral | boolLiteral | setLiteral | locLiteral | intervalLiteral
       | varParser
     )

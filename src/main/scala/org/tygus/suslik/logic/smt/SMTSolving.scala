@@ -365,6 +365,7 @@ object SMTSolving extends Core
         case _ => throw SMTUnsupportedExpr(e)
       }
     }
+    case TupleExpr(exprs) => Ints("__" + exprs.map(_._1.pp).mkString("_") + "__")
     case _ => throw SMTUnsupportedExpr(e)
   }
 

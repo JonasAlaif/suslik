@@ -67,6 +67,7 @@ trait PureLogicUtils {
     case _:Var => e
     case IfThenElse(e1,e2,e3) => IfThenElse(desugar(e1),desugar(e2), desugar(e3))
     case SetLiteral(args) => SetLiteral(args.map(desugar))
+    case TupleExpr(exprs) => TupleExpr(exprs.map(tpl => (desugar(tpl._1), tpl._2)))
     case e => throw SynthesisException(s"Not supported: ${e.pp} (${e.getClass.getName})")
   }
 
