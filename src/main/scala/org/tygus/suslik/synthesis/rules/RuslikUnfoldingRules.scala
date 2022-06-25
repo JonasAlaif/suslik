@@ -105,7 +105,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val nameSubs = goal.env.predicates(h.pred).clauses.flatMap(
           _.asn.sigma.rapps.map(a => Var(a.field.name + "_" + h.field.name) -> BinaryExpr(OpField, h.field, a.field))
         ).toMap
-        val nSubsRef = if (h.isBorrow) nameSubs.map(m => m._1 -> UnaryExpr(OpTakeRef, m._2)) else nameSubs
+        val nSubsRef = if (h.isBorrow) nameSubs.map(m => m._1 -> UnaryExpr(OpTakeRef(h.ref.get.mut), m._2)) else nameSubs
         val kont = BranchProducer(Some(h.toSApp), fresh_subst, sbst, clauses.map(_.selector)) >>
           SubstMapProducer(nSubsRef) >> ExtractHelper(goal)
         RuleResult(newGoals, kont, this, goal)

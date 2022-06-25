@@ -37,8 +37,8 @@ object Expressions {
     override def outputType: SSLType = IntType
   }
 
-  object OpTakeRef extends UnOp {
-    override def pp: String = "&"
+  case class OpTakeRef(mut: Boolean) extends UnOp {
+    override def pp: String = if (mut) "&mut" else "&"
     override def inputType: SSLType = LocType
     override def outputType: SSLType = LocType
   }
@@ -638,7 +638,7 @@ object Expressions {
         case _ => this
       }
       case OpField => left match {
-        case UnaryExpr(OpTakeRef, left) => BinaryExpr(OpField, left, right).normalise
+        case UnaryExpr(OpTakeRef(_), left) => BinaryExpr(OpField, left, right).normalise
         case _ => this
       }
       case _ => this
@@ -718,7 +718,7 @@ object Expressions {
   case class UnaryExpr(op: UnOp, arg: Expr) extends Expr {
     def subst(sigma: Subst): Expr = UnaryExpr(op, arg.subst(sigma)).normalise
     override def normalise: Expr = (op, arg) match {
-      case (OpDeRef, UnaryExpr(OpTakeRef, arg)) => arg.normalise
+      case (OpDeRef, UnaryExpr(OpTakeRef(_), arg)) => arg.normalise
       case _ => this
     }
     override def substUnknown(sigma: UnknownSubst): Expr = UnaryExpr(op, arg.substUnknown(sigma))
