@@ -737,9 +737,11 @@ object Expressions {
     override def level: Int = 0
     override def pp: String = s"${cond.printInContext(this)} ? ${left.printInContext(this)} : ${right.printInContext(this)}"
     override def subst(sigma: Subst): Expr = IfThenElse(cond.subst(sigma), left.subst(sigma), right.subst(sigma)).normalise
-    override def normalise: Expr = cond match {
-      case BoolConst(true) => left
-      case BoolConst(false) => right
+    override def normalise: Expr = (cond, left, right) match {
+      case (BoolConst(true), _, _) => left
+      case (BoolConst(false), _, _) => right
+      case (_, BoolConst(false), _) => (cond.not && right).normalise
+      case (_, _, BoolConst(false)) => (cond && left).normalise
       case _ => this
     }
     override def substUnknown(sigma: UnknownSubst): Expr = IfThenElse(cond.substUnknown(sigma), left.substUnknown(sigma), right.substUnknown(sigma))
