@@ -216,7 +216,9 @@ object Specifications extends SepLogicUtils {
     def toFunSpec: FunSpec = {
       val name = this.fname + this.label.pp.replaceAll("[^A-Za-z0-9]", "").tail
       val varDecl = this.ghosts.toList.map(v => (v, getType(v))) // Also remember types for non-program vars
-      FunSpec(name, VoidType, this.formals, this.pre, this.post, varDecl)
+      FunSpec(name, VoidType, this.formals,
+        Assertion(this.pre.phi, this.pre.sigma.withoutPrivate),
+        Assertion(this.post.phi, this.post.sigma.withoutPrivate), varDecl)
     }
 
     // Turn this goal into a helper function call
