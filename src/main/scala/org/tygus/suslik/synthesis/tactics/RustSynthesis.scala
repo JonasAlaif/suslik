@@ -72,8 +72,8 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
           RuslikUnfoldingRules.Open,
           RuslikUnfoldingRules.AbduceCall,
           RuslikUnfoldingRules.Close,
-          RuslikUnfoldingRules.BrrwWrite,
           RuslikUnfoldingRules.ExpireNoWrite,
+          RuslikUnfoldingRules.BrrwWrite,
           RuslikUnfoldingRules.Reborrow,
         )
     } else {
