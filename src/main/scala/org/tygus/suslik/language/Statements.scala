@@ -351,10 +351,10 @@ object Statements {
       val generics = if (f.lfts.size == 0) "" else s"<${f.lfts.mkString(", ")}>"
       val returns =
         if (f.rustReturns.length == 0) ""
-        else if (f.rustReturns.length == 1) s"-> ${f.rustReturns.head._2.map(_.sig).getOrElse("")}${f.rustReturns.head._3} "
-        else s"-> (${f.rustReturns.map(r => r._2.map(_.sig).getOrElse("") + r._3).mkString(", ")}) "
+        else if (f.rustReturns.length == 1) s"-> ${f.rustReturns.head._2.map(_.sig).mkString("")}${f.rustReturns.head._3} "
+        else s"-> (${f.rustReturns.map(r => r._2.map(_.sig).mkString("") + r._3).mkString(", ")}) "
       s"""
-          |fn $name$generics(${f.rustParams.map { case (f, r, t) => s"${f.pp}: ${r.map(_.sig).getOrElse("")}$t" }.mkString(", ")}) $returns{
+          |fn $name$generics(${f.rustParams.map { case (f, r, t) => s"${f.pp}: ${r.map(_.sig).mkString("")}$t" }.mkString(", ")}) $returns{
           |${body.pp(f.result)}}
       """.stripMargin
     }

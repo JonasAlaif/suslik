@@ -45,7 +45,7 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
         s <- postCandidates.take(1) // DANGER: in block phase this relies on alloc and unify discovering existential heaplets in the same order
         t <- pre.sigma.chunks
         if !s.eqModTags(t)
-        sub <- t.unify(s)
+        sub <- t.unify(s, false, goal.gamma)
         subExpr = goal.substToFormula(sub)
         newPostSigma = (post.sigma - s) ** t.copyTag(s)
 //        (varSub, subExpr) = goal.splitSubst(sub)
@@ -56,7 +56,8 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
 //        val newCallGoal = goal.callGoal.map(_.updateSubstitution(varSub))
 //        val newGoal = goal.spawnChild(post = newPost, callGoal = newCallGoal)
         val newPost = Assertion(post.phi && subExpr, newPostSigma)
-        val newGoal = goal.spawnChild(post = newPost)
+        val newPre = Assertion(pre.phi, pre.sigma)
+        val newGoal = goal.spawnChild(pre = newPre, post = newPost)
         val kont = UnificationProducer(t, s, sub) >> IdProducer >> ExtractHelper(goal)
 
         ProofTrace.current.add(ProofTrace.DerivationTrail.withSubst(goal, List(newGoal), this, sub))
@@ -176,22 +177,29 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
       def extractSides(l: Expr, r: Expr): Option[(Var, Expr)] = (l, r) match {
         case (l@Var(_), r) if canSubst(l, r) => Some(l, r)
         case (r, l@Var(_)) if canSubst(l, r) => Some(l, r)
+        case (AlwaysExistsVar(l), r) if canSubst(l, r) => Some(l, r)
+        case (r, AlwaysExistsVar(l)) if canSubst(l, r) => Some(l, r)
         case _ => None
       }
+      def equalitySides(e: Expr): Option[(Var, (Expr, Expr))] = extractEquality(e).flatMap(tupled(extractSides)).map(m => (m._1 -> (m._2, e)))
 
-      findConjunctAndRest(e => extractEquality(e).flatMap(tupled(extractSides)), p2)
-      match {
-        case Some((sub, rest2)) => {
-          val sigma = Map(sub)
-          val _p2 = rest2.subst(sigma)
+      val cs = p2.conjuncts.toSet.flatMap(equalitySides).toMap
+      if (cs.size == 0) Nil
+      else {
+          var sigmaOld: Subst = Map.empty
+          var sigma = cs.map(tpl => tpl._1 -> tpl._2._1).toMap
+          while (sigma != sigmaOld) {
+            sigmaOld = sigma
+            sigma = sigmaOld.map(tpl => (tpl._1, tpl._2.subst(sigmaOld)))
+          }
+          val _p2 = (p2 - PFormula(cs.map(_._2._2).toSet)).subst(sigma)
           val _s2 = s2.subst(sigma)
           val newCallGoal = goal.callGoal.map(_.updateSubstitution(sigma))
-          val newGoal = goal.spawnChild(post = Assertion(_p2, _s2), callGoal = newCallGoal)
+          val newPre = goal.pre.subst(sigma)
+          val newGoal = goal.spawnChild(pre = newPre, post = Assertion(_p2, _s2), callGoal = newCallGoal)
           val kont = SubstMapProducer(sigma) >> IdProducer >> ExtractHelper(goal)
           ProofTrace.current.add(ProofTrace.DerivationTrail.withSubst(goal, Seq(newGoal), this, sigma))
           List(RuleResult(List(newGoal), kont, this, goal))
-        }
-        case _ => Nil
       }
     }
   }
@@ -216,7 +224,8 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
         else goal.programVars.toSet
 //        goal.allUniversals.intersect(goal.pre.vars ++ goal.post.vars)
       }
-
+      if (!exCandidates.forall(ex => goal.getType(ex) != LocType))
+        println(s"Have exCandidates (${exCandidates}) with ty LocType (gamma: ${goal.gamma}")
       assert(exCandidates.forall(ex => goal.getType(ex) != LocType))
       for {
         ex <- least(exCandidates) // since all existentials must go, no point trying them in different order

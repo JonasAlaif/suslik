@@ -26,7 +26,7 @@ object FailRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
       val pre = goal.pre.phi
       val post = goal.post.phi
 
-      if (!SMTSolving.sat((pre && post).toExpr))
+      if (!SMTSolving.sat((pre && post).toExpr)(goal.programVars))
       // post inconsistent with pre
         List(RuleResult(List(goal.unsolvableChild), IdProducer, this, goal))
       else
@@ -39,7 +39,7 @@ object FailRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
     override def toString: String = "CheckPost"
 
     def filterOutValidPost(goal: Goal, exPost: PFormula, uniPost: PFormula): Seq[RuleResult] = {
-      val validExConjuncts = exPost.conjuncts.filter(c => SMTSolving.valid(goal.pre.phi ==> c))
+      val validExConjuncts = exPost.conjuncts.filter(c => SMTSolving.valid(goal.pre.phi ==> c)(goal.programVars))
       if (validExConjuncts.isEmpty && uniPost.conjuncts.isEmpty) Nil
       else {
         val newPost = Assertion(exPost - PFormula(validExConjuncts), goal.post.sigma)
@@ -51,7 +51,7 @@ object FailRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
     def apply(goal: Goal): Seq[RuleResult] = {
       val (uniPost, exPost) = goal.splitPost
       // If precondition does not contain predicates, we can't get new facts from anywhere
-      if (!SMTSolving.valid(goal.pre.phi ==> uniPost))
+      if (!SMTSolving.valid(goal.pre.phi ==> uniPost)(goal.programVars))
       // universal post not implied by pre
         List(RuleResult(List(goal.unsolvableChild), IdProducer, this, goal))
       else filterOutValidPost(goal, exPost, uniPost)

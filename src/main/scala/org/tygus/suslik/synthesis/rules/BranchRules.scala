@@ -99,8 +99,8 @@ object BranchRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
       for {
         cond <- condCandidates(goal)
         pre = goal.pre.phi
-        if SMTSolving.valid((pre && cond) ==> goal.universalPost)
-        if SMTSolving.sat((pre && cond).toExpr)
+        if SMTSolving.valid((pre && cond) ==> goal.universalPost)(goal.programVars)
+        if SMTSolving.sat((pre && cond).toExpr)(goal.programVars)
         unknown = Branch.minimalUnknown(goal.pre.phi, cond.vars)
         thenGoal = goal.spawnChild(goal.pre.copy(phi = goal.pre.phi.substUnknown(unknown, cond)))
       } yield {
@@ -109,7 +109,7 @@ object BranchRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
 
     def apply(goal: Goal): Seq[RuleResult] = {
       val (uniPost, exPost) = goal.splitPost
-      if (SMTSolving.valid(goal.pre.phi ==> uniPost))
+      if (SMTSolving.valid(goal.pre.phi ==> uniPost)(goal.programVars))
         CheckPost.filterOutValidPost(goal, exPost, uniPost)
       else {
         val guarded = guardedCandidates(goal)

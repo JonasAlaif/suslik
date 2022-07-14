@@ -10,6 +10,7 @@ import org.tygus.suslik.synthesis.SynthesisException
 object Expressions {
 
   sealed abstract class UnOp extends PrettyPrinting {
+    def level: Int = 5
     def inputType: SSLType
     def outputType: SSLType
   }
@@ -43,6 +44,7 @@ object Expressions {
     override def outputType: SSLType = LocType
   }
   object OpDeRef extends UnOp {
+    override def level: Int = 6
     override def pp: String = "*"
     override def inputType: SSLType = LocType
     override def outputType: SSLType = LocType
@@ -164,7 +166,7 @@ object Expressions {
     override def pp: String = "<=ovr"
     override def opFromTypes: Map[(SSLType, SSLType), BinOp] = Map(
       (IntType, IntType) -> OpLeq,
-      (LifetimeType, LifetimeType) -> OpOutlives,
+      (LifetimeType, LifetimeType) -> OpOutlived,
       (IntSetType, IntSetType) -> OpSubset,
       (IntervalType, IntervalType) -> OpSubinterval,
     )
@@ -317,14 +319,21 @@ object Expressions {
     def lType: SSLType = IntervalType
     def rType: SSLType = IntervalType
   }
-  object OpOutlives extends RelOp {
+  object OpLftUpperBound extends RelOp {
+    def level: Int = 3
+    override def pp: String = "upto"
+    def lType: SSLType = LifetimeType
+    def rType: SSLType = LifetimeType
+  }
+  object OpOutlived extends RelOp {
     def level: Int = 3
     override def pp: String = "<="
     def lType: SSLType = LifetimeType
     def rType: SSLType = LifetimeType
   }
-  object OpField extends BinOp {
-    def level: Int = 4
+  // Associative since rhs is always Var
+  object OpField extends BinOp with AssociativeOp {
+    override def level: Int = 7
     override def pp: String = "."
     def lType: SSLType = LocType
     def rType: SSLType = LocType
@@ -332,7 +341,7 @@ object Expressions {
   }
 
 
-  sealed abstract class Expr extends PrettyPrinting with HasExpressions[Expr] with Ordered[Expr] {
+  sealed abstract class Expr extends PrettyPrinting with HasExpressions[Expr] with Ordered[Expr] with PureLogicUtils {
 
     def compare(that: Expr): Int = this.pp.compare(that.pp)
 
@@ -341,6 +350,14 @@ object Expressions {
 
       def collector(acc: Set[R])(exp: Expr): Set[R] = exp match {
         case v@Var(_) if p(v) => acc + v.asInstanceOf[R]
+        case ae@AlwaysExistsVar(v) => {
+          val acc1 = if (p(ae)) acc + ae.asInstanceOf[R] else acc
+          collector(acc1)(v)
+        }
+        case n@NoExists(e) =>
+          val acc1 = if (p(n)) acc + n.asInstanceOf[R] else acc
+          collector(acc1)(e)
+        case e@OnExpiry(_, _, _, _, _) if p(e) => acc + e.asInstanceOf[R]
         case n@Named(v) => {
           val acc1 = if (p(n)) acc + n.asInstanceOf[R] else acc
           collector(acc1)(v)
@@ -377,7 +394,7 @@ object Expressions {
       collector(Set.empty)(this)
     }
 
-    def level: Int = 6
+    def level: Int = 9
     def associative: Boolean = false
 
     def printInContext(parent: Expr): String = {
@@ -415,7 +432,8 @@ object Expressions {
 
     def resolve(gamma: Gamma, target: Option[SSLType]): Option[Gamma] = this match {
       case v@Var(_) if v.name.endsWith("-L") => if (LifetimeType.conformsTo(target)) Some(gamma + (v -> LifetimeType)) else None
-      case v@Var(_) => (if (v.name.endsWith("_FA")) gamma.get(Var(v.name.dropRight(3))) else gamma.get(v)) match {
+      case ae@AlwaysExistsVar(v) => v.resolve(gamma, target)
+      case v@Var(_) => gamma.get(v) match {
         case Some(t) => t.subtype(target) match {
           case None => None
           case Some(t1) => Some(gamma + (v -> t1))
@@ -425,6 +443,8 @@ object Expressions {
           case None => Some(gamma)
         }
       }
+      case NoExists(_) => if (BoolType.conformsTo(target)) Some(gamma) else None
+      case OnExpiry(_, _, _, _, ty) => if (ty.conformsTo(target)) Some(gamma) else None
       case Named(lft) => if (LifetimeType.conformsTo(target)) lft.resolve(gamma, target) else None
       case NilLifetime => if (LifetimeType.conformsTo(target)) Some(gamma) else None
       case BoolConst(_) => if (BoolType.conformsTo(target)) Some(gamma) else None
@@ -515,12 +535,15 @@ object Expressions {
           expr.left.resolveOverloading(gamma),
           expr.right.resolveOverloading(gamma)).normalise
       case Var(_)
+      | AlwaysExistsVar(_)
       | Named(_)
+      | OnExpiry(_, _, _, _, _)
       | NilLifetime
       | BoolConst(_)
       | LocConst(_)
       | IntConst(_)
       | Unknown(_,_,_) => this
+      case NoExists(e) => NoExists(e.resolveOverloading(gamma))
       case UnaryExpr(op, e) => UnaryExpr(op, e.resolveOverloading(gamma))
       case BinaryExpr(op, l, r) => BinaryExpr(op, l.resolveOverloading(gamma), r.resolveOverloading(gamma)).normalise
       case SetLiteral(elems) => SetLiteral(elems.map(_.resolveOverloading(gamma)))
@@ -541,6 +564,11 @@ object Expressions {
     }
 
     def normalise: Expr = this
+    def flatten: Seq[Expr] = this match {
+      case BinaryExpr(OpAnd, l, r) => l.flatten ++ r.flatten
+      case _ => Seq(this)
+    }
+    def isLiteral = this.isInstanceOf[Const] || this.isInstanceOf[SetLiteral]
   }
 
   // Program-level variable: program-level or ghost
@@ -553,6 +581,129 @@ object Expressions {
     def varSubst(sigma: Map[Var, Var]): Var = subst(sigma).asInstanceOf[Var]
 
     def getType(gamma: Gamma): Option[SSLType] = gamma.get(this)
+  }
+
+  case class NoExists(expr: Expr) extends Expr {
+    override def pp: String = "#[" + expr.pp + "]"
+    override def subst(sigma: Subst): Expr = NoExists(expr.subst(sigma))
+    override def getType(gamma: Gamma): Option[SSLType] = Some(BoolType)
+  }
+  case class AlwaysExistsVar(v: Var) extends Expr {
+    override def pp: String = "(" + v.pp + ")"
+    override def subst(sigma: Subst): Expr = if (sigma.contains(v)) v.subst(sigma) else this
+    override def getType(gamma: Gamma): Option[SSLType] = v.getType(gamma)
+  }
+
+  // For existentials (like ^result) post is always None
+  // For FA refs post is set when adding it to post (like "^x None" -> "*x Some(true)")
+  case class OnExpiry(post: Option[Boolean], futs: List[Boolean], field: Var, idx: Int, ty: SSLType) extends Expr {
+    override val pp: String = s"${futsStr("^ ", "* ")}(${ty.pp} ${field.name} $post)[$idx]"
+    def futsStr(f: String, c: String): String = futs.reverse.map(if (_) f else c).mkString
+    // post is not included in SMT since unifying will make these equal
+    val smtName: String = s"ON_EXPIRY_${futsStr("F", "C")}_${field.name}_$idx"
+    val asVar: Var = Var(this.pp)
+    override def subst(sigma: Subst): Expr = if (sigma.contains(this.asVar)) sigma(this.asVar)
+      else if (sigma.contains(field)) OnExpiry(post, futs, sigma(field).asInstanceOf[Var], idx, ty)
+      else this
+      // In pre (or reborrow)
+      // if (sigma.contains(field)) OnExpiry(post, futs, sigma(field).asInstanceOf[Var], idx, ty)
+      // In post
+      // else
+        // sigma.getOrElse(this.asVar, this)
+
+    override def getType(gamma: Gamma): Option[SSLType] = Some(ty)
+
+    // When FA ref is added to post
+    def toPostSub(f: Var, preFnSpec: Seq[Expr], postFnSpec: Seq[Expr]): Option[(Var, Expr)] = if (f == this.field) {
+      assert(this.post.isEmpty)
+      if (this.futs.forall(!_)) Some(this.asVar -> preFnSpec(idx))
+      else if (this.futs.head && this.futs.tail.forall(!_)) Some(this.asVar -> postFnSpec(idx))
+      else Some(this.asVar -> this.copy(post = Some(futs.head), futs = false :: futs.tail))
+    } else None
+
+    // For a write "*dstF = srcF;" currently only possible in post
+    def writeSub(dstF: Var, srcF: Var, fnSpec: Seq[Expr], inPost: Boolean): Option[(Var, Expr)] = {
+      assert(inPost)
+      if (dstF == this.field) {
+        assert(this.post.isDefined)
+        // If this was `^^^x None` then it would become `^^*x Some(true)` and we did:
+        // "??; // expire x_rb -> x;" it would become `^^x_rb Some(true)`. At this point we don't
+        // want a write "??; *x_rb = tmp; ..." to act on this, but only on `?*x_rb Some(true)`.
+        if (this.futs.head == false && this.post.get == inPost) {
+          if (futs.length == 1) Some(this.asVar -> fnSpec(this.idx))
+          else
+            // If we were `^*x_rb Some(true)` then we become `^tmp None` (since tmp is an existential)
+            Some(this.asVar -> this.copy(post = None, futs = this.futs.tail, field = srcF))
+        } else if (this.futs.length > 1 && this.futs.head == false && this.futs.tail.head == true && this.post.get == !inPost) {
+          // If we were `^*x_rb Some(false)` then we become `**tmp Some(true)` (since tmp is an existential)
+          Some(this.asVar -> this.copy(post = Some(true), futs = false :: false :: this.futs.tail.tail))
+        } else None
+      } else None
+    }
+
+    // For an open "let srcF = &mut **dstF;" or "// expire srcF -> dstF;"
+    def openOrExpireSub(dstF: Var, srcF: Var, expire: Boolean): Option[(Var, Expr)] = {
+      if (dstF == this.field) {
+        assert(this.post.isDefined && this.futs.length > 1)
+        // Same reasoning as write
+        if (this.futs.head == false && this.post.get == expire) {
+          // If we were `^*x Some(true)` then we become `^x_rb Some(true)`
+          Some(this.asVar -> this.copy(futs = this.futs.tail, field = srcF))
+        } else None
+      } else None
+    }
+
+    // For a read "let v = *f;" currently only possible in pre
+    def copyOutSub(f: Var, e: Expr, inPost: Boolean): Option[(Var, Expr)] = {
+      assert(!inPost)
+      if (f == this.field) {
+        assert(this.post.isDefined)
+        if (futs.forall(_ == false) && post.get == inPost) {
+          Some(this.asVar -> e)
+        } else None
+      } else None
+    }
+
+    // For a reborrow "let dstF = &mut *srcF;" currently only possible in post
+    def reborrowSub(dstF: Var, srcF: Var): Option[(Var, Expr)] = if (dstF == this.field) {
+      assert(this.post.isEmpty)
+      // If we were `?*tmp None` then we become `?*x Some(true)`
+      if (!this.futs.head)
+        Some(this.asVar -> this.copy(post = Some(true), field = srcF))
+      else None
+    } else if (srcF == this.field) {
+      assert(this.post.isDefined)
+      if (this.post.get && this.futs.head == false)
+        // If we were `*x Some(true)` then we become `^x Some(true)`
+        Some(this.asVar -> this.copy(futs = true :: this.futs.tail))
+      else None
+    } else None
+
+    // For a reborrow "let dstF = &mut *srcF;" currently only possible from pre
+    def reborrowCallSub(dstF: Var, srcF: Var, srcFnSpec: Seq[Expr], newFnSpec: Seq[Expr], vars: Set[Var]): Option[(Var, Expr)] = if (dstF == this.field) {
+      assert(this.post.isEmpty, "Found OnExp with nonempty post: " + this.pp + " reborriwing from " + srcF.pp)
+      if (this.futs.head)
+        if (this.futs.tail.forall(!_)) Some(this.asVar -> newFnSpec(idx))
+        // If we were `^^arg None` then we become `^*x Some(false)`
+        else Some(this.asVar -> this.copy(post = Some(false), field = srcF, futs = false :: this.futs.tail))
+      else {
+        if (this.futs.forall(!_)) Some(this.asVar -> srcFnSpec(idx))
+        else {
+          val v = this.copy(post = Some(false), field = srcF).asVar
+          Some(this.asVar -> freshVar(vars, v.name))
+        }
+      }
+    } else if (srcF == this.field) {
+      assert(this.post.isDefined)
+      if (!this.post.get)
+        if (this.futs.forall(!_)) Some(this.asVar -> srcFnSpec(idx))
+        else {
+          Some(this.asVar -> freshVar(vars, this.asVar.name))
+        }
+      else None
+    } else None
+
+    // TODO: unify
   }
 
   // Program-level lifetime
@@ -607,7 +758,7 @@ object Expressions {
   case class BinaryExpr(op: BinOp, left: Expr, right: Expr) extends Expr {
     def subst(sigma: Subst): Expr = BinaryExpr(op, left.subst(sigma), right.subst(sigma)).normalise
     override def normalise: Expr =
-      (if (op.isInstanceOf[SymmetricOp] && left.isInstanceOf[Const] && !right.isInstanceOf[Const]) {
+      (if (op.isInstanceOf[SymmetricOp] && left.isLiteral && !right.isLiteral) {
         BinaryExpr(op, right, left)
       } else if (op.isInstanceOf[AssociativeOp] && right.isInstanceOf[BinaryExpr] && right.asInstanceOf[BinaryExpr].op == op) {
         BinaryExpr(op, BinaryExpr(op, left, right.asInstanceOf[BinaryExpr].left), right.asInstanceOf[BinaryExpr].right)
@@ -616,7 +767,8 @@ object Expressions {
       }).simplify
 
     def simplify: Expr = op match {
-      case OpEq | OpBoolEq | OpLftEq if left == right => BoolConst(true)
+      case OpEq | OpBoolEq | OpLftEq | OpSetEq | OpIntervalEq if left == right => BoolConst(true)
+      case OpLftEq if (!left.isInstanceOf[Var] && left != NilLifetime) || (!right.isInstanceOf[Var] && right != NilLifetime) => ???
       case OpEq => (left, right) match {
         case (IntConst(left), IntConst(right)) if left != right => BoolConst(false)
         case (TupleExpr(left), TupleExpr(right)) if left.length != right.length => BoolConst(false)
@@ -632,6 +784,24 @@ object Expressions {
       }
       case OpBoolEq => (left, right) match {
         case (BoolConst(left), BoolConst(right)) if left != right => BoolConst(false)
+        case (l, BoolConst(true)) => l
+        case (BoolConst(true), r) => r
+        case _ => this
+      }
+      case OpMinus => (left, right) match {
+        case (_, IntConst(right)) if right == 0 => left
+        case (IntConst(left), IntConst(right)) => if (left >= right) IntConst(left-right) else UnaryExpr(OpUnaryMinus, IntConst(right-left))
+        case (BinaryExpr(OpMinus, ll, IntConst(lr)), IntConst(right)) => BinaryExpr(OpMinus, ll, IntConst(lr+right)).simplify
+        case (BinaryExpr(OpPlus, ll, IntConst(lr)), IntConst(right)) =>
+          if (lr >= right) BinaryExpr(OpPlus, ll, IntConst(lr-right)).simplify else BinaryExpr(OpMinus, ll, IntConst(right-lr)).simplify
+        case _ => this
+      }
+      case OpPlus => (left, right) match {
+        case (_, IntConst(right)) if right == 0 => left
+        case (IntConst(left), IntConst(right)) => IntConst(left+right)
+        case (BinaryExpr(OpPlus, ll, IntConst(lr)), IntConst(right)) => BinaryExpr(OpPlus, ll, IntConst(lr+right)).simplify
+        case (BinaryExpr(OpMinus, ll, IntConst(lr)), IntConst(right)) =>
+          if (lr >= right) BinaryExpr(OpMinus, ll, IntConst(lr-right)).simplify else BinaryExpr(OpPlus, ll, IntConst(right-lr)).simplify
         case _ => this
       }
       case OpLeq | OpLt => (left, right) match {
@@ -735,10 +905,13 @@ object Expressions {
     def subst(sigma: Subst): Expr = UnaryExpr(op, arg.subst(sigma)).normalise
     override def normalise: Expr = (op, arg) match {
       case (OpDeRef, UnaryExpr(OpTakeRef(_), arg)) => arg.normalise
+      case (OpNot, UnaryExpr(OpNot, arg)) => arg.normalise
+      case (OpUnaryMinus, UnaryExpr(OpUnaryMinus, arg)) => arg.normalise
+      case (OpNot, BoolConst(b)) => BoolConst(!b)
       case _ => this
     }
     override def substUnknown(sigma: UnknownSubst): Expr = UnaryExpr(op, arg.substUnknown(sigma))
-    override def level = 5
+    override def level = op.level
     override def pp: String = s"${op.pp} ${arg.printInContext(this)}"
     def getType(gamma: Gamma): Option[SSLType] = Some(op.outputType)
   }

@@ -130,7 +130,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
         goal.existentials.isEmpty &&                            // no existentials
         callTag <= goal.env.config.maxCalls &&
         noGhostArgs &&                                          // TODO: if slow, move this check to when substitution is made
-        SMTSolving.valid(pre.phi ==> post.phi))                 // pre implies post
+        SMTSolving.valid(pre.phi ==> post.phi)(goal.programVars))                 // pre implies post
       {
         val calleePostSigma = callGoal.calleePost.sigma.setSAppTags(PTag(callTag))
         val newPre = Assertion(pre.phi && callGoal.calleePost.phi, pre.sigma ** calleePostSigma)

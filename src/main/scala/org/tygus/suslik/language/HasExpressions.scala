@@ -21,6 +21,6 @@ trait HasExpressions[+A] {
   def collect[R <: Expr](p: Expr => Boolean): Set[R]
 
   def vars: Set[Var] = collect(_.isInstanceOf[Var])
-  def faVars: Set[Var] = vars.filter(_.name.endsWith("_FA"))
-  def nonfaVars: Set[Var] = vars.filter(!_.name.endsWith("_FA"))
+  def alwaysExistsVars: Set[Var] = collect[AlwaysExistsVar](_.isInstanceOf[AlwaysExistsVar]).map(_.v)
+  def onExpiries: Set[OnExpiry] = collect(_.isInstanceOf[OnExpiry])
 }

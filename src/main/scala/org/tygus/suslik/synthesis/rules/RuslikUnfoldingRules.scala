@@ -10,6 +10,8 @@ import org.tygus.suslik.report.ProofTrace
 import org.tygus.suslik.synthesis.Termination.Transition
 import org.tygus.suslik.synthesis._
 import org.tygus.suslik.synthesis.rules.Rules._
+import org.tygus.suslik.language.LifetimeType
+import org.tygus.suslik.language.SSLType
 
 /**
   * Unfolding rules deal with Rust predicates and recursion.
@@ -20,28 +22,61 @@ import org.tygus.suslik.synthesis.rules.Rules._
 object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
   val exceptionQualifier: String = "rule-unfolding"
 
-  def loadPred(rapp: RApp, vars: Set[Var], predicates: PredicateEnv, isPre: Boolean): (Seq[InductiveClause], Subst, SubstVar) = {
-    assert(!isPre || !rapp.hasBlocker)
-    val ip = predicates(rapp.pred)
-    assert(ip.params.length == rapp.fnSpec.length)
-    val args_subst = ip.params.map(_._1).zip(rapp.fnSpec).toMap
-    // Functional values should never accidentally alias (an existential RApp in the post should remain so)
-    val prePostUniq = if (isPre) "O" else "F"
-    val existentials_subst = ip.existentials.map(e => e -> Var(e.name + "_" + rapp.field.name + prePostUniq)).toMap
-    // Fields should always alias (so that refs match up in pre/post)
-    val fields_subst = ip.fields.map(e => e -> Var(e.name + "_" + rapp.field.name)).toMap
-    val subst = args_subst ++ existentials_subst ++ fields_subst
-    val newIp = ip.clauses.map(c => InductiveClause(c.selector.subst(subst), c.asn.subst(subst).setTagAndRef(rapp)))
-
-    (newIp, args_subst, existentials_subst ++ fields_subst)
+  def onExpiryFromParam(param: Var, ip: InductivePredicate, predicates: PredicateEnv): Expr = {
+    for (c <- ip.clauses) {
+      for (r <- c.asn.sigma.rapps) {
+        val idx = r.fnSpec.find(e => e.isInstanceOf[Var] && e.asInstanceOf[Var] == param)
+        if (idx.isDefined) return idx.get
+      }
+    }
+    for (c <- ip.clauses) {
+      for (BinaryExpr(op, Var(lhs), rhs) <- c.asn.phi.conjuncts
+        if (op == OpEq || op == OpSetEq || op == OpBoolEq) && lhs == param.name) {
+        return rhs
+      }
+    }
+    println(s"Failed to find `${param.pp}` in ${ip.pp}!")
+    ???
   }
 
-  def loadPrimPred(rapp: RApp, vars: Set[Var], predicates: PredicateEnv): Assertion = {
+  def loadPred(rapp: RApp, vars: Set[Var], predicates: PredicateEnv, isPre: Boolean, onExpiries: Set[OnExpiry]): (Seq[InductiveClause], Subst, SubstVar, SubstVar, Subst) = {
+    assert(!(isPre && rapp.hasBlocker))
+    if (rapp.ref.length >= 2) {
+      val newRapp = rapp.popRef
+      val ic = InductiveClause(BoolConst(true), Assertion(PFormula(BoolConst(true)), SFormula(List(newRapp))))
+      (Seq(ic), Map.empty, Map.empty, Map(Var("*") -> newRapp.field), onExpiries.flatMap(_.openOrExpireSub(rapp.field, newRapp.field, !isPre)).toMap)
+    } else {
+      val ip = predicates(rapp.pred)
+      assert(ip.params.length == rapp.fnSpec.length)
+      val args_subst = ip.params.map(_._1).zip(rapp.fnSpec).toMap
+      // Functional values should never accidentally alias (an existential RApp in the post should remain so)
+      val prePostUniq = if (isPre) "O" else "F"
+      val existentials_subst = ip.existentials.map(e => e -> Var(e.name + "_" + rapp.field.name + prePostUniq)).toMap
+      // Fields should always alias (so that refs match up in pre/post)
+      val fields_subst = ip.fields.map(e => e -> Var(e.name + "_" + rapp.field.name)).toMap
+      val subst = args_subst ++ existentials_subst ++ fields_subst
+      val newIp = ip.clauses.map(c => InductiveClause(c.selector.subst(subst), c.asn.subst(subst).setTagAndRef(rapp)))
+      val futures_subst: Subst = if (!rapp.isBorrow) Map.empty
+        else if (ip.isPrim || ip.clauses.length == 0) {
+          assert(ip.params.length == 1)
+          onExpiries.flatMap(_.copyOutSub(rapp.field, ip.params.head._1.subst(subst), !isPre)).toMap
+        } else
+          ip.params.filter(_._2 != LifetimeType).zipWithIndex.map(p =>
+            OnExpiry(Some(!isPre), List(false), rapp.field, p._2, p._1._2).asVar
+              -> onExpiryFromParam(p._1._1, ip, predicates).subst(subst)
+          ).toMap
+
+      (newIp, args_subst, existentials_subst, fields_subst, futures_subst)
+    }
+  }
+
+  def loadPrimPred(rapp: RApp, vars: Set[Var], predicates: PredicateEnv, onExpiries: Set[OnExpiry]): (Assertion, Subst) = {
     // There should be no existentials in a primitive pred (so `isPre` is irrelevant)
-    val (pred_clauses, _, subst) = loadPred(rapp, vars, predicates, true)
+    val (pred_clauses, _, exists, subst, fut_subst) = loadPred(rapp.copy(ref = rapp.ref match { case Nil => Nil; case r :: _ => List(r) }), vars, predicates, true, onExpiries)
     assert(subst.isEmpty)
+    assert(exists.isEmpty)
     assert(pred_clauses.length == 1 && pred_clauses.head.selector == BoolConst(true))
-    pred_clauses.head.asn
+    (pred_clauses.head.asn, fut_subst)
   }
 
   /*
@@ -58,14 +93,16 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       val prims = goal.pre.sigma.prims(goal.env.predicates).filter(h => !h.priv && !h.hasBlocker && !loadVars(h).isEmpty)
       if (prims.length == 0) return Seq()
       val prim = prims.head
-      val asn = loadPrimPred(prim, goal.vars, goal.env.predicates)
+      val (asn, fut_subst) = loadPrimPred(prim, goal.vars, goal.env.predicates, goal.onExpiries)
       val newVars = loadVars(prim)
+      val extraPhi = asn.phi - PFormula(asn.phi.collect[Expr](_.isInstanceOf[NoExists]))
       val newGoal = goal.spawnChild(
-        Assertion(goal.pre.phi && asn.phi, goal.pre.sigma),
+        Assertion(goal.pre.phi && extraPhi, goal.pre.sigma),
+        fut_subst = fut_subst,
         programVars = goal.programVars ++ newVars
       )
       assert(newVars.length == 1)
-      val field = if (prim.isBorrow) UnaryExpr(OpDeRef, prim.field) else prim.field
+      val field = prim.ref.foldLeft[Expr](prim.field)((acc, _) => UnaryExpr(OpDeRef, acc))
       val kont = SubstProducer(newVars.head, field)
       Seq(RuleResult(List(newGoal), kont, this, goal))
     }
@@ -84,15 +121,16 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         // TODO: these checks are redundant (done in canUnfoldPre)
         if !h.priv && !h.hasBlocker // Must be non-private and non-blocked
         // Only for non-primitive types
-        if !h.isPrim(goal.env.predicates)
+        if !h.isPrim(goal.env.predicates) || h.ref.length >= 2
         if h.tag.unrolls < goal.env.config.maxOpenDepth
-        (clauses, sbst, fresh_subst) = loadPred(h, goal.vars, goal.env.predicates, true)
+        (clauses, sbst, fresh_subst, fieldSubst, fut_subst) = loadPred(h, goal.vars, goal.env.predicates, true, goal.onExpiries)
         if clauses.length > 0
       } yield {
         val newGoals = clauses.zipWithIndex.map { case (clause, j) => {
           val newVars = clause.asn.sigma.rapps.map(_.field)
           goal.spawnChild(
             pre = Assertion(goal.pre.phi && clause.asn.phi && clause.selector, goal.pre.sigma ** clause.asn.sigma - h),
+            fut_subst = fut_subst,
             constraints = c,
             programVars = goal.programVars ++ newVars,
             childId = Some(j),
@@ -105,11 +143,52 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val nameSubs = goal.env.predicates(h.pred).clauses.flatMap(
           _.asn.sigma.rapps.map(a => Var(a.field.name + "_" + h.field.name) -> BinaryExpr(OpField, h.field, a.field))
         ).toMap
-        val nSubsRef = if (h.isBorrow) nameSubs.map(m => m._1 -> UnaryExpr(OpTakeRef(h.ref.get.mut), m._2)) else nameSubs
-        val kont = BranchProducer(Some(h.toSApp), fresh_subst, sbst, clauses.map(_.selector)) >>
+        val nSubsRef = if (h.isBorrow) nameSubs.map(m => m._1 -> UnaryExpr(OpTakeRef(h.ref.head.mut), m._2)) else nameSubs
+        val kont = BranchProducer(Some(h.toSApp), fresh_subst ++ fieldSubst, sbst, clauses.map(_.selector)) >>
           SubstMapProducer(nSubsRef) >> ExtractHelper(goal)
         RuleResult(newGoals, kont, this, goal)
       }
+    }
+  }
+
+  /*
+  OpenInv rule: unroll a ref predicate in the pre-state
+   */
+  object OpenInv extends SynthesisRule with GeneratesCode with InvertibleRule {
+
+    override def toString: Ident = "OpenInv"
+
+    def apply(goal: Goal): Seq[RuleResult] = {
+      for (h <- goal.pre.sigma.borrows
+        if !h.priv && !h.hasBlocker && (!h.isPrim(goal.env.predicates) || h.ref.length >= 2) && h.tag.unrolls < goal.env.config.maxOpenDepth &&
+        !goal.post.onExpiries.exists(oe => oe.field == h.field && !oe.post.get && !oe.futs.head) &&
+        h.ref.head.beenAddedToPost) {
+        val (clauses, sbst, fresh_subst, fieldSubst, fut_subst) = loadPred(h, goal.vars, goal.env.predicates, true, goal.onExpiries)
+        if (clauses.length >= 1) {
+        var counter: Int = 0
+        val newGoals = clauses.zipWithIndex.map { case (clause, j) => {
+          if (clause.selector != BoolConst(false)) counter += 1
+          val newVars = clause.asn.sigma.rapps.map(_.field)
+          goal.spawnChild(
+            pre = Assertion(goal.pre.phi && clause.asn.phi && clause.selector, goal.pre.sigma ** clause.asn.sigma - h),
+            fut_subst = fut_subst,
+            programVars = goal.programVars ++ newVars,
+            childId = Some(j),
+            // True since we might satisfy the call termination requirement now
+            hasProgressed = true,
+            // If we reborrowed cannot be a companion since the borrows won't match up (need to expire first)
+            isCompanionNB = !h.isBorrow)
+        }}
+        if (counter <= 1) {
+        val nameSubs = fieldSubst.map{ case (field, var_name) =>
+          var_name -> (if (field.name == "*") UnaryExpr(OpDeRef, h.field) else BinaryExpr(OpField, h.field, field))
+        }.toMap
+        val nSubsRef = if (h.isBorrow) nameSubs.map(m => m._1 -> (if (m._2.isInstanceOf[UnaryExpr]) m._2 else UnaryExpr(OpTakeRef(h.ref.head.mut), m._2))) else nameSubs
+        val kont = SubstMapProducer(nSubsRef) >> BranchProducer(Some(h.toSApp), fresh_subst ++ fieldSubst, sbst, clauses.map(_.selector)) >>
+          ExtractHelper(goal)
+        return Seq(RuleResult(newGoals, kont, this, goal))
+      }}}
+      Seq()
     }
   }
 
@@ -160,7 +239,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         // TODO: we might get stuck here
         // (canUnfoldPost only returns non-cyclic, but none of those are unfoldable, so can never get to unfolding non-cyclic)
         if h.tag.unrolls < goal.env.config.maxCloseDepth
-        val (clauses, _, fresh_subst) = loadPred(h, goal.vars, goal.env.predicates, false)
+        val (clauses, _, fresh_subst, fieldSubst, fut_subst) = loadPred(h, goal.vars, goal.env.predicates, false, goal.onExpiries)
         InductiveClause(selector, asn) <- clauses
         if selector != BoolConst(false)
         if asn.sigma.rapps.filter(_.priv).length == (if (clauses.length > 1) 1 else 0)
@@ -177,11 +256,11 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         )
         val construct_args = if (h.isPrim(goal.env.predicates)) h.fnSpec else asn.sigma.rapps.map(_.field)
         val kont =
-          UnfoldProducer(h.toSApp, selector, Assertion(asn.phi, asn.sigma), fresh_subst) >>
+          UnfoldProducer(h.toSApp, selector, Assertion(asn.phi, asn.sigma), fresh_subst ++ fieldSubst) >>
           (if (disc.length == 1) SubstProducer(disc.head.asInstanceOf[RApp].field, disc.head.asInstanceOf[RApp].fnSpec.head) else IdProducer) >>
           AppendProducer(Construct(h.field, h.pred, construct_args)) >>
           ExtractHelper(goal)
-        RuleResult(List(goal.spawnChild(post = newPost, constraints = c,
+        RuleResult(List(goal.spawnChild(post = newPost, fut_subst = fut_subst, constraints = c,
             // Hasn't progressed since we didn't progress toward termination
             // Could be used as a companion, but currently won't since it isn't possible to make progess after closing (no more open)
             hasProgressed = false, isCompanionNB = true)), kont, this, goal)
@@ -207,42 +286,44 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         if !goal.existentials.contains(h.field)
         // Cannot expire before reborrowing:
         if !preBorrows.contains(h.field)
-        val (clauses, sbst, fresh_subst) = loadPred(h, goal.vars, goal.env.predicates, false)
+        val (clauses, sbst, _, _, fut_subst) = loadPred(h, goal.vars, goal.env.predicates, false, goal.onExpiries)
         InductiveClause(selector, asn) <- clauses
         if selector != BoolConst(false)
         // Hacky way to ensure we can only Expire the correct enum variant:
         if selector == BoolConst(true) || {
           val sel = selector.asInstanceOf[BinaryExpr]
           val disc = asn.sigma.rapps.find(d => d.fnSpec.length == 1 && d.fnSpec.head == sel.left).get
+          if (goal.pre.sigma.rapps.find(_.field == disc.field).isEmpty)
+            println("Goal " + goal.rulesApplied + " could not find disc " + disc.field.pp + " in " + goal.pre.sigma.pp)
           val pre_disc = goal.pre.sigma.rapps.find(_.field == disc.field).get
           if (pre_disc.fnSpec.length != 1) println("Found: " + pre_disc.pp)
           assert(pre_disc.fnSpec.length == 1)
           pre_disc.fnSpec.head.asInstanceOf[Const] == sel.right
         }
       } yield {
-        // If I'm blocked, one of my children must've been blocked
-        val sigmaWithBlock = if (!h.hasBlocker) asn.sigma else asn.sigma.blockRapps
+        val blocked = asn.sigma.blockRapps(h);
+        assert(blocked.borrows.forall(_.blocked == h.blocked));
         val newPost = Assertion(
           // Assumption: selector will be substituted in (since it's an equality when clauses.length != 1)
           goal.post.phi && asn.phi && selector,
-          goal.post.sigma ** sigmaWithBlock - h
+          goal.post.sigma ** blocked - h
         )
-        RuleResult(List(goal.spawnChild(post = newPost,
+        RuleResult(List(goal.spawnChild(post = newPost, fut_subst = fut_subst,
             // Hasn't progressed since we didn't progress toward termination, but can be companion
             hasProgressed = false, isCompanionNB = true)), IdProducer, this, goal)
       }
     }
   }
   object ExpireNoWrite extends Expire {
-    override def filter(r: RApp, goal: Goal): Boolean = (!goal.isRAppExistential(r) && goal.env.predicates(r.pred).clauses.length > 1) || goal.hasPotentialReborrows(r)
+    override def filter(r: RApp, goal: Goal): Boolean = (!goal.isRAppExistential(r, goal.gamma) && (r.ref.length > 1 || goal.env.predicates(r.pred).clauses.length > 1)) || goal.hasPotentialReborrows(r)
   }
   object ExpireFinal extends Expire with InvertibleRule {
     override def filter(r: RApp, goal: Goal): Boolean =
       // Don't need to try writing
-      (goal.isRAppExistential(r) ||
+      (goal.isRAppExistential(r, goal.gamma) ||
       // Might as well expire if we have no choice; can write to it after expiry if we want to
       // since all the fields will still be there (unlike if we did have an enum)
-      goal.env.predicates(r.pred).clauses.length <= 1) &&
+      (r.ref.length <= 1 && goal.env.predicates(r.pred).clauses.length <= 1)) &&
       // Don't need to try reborrowing
       !goal.hasPotentialReborrows(r)
   }
@@ -262,17 +343,29 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         src <- reborrowSrcs
         (tgt, subs) <- goal.potentialReborrows(src)
       } yield {
+        assert(!tgt.ref.head.beenAddedToPost)
         val tgtPred = goal.env.predicates(tgt.pred)
         assert(tgtPred.params.length == src.fnSpec.length)
-        val futures = tgtPred.params.zip(src.fnSpec).map(p => (Var(s"${p._1._1.name}_${tgt.field.name}_old_FA") |===| p._2)).toSet
+        val fut_subst = goal.onExpiries.flatMap(_.reborrowSub(tgt.field, src.field)).toMap
+        // `src.fnSpec` are existentials, need to bind them to all of the futures
+        val exists_bind = if (tgt.ref.head.mut)
+          src.fnSpec.zipWithIndex.zip(tgtPred.params.map(_._2)).map(p => {
+            (OnExpiry(None, true :: List.fill(tgt.ref.length-1)(false), tgt.field, p._1._2, p._2) |===| p._1._1)
+          })
+        else tgt.fnSpec.zip(src.fnSpec).map(p => (p._1 |===| p._2))
         val newPost = Assertion(
-          goal.post.phi && PFormula(futures).resolveOverloading(goal.gamma),
+          goal.post.phi && PFormula(exists_bind.toSet).resolveOverloading(goal.gamma),
           (goal.post.sigma - tgt - src) ** src.copy(fnSpec = tgt.fnSpec, blocked = Set())
+        )
+        // Add lifetime info:
+        val newPre = Assertion(
+          goal.pre.phi && BinaryExpr(OpOutlived, tgt.ref.head.lft.name, src.ref.head.lft.name),
+          goal.pre.sigma
         )
         val kont =
           SubstProducer(tgt.field, src.field) >>
           ExtractHelper(goal)
-        RuleResult(List(goal.spawnChild(post = newPost,
+        RuleResult(List(goal.spawnChild(pre = newPre, post = newPost, fut_subst = fut_subst,
             // Hasn't progressed since we didn't progress toward termination, but can be companion
             hasProgressed = false, isCompanionNB = true)), kont, this, goal)
       }
@@ -292,14 +385,92 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
 
       for {
         brrw <- goal.post.sigma.borrows
-        if !goal.isRAppExistential(brrw) //brrw.isWriteableBorrow(goal.existentials)
+        if !goal.isRAppExistential(brrw, goal.gamma) //brrw.isWriteableBorrow(goal.existentials)
       } yield {
-        val newOwned = brrw.copy(field = Var(brrw.field.name + "_NV"), ref = None, blocked = Set())
-        val newBrrw = brrw.copy(fnSpec = brrw.fnSpec.zipWithIndex.map(i => Var(brrw.field.pp + i._2)), blocked = Set())
+        val newOwned = brrw.copy(field = Var(brrw.field.name + "_NV"), ref = brrw.ref.tail, blocked = Set())
+        val newBrrw = brrw.refreshFnSpec(goal.gamma, goal.vars).copy(blocked = Set())
         val newPost = Assertion(post.phi, (post.sigma ** newOwned - brrw) ** newBrrw)
 
+        val fut_subst = goal.onExpiries.flatMap(_.writeSub(brrw.field, newOwned.field, newOwned.fnSpec.filter(_.getType(goal.gamma).get != LifetimeType), true)).toMap
+
         val kont = AppendProducer(Store(brrw.field, 0, newOwned.field))
-        RuleResult(List(goal.spawnChild(post = newPost)), kont, this, goal)
+        RuleResult(List(goal.spawnChild(post = newPost, fut_subst = fut_subst)), kont, this, goal)
+      }
+    }
+  }
+
+  /*
+  Add to post
+   */
+  object AddToPost extends SynthesisRule with InvertibleRule {
+    override def toString: Ident = "AddToPost"
+
+    def apply(goal: Goal): Seq[RuleResult] = {
+      val post = goal.post
+      val env = goal.env
+
+      val preBrrws = goal.pre.sigma.borrows.filter(!_.ref.head.beenAddedToPost)
+      if (preBrrws.length == 0) return Nil
+      val preBrrw = preBrrws.head
+      val newPreBrrw = preBrrw.copy(ref = preBrrw.ref.head.copy(beenAddedToPost = true) :: preBrrw.ref.tail)
+      val newPre = Assertion(goal.pre.phi, (goal.pre.sigma - preBrrw) ** newPreBrrw)
+      
+      val lft = newPreBrrw.ref.head.lft
+      val lftMax = goal.pre.phi.lftUpperBounds.getOrElse(lft, lft)
+      val newPreBrrwNewFnSpec = newPreBrrw.refreshFnSpec(goal.gamma, goal.vars)
+      val newPostBrrw = newPreBrrwNewFnSpec.copy(
+        fnSpec = newPreBrrwNewFnSpec.fnSpec.map(arg => AlwaysExistsVar(arg.asInstanceOf[Var])),
+        blocked = goal.pre.phi.outlivesRels.filter(or => or._2 == lftMax).map(_._1)
+      )
+      val fut_subst = goal.onExpiries.flatMap(_.toPostSub(newPreBrrw.field, newPreBrrw.fnSpec, newPostBrrw.fnSpec)).toMap
+      // println("fut_subst: " + fut_subst)
+
+      val newPost = Assertion(goal.post.phi, goal.post.sigma ** newPostBrrw)
+      val newGoal = goal.spawnChild(pre = newPre, post = newPost, fut_subst = fut_subst)//, isCompanionNB = true)
+      Seq(RuleResult(List(newGoal), IdProducer, this, goal))
+    }
+  }
+
+  /*
+  Reborrow for calls rule: reborrow in pre to unify with post
+   */
+  object ReborrowCall extends SynthesisRule {
+
+    override def toString: Ident = "ReborrowCall"
+
+    def apply(goal: Goal): Seq[RuleResult] = {
+      if (goal.callGoal.isEmpty) return Nil// || goal.callGoal.get.call.companion.isDefined) return Nil
+      for {
+        src <- goal.pre.sigma.borrows
+        // If blocked has either been used as an arg already or was before
+        if !src.hasBlocker
+        tgt <- goal.post.sigma.borrows
+        sub <- src.unify(tgt, true, goal.gamma)
+      } yield {
+        assert(!goal.existentials(src.field) && goal.existentials(tgt.field))
+        // TODO:
+        assert(src.fnSpec.forall(_.getType(goal.gamma) != LifetimeType))
+        val (newPre, fut_subst) = if (src.ref.head.mut) {
+          val blocking = Named(freshVar(goal.vars, src.ref.head.lft.name.name))
+          val newSrc = src.refreshFnSpec(goal.gamma, goal.vars).copy(blocked = Set(blocking))
+          val newPre = Assertion(
+            goal.pre.phi && BinaryExpr(OpLftUpperBound, blocking, src.ref.head.lft),
+            (goal.pre.sigma - src) ** newSrc
+          )
+          val fut_subst = (goal.onExpiries ++ goal.callGoal.get.calleePost.onExpiries).flatMap(_.reborrowCallSub(tgt.field, src.field, src.fnSpec, newSrc.fnSpec, goal.vars)).toMap
+          (newPre, fut_subst + (tgt.ref.head.lft.name -> blocking.name))
+        } else {
+          (goal.pre, Map(tgt.ref.head.lft.name -> src.ref.head.lft.name))
+        }
+        // TODO: use?
+        // println("\nMade onExpiry: " + src.mkOnExpiry(goal.gamma, Some(false)).pp);
+        val phiPost = PFormula(src.fnSpec.zip(tgt.fnSpec).map(args => args._1 |===| args._2).toSet + (src.field |===| tgt.field)).resolveOverloading(goal.gamma)
+        val newPost = Assertion(goal.post.phi && phiPost, goal.post.sigma - tgt)
+        // println("Calculating fut_subst for: " + goal.rulesApplied)
+        // println("Pre: " + goal.pre.pp)
+        // println("Post: " + goal.post.pp)
+        // println("Calee Post: " + goal.callGoal.get.calleePost.pp)
+        RuleResult(List(goal.spawnChild(pre = newPre, post = newPost, fut_subst = fut_subst)), IdProducer, this, goal)
       }
     }
   }

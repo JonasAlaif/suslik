@@ -6,6 +6,8 @@ import org.tygus.suslik.language.Statements._
 import org.tygus.suslik.language._
 
 import scala.Ordering.Implicits._
+import org.tygus.suslik.synthesis.rules.Rules
+import org.tygus.suslik.synthesis.rules.LogicalRules
 
 object Specifications extends SepLogicUtils {
 
@@ -28,7 +30,7 @@ object Specifications extends SepLogicUtils {
     // Difference between two assertions
     def -(other: Assertion): Assertion = Assertion(PFormula(phi.conjuncts -- other.phi.conjuncts), sigma - other.sigma)
 
-    def subst(s: Map[Var, Expr]): Assertion = Assertion(phi.subst(s), sigma.subst(s))
+    def subst(s: Map[Var, Expr]): Assertion = if (s.isEmpty) this else Assertion(phi.subst(s), sigma.subst(s))
     def setTagAndRef(h: RApp): Assertion = Assertion(phi, sigma.setTagAndRef(h))
 
     /**
@@ -45,10 +47,13 @@ object Specifications extends SepLogicUtils {
     def ghosts(params: Set[Var]): Set[Var] = this.vars -- params
 
     def resolve(gamma: Gamma, env: Environment): Option[Gamma] = {
-      for {
-        gamma1 <- phi.resolve(gamma)
-        gamma2 <- sigma.resolve(gamma1, env)
-      } yield gamma2
+      phi.resolve(gamma) match {
+        case None => throw SepLogicException(s"Resolution error in phi: ${phi.pp}")
+        case Some(gamma1) => sigma.resolve(gamma1, env) match {
+          case None => throw SepLogicException(s"Resolution error in sigma: ${sigma.pp}")
+          case Some(gamma2) => Some(gamma2)
+        }
+      }
     }
 
     def resolveOverloading(gamma: Gamma): Assertion = {
@@ -111,7 +116,7 @@ object Specifications extends SepLogicUtils {
         g.pre.sigma.rapps.filter(r =>
           !r.priv &&
           !r.isOpaque(g.env.predicates) &&
-          !r.isPrim(g.env.predicates) &&
+          (!r.isPrim(g.env.predicates) || r.ref.length >= 2) &&
           r.tag.unrolls < g.env.config.maxOpenDepth
         ).partition(r => g.env.predicateCycles(r.pred))
       // Borrow or not
@@ -168,6 +173,7 @@ object Specifications extends SepLogicUtils {
                   env: Environment, // predicates and components
                   sketch: Statement, // sketch
                   callGoal: Option[SuspendedCallGoal],
+                  rulesApplied: List[Rules.SynthesisRule],
                   hasProgressed: Boolean,
                   isCompanionNB: Boolean
                  )
@@ -217,8 +223,9 @@ object Specifications extends SepLogicUtils {
       val name = this.fname + this.label.pp.replaceAll("[^A-Za-z0-9]", "").tail
       val varDecl = this.ghosts.toList.map(v => (v, getType(v))) // Also remember types for non-program vars
       FunSpec(name, VoidType, this.formals,
-        Assertion(this.pre.phi, this.pre.sigma.withoutPrivate),
-        Assertion(this.post.phi, this.post.sigma.withoutPrivate), varDecl)
+        Assertion(this.pre.phi, this.pre.sigma.toCallGoal(false)),
+        Assertion(this.post.phi && this.post.sigma.toFuts(this.gamma)
+          , this.post.sigma.toCallGoal(true)), varDecl)
     }
 
     // Turn this goal into a helper function call
@@ -231,6 +238,7 @@ object Specifications extends SepLogicUtils {
 
     def spawnChild(pre: Assertion = this.pre,
                    post: Assertion = this.post,
+                   fut_subst: Subst = Map.empty,
                    constraints: UnfoldConstraints = this.constraints,
                    gamma: Gamma = this.gamma,
                    programVars: List[Var] = this.programVars,
@@ -239,28 +247,31 @@ object Specifications extends SepLogicUtils {
                    sketch: Statement = this.sketch,
                    callGoal: Option[SuspendedCallGoal] = this.callGoal,
                    hasProgressed: Boolean = false,
-                   isCompanionNB: Boolean = false): Goal = {
+                   isCompanionNB: Boolean = false)(implicit rule: Rules.SynthesisRule): Goal = {
 
       // Resolve types
       val gammaFinal = resolvePrePost(gamma, env, pre, post)
 
       // Sort heaplets from old to new and simplify pure parts
-      val preSimple = Assertion(simplify(pre.phi), pre.sigma)
-      val postSimple = Assertion(simplify(post.phi), post.sigma)
+      val preSimple = Assertion(simplify(pre.phi), pre.sigma).subst(fut_subst)
+      val postSimple = Assertion(simplify(post.phi), post.sigma).subst(fut_subst)
+      val newCallGoal = if (fut_subst.isEmpty) callGoal else callGoal.map(_.updateSubstitution(fut_subst))
 //      val usedVars = preSimple.vars ++ postSimple.vars ++ programVars.toSet ++
 //        callGoal.map(cg => cg.calleePost.vars ++ cg.callerPost.vars).getOrElse(Set())
 //      val newGamma = gammaFinal.filterKeys(usedVars.contains)
 //      val newUniversalGhosts = this.universalGhosts.intersect(usedVars) ++ preSimple.vars -- programVars
-      val newUniversalGhosts = this.universalGhosts ++ preSimple.vars -- programVars
+      val newUniversalGhosts = this.universalGhosts ++ preSimple.vars -- programVars -- preSimple.alwaysExistsVars
 
       Goal(preSimple, postSimple, constraints,
         gammaFinal, programVars, newUniversalGhosts,
         this.fname, this.label.bumpUp(childId), Some(this), env, sketch,
-        callGoal, hasProgressed, isCompanionNB)
+        newCallGoal, rule :: rulesApplied, hasProgressed, isCompanionNB)
     }
 
     // Goal that is eagerly recognized by the search as unsolvable
-    def unsolvableChild: Goal = spawnChild(post = Assertion(pFalse, emp))
+    def unsolvableChild: Goal = spawnChild(post = Assertion(pFalse, emp))(LogicalRules.Inconsistency)
+
+    def onExpiries: Set[OnExpiry] = pre.onExpiries ++ post.onExpiries
 
     // Is this goal unsolvable and should be discarded?
     def isUnsolvable: Boolean = post.phi == pFalse
@@ -269,7 +280,7 @@ object Specifications extends SepLogicUtils {
     def isProbablyUnsolvable: Boolean =
       // If there is a universal ghost in the post which can never be loaded
       // TODO: Might not be complete in all cases
-      post.phi.nonfaVars.exists(v =>
+      post.phi.vars.exists(v =>
         // Cannot possibly get it as a PV
         !(pre.vars ++ programVars).contains(v) &&
         // This doesn't work since we might have { x: Enum(len) }{ len+1 == lenR+1 res: Enum(lenR) }
@@ -279,9 +290,10 @@ object Specifications extends SepLogicUtils {
         // Will need to get it as a PV
         universalGhosts.contains(v))
 
-    def borrowsMatch: Boolean = pre.sigma.borrows.forall(b => post.sigma.borrows.exists(_.field == b.field))
+    def borrowsMatch: Boolean = pre.sigma.borrows.forall(b => !b.ref.head.beenAddedToPost || post.sigma.borrows.exists(_.field == b.field))
+    def noBlockeds: Boolean = pre.sigma.borrows.forall(b => !b.hasBlocker)
     // Cannot be a companion if there are outstanding non-expired borrows
-    def isCompanion: Boolean = isCompanionNB && borrowsMatch
+    def isCompanion: Boolean = isCompanionNB && borrowsMatch && noBlockeds
 
     def isTopLevel: Boolean = label == topLabel
 
@@ -298,23 +310,23 @@ object Specifications extends SepLogicUtils {
 
     // If the entire RApp is FULLY existential (fnSpec is existential and unconstrained by phi)
     // Such RApps should not be written to and should be expired eagerly
-    def isRAppExistential(r: RApp): Boolean = !r.isWriteableRef(existentials) || r.fnSpec.forall(a => {
-      a.isInstanceOf[Var] && existentials.contains(a.asInstanceOf[Var]) && !post.phi.vars.contains(a.asInstanceOf[Var])
+    def isRAppExistential(r: RApp, g: Gamma): Boolean = !r.isWriteableRef(existentials) || r.fnSpec.filter(_.getType(g).get != LifetimeType).zipWithIndex.forall(a => {
+      if (!a._1.isInstanceOf[Var]) return false
+      val v = a._1.asInstanceOf[Var]
+      existentials.contains(v) && !post.phi.vars.contains(v) &&
+        !post.onExpiries.exists(oe => oe.field == r.field && !oe.futs.head && (oe.post.get || (oe.futs.length > 1 && oe.futs.tail.head)))
     })
-    def hasPotentialReborrows(r: RApp): Boolean = !potentialReborrows(r).isEmpty
+    def hasPotentialReborrows(r: RApp): Boolean = !potentialReborrows(r).isEmpty || r.hasBlocker //post.sigma.owneds.exists(_.fnSpec.exists(_ == r.ref.head.lft.name))
     def potentialReborrows(r: RApp): List[(RApp, ExprSubst)] = post.sigma.borrows.filter(b =>
       // Mutability matches
-      (r.ref.get.mut || !b.ref.get.mut) &&
+      (r.ref.head.mut || !b.ref.head.mut) && r.ref.tail == b.ref.tail &&
       // Optimization? The source should be potentially blocked
-      (!r.ref.get.mut || r.hasBlocker) &&
+      (!r.ref.head.mut || r.hasBlocker) &&
       // Target should be getting created
       existentials(b.field) &&
       // Outlives relation satisfied
-      ((r.ref.get.lft == b.ref.get.lft) || pre.phi.collect(_ match {
-          case BinaryExpr(OpOutlives, short, long) if short == b.ref.get.lft.name && long == r.ref.get.lft.name => true
-          case _ => false
-      }).size > 0)
-    ).flatMap(tgt => tgt.unify(r).map((tgt, _)))
+      r.blocked(b.ref.head.lft)
+    ).flatMap(tgt => r.unify(tgt, true, this.gamma).map((tgt, _)))
 
     // All variables this goal has ever used
     def vars: Set[Var] = gamma.keySet
@@ -411,11 +423,11 @@ object Specifications extends SepLogicUtils {
     val pre1 = pre.resolveOverloading(gamma)
     val post1 = post.resolveOverloading(gamma)
     val formalNames = formals.map(_._1)
-    val ghostUniversals = pre1.vars -- formalNames ++ post1.faVars
+    val ghostUniversals = pre1.vars -- formalNames
     Goal(pre1, post1, UnfoldConstraints(),
       gamma, formalNames, ghostUniversals,
       fname, topLabel, None, env.resolveOverloading(), sketch.resolveOverloading(gamma),
-      None, hasProgressed = false, isCompanionNB = true)
+      None, List.empty, hasProgressed = false, isCompanionNB = true)
   }
 
   /**

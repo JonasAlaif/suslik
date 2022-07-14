@@ -43,7 +43,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
 
         def matchingHeaplet(h: Heaplet) = h match {
           case PointsTo(h_from, h_offset, _) =>
-            SMTSolving.valid(goal.pre.phi ==> ((h_from |+| IntConst(h_offset)) |=| (to |+| IntConst(offset))))
+            SMTSolving.valid(goal.pre.phi ==> ((h_from |+| IntConst(h_offset)) |=| (to |+| IntConst(offset))))(goal.programVars)
           case _ => false
         }
 
@@ -87,7 +87,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
 
         def isMatchingHeaplet: Heaplet => Boolean = {
           case PointsTo(heaplet_from, h_offset, _) =>
-            SMTSolving.valid(goal.pre.phi ==> ((heaplet_from |+| IntConst(h_offset)) |=| (from |+| IntConst(offset))))
+            SMTSolving.valid(goal.pre.phi ==> ((heaplet_from |+| IntConst(h_offset)) |=| (from |+| IntConst(offset))))(goal.programVars)
           case _ => false
         }
 
@@ -159,7 +159,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
       // Heaplets have no ghosts
       def noGhosts(h: Heaplet): Boolean = h.vars.forall(v => goal.isProgramVar(v))
       def noGhostsAndIsBlock(h: Heaplet): Boolean = h match {
-        case b@Block(loc, sz) => noGhosts(b) && SMTSolving.valid(goal.pre.phi ==> (loc |=| name))
+        case b@Block(loc, sz) => noGhosts(b) && SMTSolving.valid(goal.pre.phi ==> (loc |=| name))(goal.programVars)
         case _ => false
       }
 
@@ -270,7 +270,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
         h <- goal.pre.sigma.chunks
         (selGoals, _, _, _) <- UnfoldingRules.Open.mkInductiveSubGoals(goal, h).toList
         (selector, subGoal) <- selGoals
-        if SMTSolving.valid(goal.pre.phi ==> selector)
+        if SMTSolving.valid(goal.pre.phi ==> selector)(goal.programVars)
       } yield RuleResult(List(subGoal), IdProducer, this, goal)
     }
   }

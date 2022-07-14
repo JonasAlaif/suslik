@@ -43,6 +43,7 @@ object Rules {
     * @author Ilya Sergey
     */
   abstract class SynthesisRule extends PureLogicUtils {
+    implicit def thisImp: SynthesisRule = this
     // Apply the rule and get all possible sub-derivations
     def apply(goal: Goal): Seq[RuleResult]
   }

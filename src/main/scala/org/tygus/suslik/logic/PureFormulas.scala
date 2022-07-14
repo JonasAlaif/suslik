@@ -11,7 +11,7 @@ case class PFormula(conjuncts: SortedSet[Expr]) extends PrettyPrinting with HasE
 
   override def pp: String = toExpr.pp
 
-  def subst(sigma: Subst): PFormula = PFormula(conjuncts.map(_.subst(sigma)))
+  def subst(sigma: Subst): PFormula = PFormula(conjuncts.flatMap(_.subst(sigma).flatten))
   def substUnknown(sigma: UnknownSubst): PFormula = PFormula(conjuncts.map(_.substUnknown(sigma)))
   def substUnknown(unknown: Unknown, expr: Expr): PFormula = substUnknown(Map(unknown -> expr))
 
@@ -20,7 +20,10 @@ case class PFormula(conjuncts: SortedSet[Expr]) extends PrettyPrinting with HasE
   def resolve(gamma: Gamma): Option[Gamma] = {
     conjuncts.foldLeft[Option[Map[Var, SSLType]]](Some(gamma))((go, c) => go match {
       case None => None
-      case Some(g) => c.resolve(g, Some(BoolType))
+      case Some(g) => c.resolve(g, Some(BoolType)) match {
+        case None => throw SepLogicException(s"Resolution error in conjunct: ${c.pp}")
+        case Some(g1) => Some(g1)
+      }
     })
   }
 
@@ -30,6 +33,26 @@ case class PFormula(conjuncts: SortedSet[Expr]) extends PrettyPrinting with HasE
   }
 
   def unknowns: Set[Unknown] = collect[Unknown](_.isInstanceOf[Unknown])
+  def lftUpperBounds: Map[Named, Named] = {
+    val bounds = this.collect[BinaryExpr](p => p.isInstanceOf[BinaryExpr] && p.asInstanceOf[BinaryExpr].op == OpLftUpperBound)
+      .map(p => p.left.asInstanceOf[Named] -> p.right.asInstanceOf[Named])
+    assert(bounds.forall(bound => bounds.filter(_._1 == bound._1).size == 1))
+    bounds.toMap
+  }
+  def outlivesRels: Set[(Named, Named)] = {
+    var rels = this.collect[BinaryExpr](p => p.isInstanceOf[BinaryExpr] && p.asInstanceOf[BinaryExpr].op == OpOutlived)
+      .map(p => Named(p.left.asInstanceOf[Var]) -> Named(p.right.asInstanceOf[Var]))
+    var changed = true
+    while (changed) {
+      changed = false
+      val newRels = rels.flatMap(rel => rels.filter(_._1 == rel._2).map(other => (rel._1, other._2)))
+      if (!newRels.forall(rels(_))) {
+        rels = rels ++ newRels
+        changed = true
+      }
+    }
+    rels
+  }
 
   // Add h to chunks (multiset semantics)
   def &&(c: Expr): PFormula = PFormula(conjuncts ++ c.conjuncts.toSet)

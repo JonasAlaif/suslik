@@ -46,10 +46,10 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
   def locLiteral: Parser[Const] =
     "null" ^^ (_ => NilPtr)
 
-  def intLiteral: Parser[Const] =
+  def intLiteral: Parser[IntConst] =
     numericLit ^^ (x => IntConst(Integer.parseInt(x)))
 
-  def boolLiteral: Parser[Const] =
+  def boolLiteral: Parser[BoolConst] =
     ("true" | "false") ^^ (b => BoolConst(java.lang.Boolean.parseBoolean(b)))
 
   def setLiteral: Parser[Expr] =
@@ -102,7 +102,7 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
     unOpParser ~ atom ^^ { case op ~ a => UnaryExpr(op, a) }
       | "(" ~> repsep(expr, ",") <~ ")" ^^ { case e::Nil => e; case es => TupleExpr(es.map((_, None))) }
       | intLiteral | boolLiteral | setLiteral | locLiteral | intervalLiteral
-      | varParser
+      | varParser | noExists | onExpiry
     )
 
   def term: Parser[Expr] = chainl1(atom, binOpParser(termOpParser))
@@ -121,10 +121,13 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
       case a ~ Some(l ~ r) => IfThenElse(a, l, r)
     }
 
+  def noExists: Parser[NoExists] = "#" ~> "[" ~> expr <~ "]" ^^ { case e => NoExists(e) }
+  def onExpiry: Parser[OnExpiry] = rep1("^" ^^^ true | "*" ^^^ false) ~ ("(" ~> typeParser ~ varParser <~ ")") ~ ("[" ~> numericLit <~ "]") ^^ { case futs ~ (ty ~ f) ~ i => OnExpiry(None, futs.reverse, f, Integer.parseInt(i), ty) }
+
   def lft: Parser[Named] = ident ^^ (l => Named(Var(l + "-L")))
 
   def ref: Parser[Ref] =
-    ("&" ~> lft) ~ opt("mut") ^^ { case l ~ mut => Ref(l, mut.isDefined) }
+    ("&" ~> lft) ~ opt("mut") ^^ { case l ~ mut => Ref(l, mut.isDefined, false) }
 
   def identWithOffset: Parser[(Ident, Int)] = {
     val ov = ident ~ opt("+" ~> numericLit)
@@ -143,7 +146,7 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
       ||| ident ~ ("(" ~> rep1sep(expr, ",") <~ ")") ~ opt("<" ~> expr <~ ">") ^^ {
         case name ~ args ~ v => SApp(name, args, PTag(), v.getOrElse(defaultCardParameter))
       }
-      ||| opt("priv") ~ (varParser <~ ":") ~ opt(ref) ~ ident ~ ("(" ~> repsep(expr, ",") <~ ")") ~ opt("<" ~> rep1sep(lft, "+") <~ ">") ^^ {
+      ||| opt("priv") ~ (varParser <~ ":") ~ rep(ref) ~ ident ~ ("(" ~> repsep(expr, ",") <~ ")") ~ opt("<" ~> rep1sep(lft, "+") <~ ">") ^^ {
         case priv ~ field ~ r ~ pred ~ fnSpec ~ None => RApp(priv.isDefined, field, r, pred, fnSpec, Set(), PTag())
         case priv ~ field ~ r ~ pred ~ fnSpec ~ Some(b) => RApp(priv.isDefined, field, r, pred, fnSpec, b.toSet, PTag())
       }

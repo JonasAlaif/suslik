@@ -142,19 +142,20 @@ object ProofTraceJson {
       AssertionEntry(goal.pre, goal.constraints.preNoncyc, goal.constraints.preCyc),
       AssertionEntry(goal.post, goal.constraints.postNoncyc, goal.constraints.postCyc), goal.sketch.pp(),
       vars(goal, goal.programVars), vars(goal, goal.existentials),
-      vars(goal, goal.universalGhosts), goal.callGoal.map(callInfo(goal, _)))
+      vars(goal, goal.universalGhosts), goal.callGoal.flatMap(callInfo(goal, _)))
 
     private def vars(goal: Goal, vs: Iterable[Expressions.Var]) =
       vs.map(v => (goal.getType(v).pp, v.pp)).toSeq
 
-    private def callInfo(goal: Goal, callGoal: SuspendedCallGoal) = {
+    private def callInfo(goal: Goal, callGoal: SuspendedCallGoal): Option[GoalEntry] = {
+      if (callGoal.call.companion.isEmpty) return None
       val companion = goal.ancestorWithLabel(callGoal.call.companion.get).get
       val funSpec = companion.toFunSpec
       val toActual = compose(callGoal.companionToFresh, callGoal.freshToActual)
-      apply(callGoal.call.companion.get.pp + s" (${goal.cost})", companion.uid,
+      Some(apply(callGoal.call.companion.get.pp + s" (${goal.cost})", companion.uid,
         AssertionEntry(funSpec.pre.subst(toActual), goal.constraints.preNoncyc, goal.constraints.preCyc),
         AssertionEntry(funSpec.post.subst(toActual), goal.constraints.postNoncyc, goal.constraints.postCyc), callGoal.actualCall.pp(),
-        Seq(), Seq(), Seq())
+        Seq(), Seq(), Seq()))
     }
 
     /** @oops copied from PureLogicUtils */
@@ -257,6 +258,9 @@ object ProofTraceJson {
 
     def fromExpr(e: Expr): AST = e match {
       case Var(name) => "Var" -: AST(name)
+      case AlwaysExistsVar(v) => "AlwaysExists" -: fromExpr(v)
+      case NoExists(expr) => "NoExists" -: fromExpr(expr)
+      case OnExpiry(_, _, _, _, _) => "Var" -: AST(e.pp)
       case IntConst(_) => "IntConst" -: AST(e.pp)
       case BoolConst(_) => "BoolConst" -: AST(e.pp)
       case UnaryExpr(op, arg) => labelOf(op) -: fromExpr(arg)
@@ -282,7 +286,7 @@ object ProofTraceJson {
         Seq(AST(pred), AST("()", args.map(fromExpr)), AST(tag.pp), fromExpr(card)))
       case RApp(priv, field, ref, pred, fnSpec, lft, tag) => AST("RApp",
         (if (priv) Seq(AST("priv")) else Seq()) ++
-          Seq(fromExpr(field), AST(ref.map(_.pp).getOrElse("")), AST(pred), AST("()", fnSpec.map(fromExpr)), AST("()", lft.toSeq.map(fromExpr)), AST(tag.pp)))
+          Seq(fromExpr(field), AST(ref.map(_.pp).mkString("")), AST(pred), AST("()", fnSpec.map(fromExpr)), AST("()", lft.toSeq.map(fromExpr)), AST(tag.pp)))
     }
 
     object Leaf {
@@ -297,7 +301,8 @@ object ProofTraceJson {
       "+" -> OpOverloadedPlus, "*" -> OpOverloadedStar, "in" -> OpOverloadedIn,
       "!=" -> OpNotEqual, ">" -> OpGt, ">=" -> OpGeq,
       "==[bool]" -> OpBoolEq, "==[lft]" -> OpLftEq, "->" -> OpImplication,
-      "<=[int]" -> OpLeq, "<=[lft]" -> OpOutlives, "<" -> OpLt, "&&" -> OpAnd, "||" -> OpOr,
+      "<=[int]" -> OpLeq, "upto" -> OpLftUpperBound, "<=[lft]" -> OpOutlived,
+      "<" -> OpLt, "&&" -> OpAnd, "||" -> OpOr,
       "+[int]" -> OpPlus, "-[int]" -> OpMinus, "*[int]" -> OpMultiply,
       "++" -> OpUnion, "--" -> OpDiff, "*[set[int]]" -> OpIntersect,
       "in[int]" -> OpIn, "==[loc]" -> OpEq,

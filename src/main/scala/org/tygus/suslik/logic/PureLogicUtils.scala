@@ -65,6 +65,8 @@ trait PureLogicUtils {
     case _:LocConst => e
     case _:BoolConst => e
     case _:Var => e
+    case NoExists(e1) => NoExists(desugar(e1))
+    case _:OnExpiry => e
     case IfThenElse(e1,e2,e3) => IfThenElse(desugar(e1),desugar(e2), desugar(e3))
     case SetLiteral(args) => SetLiteral(args.map(desugar))
     case TupleExpr(exprs) => TupleExpr(exprs.map(tpl => (desugar(tpl._1), tpl._2)))
@@ -168,6 +170,7 @@ trait PureLogicUtils {
     case BinaryExpr(OpBoolEq, l, r) => Some(l, r)
     case BinaryExpr(OpSetEq, l, r) => Some(l, r)
     case BinaryExpr(OpIntervalEq, l, r) => Some(l, r)
+    case BinaryExpr(OpLftEq, l, r) => Some(l, r)
     case v@Var(_) => Some(v, BoolConst(true))
     case UnaryExpr(OpNot, v@Var(_)) => Some(v, BoolConst(false))
     case _ => None

@@ -25,7 +25,8 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
       ) ++
       (if (goal.post.sigma.rapps.nonEmpty)
         List(LogicalRules.FrameBorrowsFinal,
-          UnificationRules.HeapUnifyBorrows)
+          UnificationRules.HeapUnifyBorrows,
+          RuslikUnfoldingRules.ReborrowCall)
       else
         List(UnfoldingRules.CallRule,
           UnificationRules.SubstRight,
@@ -41,11 +42,14 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
 
   protected def anyPhaseRules: List[SynthesisRule] = List(
     LogicalRules.Inconsistency,
+    RuslikUnfoldingRules.AddToPost,
+    // FailRules.PostInconsistent,
     LogicalRules.SubstLeft,
     UnificationRules.SubstRight,
     LogicalRules.CaseSplit,
     RuslikUnfoldingRules.CopyOut,
     RuslikUnfoldingRules.ExpireFinal,
+    RuslikUnfoldingRules.OpenInv,
   )
 
   protected def specBasedRules(node: OrNode): List[SynthesisRule] = {
@@ -72,9 +76,9 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
           RuslikUnfoldingRules.Open,
           RuslikUnfoldingRules.AbduceCall,
           RuslikUnfoldingRules.Close,
+          RuslikUnfoldingRules.Reborrow,
           RuslikUnfoldingRules.ExpireNoWrite,
           RuslikUnfoldingRules.BrrwWrite,
-          RuslikUnfoldingRules.Reborrow,
         )
     } else {
       List(

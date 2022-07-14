@@ -42,7 +42,7 @@ object LogicalRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
       if ((goal.env.config.canLeak || pre.sigma.isEmp) && 
         post.sigma.isEmp && // heaps are empty
         goal.existentials.isEmpty && // no existentials
-        SMTSolving.valid(pre.phi ==> post.phi)) // pre implies post
+        SMTSolving.valid(pre.phi ==> post.phi)(goal.programVars)) // pre implies post
         List(RuleResult(Nil, ConstProducer(Skip), this, goal)) // we are done
       else Nil
     }
@@ -60,7 +60,7 @@ object LogicalRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
     def apply(goal: Goal): Seq[RuleResult] = {
       val pre = goal.pre.phi.toExpr
 
-      if (!SMTSolving.sat(pre))
+      if (!SMTSolving.sat(pre)(goal.programVars))
         List(RuleResult(Nil, ConstProducer(Error), this, goal)) // pre inconsistent: return error
       else
         Nil
@@ -96,12 +96,12 @@ object LogicalRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
       } match {
         case None => Nil
         case Some(h@PointsTo(l, o, IfThenElse(c, t, e))) =>
-          if (SMTSolving.valid(goal.pre.phi ==> (c || (t |=| e)))) {
+          if (SMTSolving.valid(goal.pre.phi ==> (c || (t |=| e)))(goal.programVars)) {
             val thenSigma = (goal.post.sigma - h) ** PointsTo(l, o, t)
             val thenPhi = goal.post.phi // && c
             val thenGoal = goal.spawnChild(post = Assertion(thenPhi, thenSigma))
             List(RuleResult(List(thenGoal), kont, this, goal))
-          } else if (SMTSolving.valid(goal.pre.phi ==> (c.not || (t |=| e)))) {
+          } else if (SMTSolving.valid(goal.pre.phi ==> (c.not || (t |=| e)))(goal.programVars)) {
             val elseSigma = (goal.post.sigma - h) ** PointsTo(l, o, e)
             val elsePhi = goal.post.phi // && c.not
             val elseGoal = goal.spawnChild(post = Assertion(elsePhi, elseSigma))
@@ -260,24 +260,26 @@ object LogicalRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
           if (isGhostVar(l)) Some(l.asInstanceOf[Var], r)
           else if (isGhostVar(r)) Some(r.asInstanceOf[Var], l)
           // TODO: why was this for ghost only? (minimal change to get it to work with discriminants)
-          else if (l.isInstanceOf[Var] && r.isInstanceOf[IntConst]) Some(l.asInstanceOf[Var], r)
-          else if (l.isInstanceOf[Var] && r.isInstanceOf[BoolConst]) Some(l.asInstanceOf[Var], r)
+          // else if (l.isInstanceOf[Var] && r.isInstanceOf[IntConst]) Some(l.asInstanceOf[Var], r)
+          // else if (l.isInstanceOf[Var] && r.isInstanceOf[BoolConst]) Some(l.asInstanceOf[Var], r)
           else None
         } else None
 
-      findConjunctAndRest(e => extractEquality(e).flatMap(tupled(extractSides)), p1)
-      match {
-        case Some(((x, e), rest1)) => {
-          val _p1 = rest1.subst(x, e)
-          val _s1 = s1.subst(x, e)
-          val newGoal = goal.spawnChild(Assertion(_p1, _s1), goal.post.subst(x, e))
-          val kont = SubstProducer(x, e) >> IdProducer >> ExtractHelper(goal)
-          assert(goal.callGoal.isEmpty)
-          ProofTrace.current.add(ProofTrace.DerivationTrail(goal, Seq(newGoal), this,
-            Map(x.pp -> e.pp)))
+      val cs = p1.conjuncts.flatMap(e => extractEquality(e).flatMap(tupled(extractSides)).map(m => (m._1 -> (m._2, e)))).toMap
+      if (cs.size == 0) Nil
+      else {
+          var sigmaOld: Subst = Map.empty
+          var sigma = cs.map(tpl => tpl._1 -> tpl._2._1).toMap
+          while (sigma != sigmaOld) {
+            sigmaOld = sigma
+            sigma = sigmaOld.map(tpl => (tpl._1, tpl._2.subst(sigmaOld)))
+          }
+          val _p1 = (p1 - PFormula(cs.map(_._2._2).toSet)).subst(sigma)
+          val _s1 = s1.subst(sigma)
+          val newGoal = goal.spawnChild(Assertion(_p1, _s1), goal.post.subst(sigma))
+          val kont = SubstMapProducer(sigma) >> IdProducer >> ExtractHelper(goal)
+          ProofTrace.current.add(ProofTrace.DerivationTrail.withSubst(goal, Seq(newGoal), this, sigma))
           List(RuleResult(List(newGoal), kont, this, goal))
-        }
-        case _ => Nil
       }
     }
   }
@@ -328,10 +330,13 @@ object LogicalRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
     override def toString: String = "CaseSplit"
 
     def apply(goal: Goal): Seq[RuleResult] = {
-      val ite = goal.pre.phi.collect[Expr](p => p.isInstanceOf[IfThenElse]) ++
-                goal.post.phi.collect(p => p.isInstanceOf[IfThenElse])
+      val ite = goal.pre.collect[Expr](p => p.isInstanceOf[IfThenElse]) ++
+                goal.post.collect(p => p.isInstanceOf[IfThenElse])
       val splittableItes = ite.map(_.asInstanceOf[IfThenElse])
-                        .filter(c => c.cond.vars.subsetOf(goal.programVars.toSet))
+                        .filter(c => c.cond.vars.subsetOf(goal.programVars.toSet) &&
+                                     c.cond.collect(_.isInstanceOf[OnExpiry]).isEmpty &&
+                                      !goal.pre.phi.conjuncts.contains(c.cond) &&
+                                      !goal.pre.phi.conjuncts.contains(c.cond.not))
       if (splittableItes.headOption.isEmpty) return List()
       val iteCond = splittableItes.head.cond
       val t = goal.spawnChild(Assertion(goal.pre.phi && iteCond, goal.pre.sigma), childId = Some(0))

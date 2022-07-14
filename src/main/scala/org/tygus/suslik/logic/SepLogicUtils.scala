@@ -131,7 +131,7 @@ trait SepLogicUtils extends PureLogicUtils {
       if pairs.forall {case (p1, p2) => p1.pred == p2.pred}
     } yield pairs.map {case (p1, p2) => (p1.card, p2.card)}
 
-    cardSeqs.toList.distinct.exists(ps => SMTSolving.valid(cond ==> lexiOrd(ps)))
+    cardSeqs.toList.distinct.exists(ps => SMTSolving.valid(cond ==> lexiOrd(ps))(List()))
   }
 
   /**

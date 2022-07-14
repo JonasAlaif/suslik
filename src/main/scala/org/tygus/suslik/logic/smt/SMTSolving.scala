@@ -46,7 +46,7 @@ object SMTSolving extends Core
 
     // Warm-up the SMT solver on start-up to avoid future delays
     for (i <- 1 to 5; j <- 1 to 2; k <- 1 to 3) {
-      checkSat(convertBoolExpr(BinaryExpr(OpLeq, IntConst(i), BinaryExpr(OpPlus, IntConst(j), IntConst(k)))))
+      checkSat(convertBoolExpr(BinaryExpr(OpLeq, IntConst(i), BinaryExpr(OpPlus, IntConst(j), IntConst(k))))(List()))
     }
   }
 
@@ -157,8 +157,10 @@ object SMTSolving extends Core
   case class SolverUnsupportedExpr(solver: String)
     extends Exception(s"Unsupported solver: $solver.")
 
-  private def convertSetExpr(e: Expr): SMTSetTerm = e match {
+  private def convertSetExpr(e: Expr)(implicit programVars: List[Var]): SMTSetTerm = e match {
     case Var(name) => new VarTerm[SetTerm](name, setSort)
+    case AlwaysExistsVar(v) => convertSetExpr(v)
+    case e:OnExpiry => new VarTerm[SetTerm](e.smtName, setSort)
     case SetLiteral(elems) => {
       val emptyTerm = new TypedTerm[SetTerm, Term](Set.empty, emptySetTerm)
       makeSetInsert(emptyTerm, elems)
@@ -191,10 +193,16 @@ object SMTSolving extends Core
       val r = convertSetExpr(right)
       new TypedTerm[SetTerm, Term](l.typeDefs ++ r.typeDefs, QIdAndTermsTerm(setIntersectSymbol, List(l.termDef, r.termDef)))
     }
+    case IfThenElse(cond, left, right) => {
+      val c = convertBoolExpr(cond)
+      val l = convertSetExpr(left)
+      val r = convertSetExpr(right)
+      c.ite(l, r)
+    }
     case _ => throw SMTUnsupportedExpr(e)
   }
 
-  private def makeSetInsert(setTerm: SMTSetTerm, elems: List[Expr]): SMTSetTerm = {
+  private def makeSetInsert(setTerm: SMTSetTerm, elems: List[Expr])(implicit programVars: List[Var]): SMTSetTerm = {
     if (elems.isEmpty) {
       setTerm
     } else {
@@ -212,8 +220,9 @@ object SMTSolving extends Core
     }
   }
 
-  private def convertIntervalExpr(e: Expr): SMTIntervalTerm = e match {
+  private def convertIntervalExpr(e: Expr)(implicit programVars: List[Var]): SMTIntervalTerm = e match {
     case Var(name) => new VarTerm[IntervalTerm](name, intervalSort)
+    case AlwaysExistsVar(v) => convertIntervalExpr(v)
     case BinaryExpr(OpRange, l, u) => {
       val lTerm = convertIntExpr(l)
       val uTerm = convertIntExpr(u)
@@ -238,8 +247,11 @@ object SMTSolving extends Core
     case _ => throw SMTUnsupportedExpr(e)
   }
 
-  private def convertBoolExpr(e: Expr): SMTBoolTerm = e match {
+  private def convertBoolExpr(e: Expr)(implicit programVars: List[Var]): SMTBoolTerm = e match {
     case Var(name) => Bools(name)
+    case AlwaysExistsVar(v) => convertBoolExpr(v)
+    case NoExists(e) => if (e.onExpiries.size == 0 && e.vars.forall(v => programVars.contains(v))) True() else False()
+    case e:OnExpiry => Bools(e.smtName)
     case BoolConst(true) => True()
     case BoolConst(false) => False()
     case UnaryExpr(OpNot, e1) => !convertBoolExpr(e1)
@@ -258,16 +270,9 @@ object SMTSolving extends Core
       val r = convertIntExpr(right)
       l === r
     }
-    case BinaryExpr(OpLftEq, left, right) => {
-      val l = convertIntExpr(left)
-      val r = convertIntExpr(right)
-      l === r
-    }
-    case BinaryExpr(OpOutlives, left, right) => {
-      val l = convertIntExpr(left)
-      val r = convertIntExpr(right)
-      l <= r
-    }
+    case BinaryExpr(OpLftEq, left, right) => True()
+    case BinaryExpr(OpLftUpperBound, left, right) => True()
+    case BinaryExpr(OpOutlived, left, right) => True()
     case BinaryExpr(OpBoolEq, left, right) => {
       val l = convertBoolExpr(left)
       val r = convertBoolExpr(right)
@@ -328,8 +333,10 @@ object SMTSolving extends Core
     case _ => throw SMTUnsupportedExpr(e)
   }
 
-  private def convertIntExpr(e: Expr): SMTIntTerm = e match {
+  private def convertIntExpr(e: Expr)(implicit programVars: List[Var]): SMTIntTerm = e match {
     case Var(name) => Ints(name)
+    case AlwaysExistsVar(v) => convertIntExpr(v)
+    case e:OnExpiry => Ints(e.smtName)
     case Named(v) => convertIntExpr(v)
     // case NilLifetime => Ints(0)
     case IntConst(c) => Ints(c)
@@ -365,7 +372,7 @@ object SMTSolving extends Core
         case _ => throw SMTUnsupportedExpr(e)
       }
     }
-    case TupleExpr(exprs) => Ints("__" + exprs.map(_._1.pp).mkString("_") + "__")
+    case TupleExpr(exprs) => Ints("tpl_" + exprs.map(_._1.hashCode()).mkString("_"))
     case _ => throw SMTUnsupportedExpr(e)
   }
 
@@ -384,12 +391,12 @@ object SMTSolving extends Core
   /** External interface */
 
   // Check if phi is satisfiable; all vars are implicitly existentially quantified
-  def sat(phi: Expr): Boolean = {
+  def sat(phi: Expr)(implicit programVars: List[Var]): Boolean = {
     cache.getOrElseUpdate(phi, checkSat(convertBoolExpr(phi)))
   }
 
   // Check if phi is valid; all vars are implicitly universally quantified
-  def valid(phi: Expr): Boolean = {
+  def valid(phi: Expr)(implicit programVars: List[Var]): Boolean = {
     !sat(phi.not)
   }
 
