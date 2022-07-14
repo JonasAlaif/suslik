@@ -63,7 +63,7 @@ object Preprocessor extends SepLogicUtils {
     * Add a missing cardinality constraint to a predicate clause 
     */
   private def addCardConstraints(clause: InductiveClause): InductiveClause = {
-    val InductiveClause(sel, Assertion(phi, sigma)) = clause
+    val InductiveClause(name, sel, Assertion(phi, sigma)) = clause
 
     // All cardinality-related variables
     val cardVars = (for {
@@ -90,7 +90,7 @@ object Preprocessor extends SepLogicUtils {
     
     val newPhi = PFormula(phi.conjuncts ++ ltCards)
 
-    InductiveClause(sel, Assertion(newPhi, sigma))
+    InductiveClause(name, sel, Assertion(newPhi, sigma))
   }
 
 
@@ -98,7 +98,7 @@ object Preprocessor extends SepLogicUtils {
     * [Cardinality] Obsolete: add precise cardinality
     */
   private def addPreciseCardConstraints(clause: InductiveClause): InductiveClause = {
-    val InductiveClause(sel, Assertion(phi, sigma)) = clause
+    val InductiveClause(name, sel, Assertion(phi, sigma)) = clause
 
     // All cardinality-related variables
     val cardVars = (for {
@@ -112,7 +112,7 @@ object Preprocessor extends SepLogicUtils {
       val (_, clauseCard) = heapCardinality(sigma)
       val cardConstraint = BinaryExpr(OpEq, selfCardVar, clauseCard) // self_card = x
       val newPhi = PFormula(phi.conjuncts ++ Set(cardConstraint))
-      return InductiveClause(sel, Assertion(newPhi, sigma))
+      return InductiveClause(name, sel, Assertion(newPhi, sigma))
     }
 
     val constrainedVars = sel.vars ++ phi.vars
@@ -134,7 +134,7 @@ object Preprocessor extends SepLogicUtils {
 
     val newPhi = PFormula(phi.conjuncts ++ Set(cardConstraint) ++ additionalConstraints)
 
-    InductiveClause(sel, Assertion(newPhi, sigma))
+    InductiveClause(name, sel, Assertion(newPhi, sigma))
   }
 
 

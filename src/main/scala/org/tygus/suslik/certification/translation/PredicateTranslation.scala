@@ -58,8 +58,8 @@ abstract class PredicateTranslation[Pure, Spatial, Type,
     // predicate (even if it occurs at a top level or not)
     val (predName: Ident, baseContext: List[(Ident, Type)]) = {
       val (predName, gamma) = predicate match {
-        case InductivePredicate(name, params, clauses) =>
-          val gamma = clauses.foldLeft(params.toMap)({ case (baseGamma, InductiveClause(selector, asn)) =>
+        case InductivePredicate(name, params, clauses, _) =>
+          val gamma = clauses.foldLeft(params.toMap)({ case (baseGamma, InductiveClause(_, selector, asn)) =>
             var gamma = selector.resolve(baseGamma, Some(BoolType)).getOrElse(baseGamma) ++ baseGamma
             gamma = asn.phi.conjuncts.foldLeft(gamma)({ case (gamma, expr) => expr.resolve(gamma, Some(BoolType)).getOrElse(gamma) }) ++ baseGamma
             asn.sigma.resolve(gamma, env).getOrElse(gamma) ++ baseGamma
@@ -70,7 +70,7 @@ abstract class PredicateTranslation[Pure, Spatial, Type,
     }
 
     predicate match {
-      case InductivePredicate(name, raw_params, raw_clauses) =>
+      case InductivePredicate(name, raw_params, raw_clauses, _) =>
         val params: List[(String, Type)] =
           raw_params.map({ case (Var(name), sType) => (name, translatePredicateParamType(predName, sType)) })
         val context: Map[Ident, Type] = (baseContext ++ params).toMap
@@ -79,7 +79,7 @@ abstract class PredicateTranslation[Pure, Spatial, Type,
         // NOTE: here we assume that cardinality constructors are unique - i.e each clause maps to a
         // unique cardinality constraint
         val clauses: Map[CardConstructor, Clause] = raw_clauses.map({
-          case InductiveClause(selector, asn) =>
+          case InductiveClause(_, selector, asn) =>
             // first, split the pure conditions in the predicate between those that
             // encode cardinality constraints and those that don't
             val (r_conds, r_card_conds) = asn.phi.conjuncts.map(expr =>

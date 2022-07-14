@@ -99,7 +99,7 @@ case class FunSpec(name: Ident, rType: SSLType, params: Formals,
 /**
   * A selector is of the form (phi, sigma)
   */
-case class InductiveClause(selector: Expr, asn: Assertion) extends PrettyPrinting with PureLogicUtils {
+case class InductiveClause(name: Option[String], selector: Expr, asn: Assertion) extends PrettyPrinting with PureLogicUtils {
   override def pp: String =
     s"${selector.pp} => ${asn.pp}"
 
@@ -153,12 +153,13 @@ case class InductiveClause(selector: Expr, asn: Assertion) extends PrettyPrintin
   * TODO: add higher-order predicates, e.g., a list parameterised by a predicate
   *
   */
-case class InductivePredicate(full_name: Ident, params: Formals, clauses: Seq[InductiveClause])
+case class InductivePredicate(full_name: Ident, params: Formals, clauses: Seq[InductiveClause], clean_name: Option[String])
     extends TopLevelDeclaration with PureLogicUtils {
 
-  def isPrim: Boolean = full_name.startsWith("PRIM_")
-  def isOpaque: Boolean = clauses.length == 0
-  def name: Ident = full_name.stripPrefix("PRIM_")
+  val isPrim: Boolean = full_name.startsWith("PRIM_")
+  val isOpaque: Boolean = clauses.length == 0
+  val name: Ident = full_name.stripPrefix("PRIM_")
+  val clean: String = clean_name.getOrElse(name)
 
   def resolve(gamma: Gamma, env:Environment):Option[Gamma] = {
     val init_gamma : Option[Gamma] = Some(gamma)
@@ -196,7 +197,7 @@ case class InductivePredicate(full_name: Ident, params: Formals, clauses: Seq[In
   def refreshExistentials(vars: Set[Var], suffix: String = ""): (InductivePredicate, SubstVar) = {
     val bound = Set(selfCardVar) ++ vars ++ params.map(_._1).toSet
     val sbst = refreshVars(existentials.toList, bound, suffix)
-    (this.copy(clauses = this.clauses.map(c => InductiveClause(c.selector.subst(sbst), c.asn.subst(sbst)))), sbst)
+    (this.copy(clauses = this.clauses.map(c => InductiveClause(c.name, c.selector.subst(sbst), c.asn.subst(sbst)))), sbst)
   }
 
   def vars: Set[Var] = clauses.flatMap(c => c.selector.vars ++ c.asn.vars).toSet

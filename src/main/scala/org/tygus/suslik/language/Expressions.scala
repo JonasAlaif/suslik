@@ -339,6 +339,13 @@ object Expressions {
     def rType: SSLType = LocType
     override def resType: SSLType = LocType
   }
+  object OpFieldBind extends BinOp {
+    override def level: Int = 7
+    override def pp: String = ":"
+    def lType: SSLType = LocType
+    def rType: SSLType = LocType
+    override def resType: SSLType = LocType
+  }
 
 
   sealed abstract class Expr extends PrettyPrinting with HasExpressions[Expr] with Ordered[Expr] with PureLogicUtils {
@@ -658,7 +665,7 @@ object Expressions {
       assert(!inPost)
       if (f == this.field) {
         assert(this.post.isDefined)
-        if (futs.forall(_ == false) && post.get == inPost) {
+        if (futs.forall(_ == false) && this.post.get == inPost) {
           Some(this.asVar -> e)
         } else None
       } else None
@@ -702,8 +709,6 @@ object Expressions {
         }
       else None
     } else None
-
-    // TODO: unify
   }
 
   // Program-level lifetime

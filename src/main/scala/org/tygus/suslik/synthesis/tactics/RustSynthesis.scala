@@ -43,6 +43,7 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
   protected def anyPhaseRules: List[SynthesisRule] = List(
     LogicalRules.Inconsistency,
     RuslikUnfoldingRules.AddToPost,
+    RuslikUnfoldingRules.KillLft,
     // FailRules.PostInconsistent,
     LogicalRules.SubstLeft,
     UnificationRules.SubstRight,
@@ -82,6 +83,7 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
         )
     } else {
       List(
+        RuslikUnfoldingRules.CannotConstruct,
         LogicalRules.EmpRule,
         UnificationRules.Pick,
       )

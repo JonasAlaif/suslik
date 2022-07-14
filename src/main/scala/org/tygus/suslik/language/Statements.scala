@@ -18,85 +18,119 @@ object Statements {
 
       val builder = new StringBuilder
 
+      def doRet(offset: Int, sub: Subst, rets: List[Var]) = {
+        if (rets.length > 0) {
+          val retsStr = rets.map(r => sub.getOrElse(r, r).pp)
+          val retStr = if (retsStr.length == 1) retsStr(0) else retsStr.mkString("(", ", ", ")")
+          builder.append("\n" + mkSpaces(offset)).append(retStr)
+        }
+      }
+
       def build(s: Statement, offset: Int = 2, sub: Subst = Map(), rets: List[Var]): (Subst, Boolean) = {
         s.simplify match {
           case Skip => (sub, true)
           case Hole =>
             builder.append(mkSpaces(offset))
-            builder.append(s"??\n")
+            builder.append(s"??")
             (sub, true)
           case Error =>
             builder.append(mkSpaces(offset))
-            builder.append(s"unreachable();\n")
+            builder.append(s"unreachable();")
             (sub, false)
           case Sub(s) =>
             // builder.append(mkSpaces(offset))
-            // builder.append(s"// subst(${s.map(m => s"${m._1.pp} -> ${m._2.pp}").mkString(", ")})\n")
-            (sub.mapValues(_.subst(s)) ++ s.mapValues(_.subst(sub)), true)
+            // builder.append(s"// subst(${s.map(m => s"${m._1.pp} -> ${m._2.pp}").mkString(", ")})")
+            // TODO: why are there futures in here??
+            // (sub.mapValues(v => if (v.isInstanceOf[OnExpiry]) v else v.subst(s)) ++ s.mapValues(v => if (v.isInstanceOf[OnExpiry]) v else v.subst(sub)), true)
+            (sub.mapValues(v => v.subst(s)) ++ s.mapValues(v => v.subst(sub)), true)
           case Malloc(to, _, sz) =>
             // Ignore type
             builder.append(mkSpaces(offset))
-            builder.append(s"let ${to.pp} = malloc($sz);\n")
+            builder.append(s"let ${to.pp} = malloc($sz);")
             (sub, true)
           case Free(v) =>
             builder.append(mkSpaces(offset))
-            builder.append(s"free(${v.pp});\n")
+            builder.append(s"free(${v.pp});")
             (sub, true)
           case Store(to, off, e) =>
             val (toSub, eSub) = (UnaryExpr(OpDeRef, to.subst(sub)).normalise, e.subst(sub))
             builder.append(mkSpaces(offset))
             assert(off == 0)
-            builder.append(s"${toSub.pp} = ${eSub.pp};\n")
+            builder.append(s"${toSub.pp} = ${eSub.pp};")
             (sub, true)
           case Load(to, _, from, off) =>
             builder.append(mkSpaces(offset))
             val f = if (off <= 0) from.pp else s"(${from.pp} + $off)"
             // Do not print the type annotation
-            builder.append(s"let ${to.pp} = *$f;\n")
+            builder.append(s"let ${to.pp} = *$f;")
             (sub, true)
-          case c@Construct(_, _, _) =>
-            val Construct(to, pred, args) = c.subst(sub)
+          case c@Construct(_, _, _, _) =>
+            val Construct(to, pred, variant, args) = c.subst(sub)
             builder.append(mkSpaces(offset))
-            builder.append(s"let ${to.pp} = $pred(${args.map(_.pp).mkString(", ")});\n")
-            (sub, true)
+            val structLike = args.exists(arg => arg.isInstanceOf[BinaryExpr] && arg.asInstanceOf[BinaryExpr].op == OpFieldBind)
+            val cName = pred + variant.map("::" + _).getOrElse("")
+            val bra = if (args.length == 0) "" else if (structLike) " { " else "("
+            val ket = if (args.length == 0) "" else if (structLike) " }" else ")"
+            val isRes = rets.length == 1 && sub.getOrElse(rets(0), rets(0)) == to
+            builder.append(s"${if (isRes) "" else s"let ${to.pp} = "}$cName$bra${args.map(_.pp).mkString(", ")}$ket${if (isRes) "" else ";"}")
+            (sub, !isRes)
+          case m@Match(tgt, arms) =>
+            val tSub = tgt.subst(sub)
+            builder.append(mkSpaces(offset)).append(s"match ${tSub.pp} {\n")
+            arms.map { case (constr, stmt) =>
+              val (_, ret) = build(constr, offset + 2, sub, List(Var("result")))
+              assert(!ret)
+              builder.append(" => {\n")
+              val (resSub, mustRet) = build(stmt, offset + 4, sub, rets)
+              if (mustRet) doRet(offset + 4, resSub, rets)
+              builder.append("\n" + mkSpaces(offset + 2) + "}\n")
+            }
+            builder.append(mkSpaces(offset)).append(s"}")
+            (sub, false)
           case c@Call(_, _, _, _) =>
             val Call(fun, result, args, _) = c.subst(sub)
             builder.append(mkSpaces(offset))
-            val res = if (result.length == 0) "let _ = "
+            val isRes = rets.length == result.length &&
+              rets.zip(result).forall(ret => sub.getOrElse(ret._1, ret._1) == ret._2)
+            val res = if (isRes) ""
+              else if (result.length == 0) "let _ = "
               else if (result.length == 1) s"let ${result.head.pp} = "
               else "let (" + result.map(_.pp).mkString(", ") + ") = "
-            val function_call = s"$res${fun.pp}(${args.map(_.pp).mkString(", ")});\n"
+            val function_call = s"$res${fun.pp}(${args.map(_.pp).mkString(", ")})${if (isRes) "" else ";"}"
             builder.append(function_call)
-            (sub, true)
+            (sub, !isRes)
           case SeqComp(s1,s2) =>
             val (nSub, mustRet) = build(s1, offset, sub, rets)
-            assert(mustRet)
+            if (!mustRet) {
+              println("Trying to return at:\n" + builder.toString())
+              println("While still have:\n" + s2.pp())
+              assert(false)
+            }
+            if (!s1.isInstanceOf[Sub] && !s2.isInstanceOf[Sub]) builder.append("\n")
             build(s2, offset, nSub, rets)
           case If(cond, tb, eb) =>
             builder.append(mkSpaces(offset))
             builder.append(s"if (${cond.subst(sub).pp}) {\n")
             val (resT, mustRetT) = build(tb, offset + 2, sub, rets)
             // Result true:
-            if (mustRetT)
-              builder.append(mkSpaces(offset + 2)).append(s"${rets.map(r => resT.getOrElse(r, r).pp).mkString("(", ", ", ")")}\n")
-            builder.append(mkSpaces(offset)).append(s"} else {\n")
+            if (mustRetT) doRet(offset+2, resT, rets)
+            builder.append("\n" + mkSpaces(offset)).append(s"} else {\n")
             val (resF, mustRetF) = build(eb, offset + 2, sub, rets)
             // Result false:
-            if (mustRetF)
-              builder.append(mkSpaces(offset + 2)).append(s"${rets.map(r => resF.getOrElse(r, r).pp).mkString("(", ", ", ")")}\n")
-            builder.append(mkSpaces(offset)).append(s"}\n")
+            if (mustRetF) doRet(offset+2, resF, rets)
+            builder.append("\n" + mkSpaces(offset)).append(s"}")
             (sub, false)
           case Guarded(cond, b) =>
             builder.append(mkSpaces(offset))
             builder.append(s"assume (${cond.pp}) {\n")
             build(b, offset + 2, sub, rets)
-            builder.append(mkSpaces(offset)).append(s"}\n")
+            builder.append("\n" + mkSpaces(offset)).append(s"}")
             (sub, true)
         }
       }
 
       val (res, mustRet) = build(this, rets = rets)
-      if (mustRet) builder.append(s"  ${rets.map(r => res.getOrElse(r, r).pp).mkString("(", ", ", ")")}\n")
+      if (mustRet) doRet(2, res, rets)
       builder.toString()
     }
 
@@ -112,8 +146,10 @@ object Statements {
           acc ++ to.collect(p) ++ e.collect(p)
         case Load(_, _, from, off) =>
           acc ++ from.collect(p)
-        case Construct(to, _, args) =>
+        case Construct(to, _, _, args) =>
           acc ++ to.collect(p) ++ args.flatMap(_.collect(p)).toSet
+        case Match(tgt, arms) =>
+          acc ++ tgt.collect(p) ++ arms.flatMap(a => a._1.collect(p) ++ a._2.collect(p))
         case Malloc(_, _, _) =>
           acc
         case Free(x) =>
@@ -143,9 +179,11 @@ object Statements {
         assert(!sigma.keySet.contains(from) || sigma(from).isInstanceOf[Var])
         Load(to.subst(sigma).asInstanceOf[Var], tpe, from.subst(sigma).asInstanceOf[Var], offset)
       }
-      case Construct(to, pred, args) =>
+      case Construct(to, pred, variant, args) =>
         assert(!sigma.keySet.contains(to) || sigma(to).isInstanceOf[Var])
-        Construct(to.subst(sigma).asInstanceOf[Var], pred, args.map(_.subst(sigma)))
+        Construct(to.subst(sigma).asInstanceOf[Var], pred, variant, args.map(_.subst(sigma)))
+      case Match(tgt, arms) =>
+        Match(tgt.subst(sigma), arms.map(a => (a._1, a._2.subst(sigma))))
       case Malloc(to, tpe, sz) => {
         assert(!sigma.keySet.contains(to) || sigma(to).isInstanceOf[Var])
         Malloc(to.subst(sigma).asInstanceOf[Var], tpe, sz)
@@ -169,7 +207,8 @@ object Statements {
       case Sub(_) => 0
       case Store(to, off, e) => 1 + to.size + e.size
       case Load(to, _, from, _) => 1 + to.size + from.size
-      case Construct(to, _, args) => 1 + to.size + args.map(_.size).sum
+      case Construct(to, _, _, args) => 1 + to.size + args.map(_.size).sum
+      case Match(_, arms) => 1 + arms.map(a => a._1.size + a._2.size).sum
       case Malloc(to, _, _) => 1 + to.size
       case Free(x) => 1 + x.size
       case Call(_, res, args, _) => 1 + res.size + args.map(_.size).sum
@@ -185,6 +224,7 @@ object Statements {
     def isAtomic: Boolean = this match {
       case Skip => false
       case If(_,_,_) => false
+      case Match(_,_) => false
       case Guarded(_,_) => false
       case SeqComp(_,_) => false
       case _ => true
@@ -203,6 +243,7 @@ object Statements {
       case Skip => List()
       case SeqComp(s1,s2) => s1.atomicStatements ++ s2.atomicStatements
       case If(_, tb, eb) => tb.atomicStatements ++ eb.atomicStatements
+      case Match(_, arms) => arms.flatMap(_._2.atomicStatements).toList
       case Guarded(_, b) => b.atomicStatements
       case _ => List(this)
     }
@@ -211,6 +252,7 @@ object Statements {
     def mapAtomic(f: Statement => Statement): Statement = this match {
       case SeqComp(s1, s2) => SeqComp(s1.mapAtomic(f), s2.mapAtomic(f))
       case If(cond, tb, eb) => If(cond, tb.mapAtomic(f), eb.mapAtomic(f))
+      case Match(tgt, arms) => Match(tgt, arms.map(a => (a._1, a._2.mapAtomic(f))))
       case Guarded(cond, b) => Guarded(cond, b.mapAtomic(f))
       case Skip => Skip
       case _ => f(this)
@@ -242,6 +284,10 @@ object Statements {
         cond.resolveOverloading(gamma),
         tb.resolveOverloading(gamma),
         eb.resolveOverloading(gamma)
+      )
+      case Match(tgt, arms) => Match(
+        tgt.resolveOverloading(gamma),
+        arms.map(a => (a._1, a._2.resolveOverloading(gamma)))
       )
       case Guarded(cond, body) => Guarded(
         cond.resolveOverloading(gamma),
@@ -287,7 +333,10 @@ object Statements {
                   offset: Int = 0) extends Statement
 
   // let to = pred(args)
-  case class Construct(to: Var, pred: Ident, args: Seq[Expr]) extends Statement
+  case class Construct(to: Var, pred: Ident, variant: Option[String], args: Seq[Expr]) extends Statement
+
+  // match tgt { arms }
+  case class Match(tgt: Expr, arms: Seq[(Construct, Statement)]) extends Statement
 
   // *to.offset = e
   case class Store(to: Var, offset: Int, e: Expr) extends Statement
@@ -303,6 +352,7 @@ object Statements {
 //        case (_, Skip) => s1.simplify
         case (SeqComp(s11, s12), _) => SeqComp(s11, SeqComp(s12, s2)).simplify // Left-nested compositions are transformed to right-nested
         case (If(g, t, f), _) => If(g, SeqComp(t, s2).simplify, SeqComp(f, s2).simplify)
+        case (Match(tgt, arms), _) => Match(tgt, arms.map(a => (a._1, SeqComp(a._2, s2).simplify)))
         case (_, Guarded(cond, b)) // Guards are propagated to the top but not beyond the definition of any var in their cond
             if cond.vars.intersect(s1.definedVars).isEmpty => Guarded(cond, SeqComp(s1, b).simplify)
         case (Load(y, tpe, from, offset), _) => simplifyBinding(y, newY => Load(newY, tpe, from, offset))
@@ -355,14 +405,16 @@ object Statements {
         else s"-> (${f.rustReturns.map(r => r._2.map(_.sig).mkString("") + r._3).mkString(", ")}) "
       s"""
           |fn $name$generics(${f.rustParams.map { case (f, r, t) => s"${f.pp}: ${r.map(_.sig).mkString("")}$t" }.mkString(", ")}) $returns{
-          |${body.pp(f.result)}}
+          |${body.pp(f.result)}
+          |}
       """.stripMargin
     }
 
     def ppOld: String =
       s"""
          |${tp.pp} $name (${formals.map { case (i, t) => s"${t.pp} ${i.pp}" }.mkString(", ")}) {
-         |${body.pp(f.result)}}
+         |${body.pp(f.result)}
+         |}
     """.stripMargin
 
     // Shorten parameter names

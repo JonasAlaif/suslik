@@ -214,7 +214,19 @@ object Specifications extends SepLogicUtils {
     // Companion candidates for this goal:
     // look at ancestors before progress was last made, only keep those with different heap profiles
     def companionCandidates: List[Goal] = {
-      val allCands = ancestors.dropWhile(!_.hasProgressed).drop(1).filter(_.isCompanion).reverse
+      var matchedWith = this.pre.sigma.rapps.filter(!_.hasBlocker).map(r => r -> Set(r.field))
+      val allCands = ancestors.filter(_.canBeCompanion).filter(g => {
+        val rapps = g.pre.sigma.rapps
+        var newAdded = false
+        matchedWith = matchedWith.map(mw => {
+          val newFields = rapps.filter(r => !mw._2(r.field)).filter(r =>
+            mw._1.pred == r.pred && mw._1.field.name.endsWith(r.field.name)
+          ).map(_.field)
+          newAdded = newAdded || newFields.length > 0
+          mw._1 -> (mw._2 ++ newFields)
+        })
+        newAdded
+      }).reverse
       if (env.config.auxAbduction) allCands else allCands.take(1)
   }
 
@@ -293,7 +305,8 @@ object Specifications extends SepLogicUtils {
     def borrowsMatch: Boolean = pre.sigma.borrows.forall(b => !b.ref.head.beenAddedToPost || post.sigma.borrows.exists(_.field == b.field))
     def noBlockeds: Boolean = pre.sigma.borrows.forall(b => !b.hasBlocker)
     // Cannot be a companion if there are outstanding non-expired borrows
-    def isCompanion: Boolean = isCompanionNB && borrowsMatch && noBlockeds
+    def canBeCompanion: Boolean = borrowsMatch && noBlockeds
+    def isCompanion: Boolean = isCompanionNB && canBeCompanion
 
     def isTopLevel: Boolean = label == topLabel
 
@@ -311,9 +324,10 @@ object Specifications extends SepLogicUtils {
     // If the entire RApp is FULLY existential (fnSpec is existential and unconstrained by phi)
     // Such RApps should not be written to and should be expired eagerly
     def isRAppExistential(r: RApp, g: Gamma): Boolean = !r.isWriteableRef(existentials) || r.fnSpec.filter(_.getType(g).get != LifetimeType).zipWithIndex.forall(a => {
-      if (!a._1.isInstanceOf[Var]) return false
-      val v = a._1.asInstanceOf[Var]
-      existentials.contains(v) && !post.phi.vars.contains(v) &&
+      if (a._1.onExpiries.size > 0) return false
+      val vs = a._1.vars
+      val phiVars = post.phi.vars
+      vs.forall(existentials.contains) && !vs.exists(phiVars.contains) &&
         !post.onExpiries.exists(oe => oe.field == r.field && !oe.futs.head && (oe.post.get || (oe.futs.length > 1 && oe.futs.tail.head)))
     })
     def hasPotentialReborrows(r: RApp): Boolean = !potentialReborrows(r).isEmpty || r.hasBlocker //post.sigma.owneds.exists(_.fnSpec.exists(_ == r.ref.head.lft.name))

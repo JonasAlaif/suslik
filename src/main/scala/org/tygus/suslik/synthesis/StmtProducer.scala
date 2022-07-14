@@ -138,6 +138,19 @@ case class BranchProducer(pred: Option[SApp], freshVars: SubstVar, sbst: Subst, 
   })
 }
 
+// Produces a conditional that branches on the selectors
+case class MatchProducer(tgt: Var, pred: String, freshVars: SubstVar, subst: Subst, selectors: Seq[(Option[String], Seq[Var])]) extends StmtProducer {
+  val arity: Int = selectors.length
+  val fn: Kont = if (this.arity == 1) SubstMapProducer(subst).fn else liftToSolutions(stmts => {
+    val cond_branches = selectors.map(s => s._1 ->
+      (s._2)).zip(stmts)
+    val arms = cond_branches.map { case ((variant, fields), stmt) =>
+      (Construct(Var("result"), pred, variant, fields.map(f => Expressions.BinaryExpr(Expressions.OpFieldBind, f, freshVars(f)))), stmt)
+    }
+    Match(tgt, arms)
+  })
+}
+
 // Joins a guarded statement and an else-branch into a conditional,
 // if goal is the right branching point (otherwise simply propagates the guarded statement)
 case class GuardedBranchProducer(goal: Goal, unknown: Unknown) extends StmtProducer {

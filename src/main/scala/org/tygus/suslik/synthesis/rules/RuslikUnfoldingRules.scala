@@ -43,7 +43,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     assert(!(isPre && rapp.hasBlocker))
     if (rapp.ref.length >= 2) {
       val newRapp = rapp.popRef
-      val ic = InductiveClause(BoolConst(true), Assertion(PFormula(BoolConst(true)), SFormula(List(newRapp))))
+      val ic = InductiveClause(None, BoolConst(true), Assertion(PFormula(BoolConst(true)), SFormula(List(newRapp))))
       (Seq(ic), Map.empty, Map.empty, Map(Var("*") -> newRapp.field), onExpiries.flatMap(_.openOrExpireSub(rapp.field, newRapp.field, !isPre)).toMap)
     } else {
       val ip = predicates(rapp.pred)
@@ -55,7 +55,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       // Fields should always alias (so that refs match up in pre/post)
       val fields_subst = ip.fields.map(e => e -> Var(e.name + "_" + rapp.field.name)).toMap
       val subst = args_subst ++ existentials_subst ++ fields_subst
-      val newIp = ip.clauses.map(c => InductiveClause(c.selector.subst(subst), c.asn.subst(subst).setTagAndRef(rapp)))
+      val newIp = ip.clauses.map(c => InductiveClause(c.name, c.selector.subst(subst), c.asn.subst(subst).setTagAndRef(rapp)))
       val futures_subst: Subst = if (!rapp.isBorrow) Map.empty
         else if (ip.isPrim || ip.clauses.length == 0) {
           assert(ip.params.length == 1)
@@ -139,13 +139,13 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             // If we reborrowed cannot be a companion since the borrows won't match up (need to expire first)
             isCompanionNB = !h.isBorrow)
         }}
-        // TODO: this shouldn't be a flatMap (e.g. if fields in different branches alias)
-        val nameSubs = goal.env.predicates(h.pred).clauses.flatMap(
-          _.asn.sigma.rapps.map(a => Var(a.field.name + "_" + h.field.name) -> BinaryExpr(OpField, h.field, a.field))
-        ).toMap
-        val nSubsRef = if (h.isBorrow) nameSubs.map(m => m._1 -> UnaryExpr(OpTakeRef(h.ref.head.mut), m._2)) else nameSubs
-        val kont = BranchProducer(Some(h.toSApp), fresh_subst ++ fieldSubst, sbst, clauses.map(_.selector)) >>
-          SubstMapProducer(nSubsRef) >> ExtractHelper(goal)
+        val subs = fieldSubst.map{ case (field, var_name) =>
+          var_name -> (if (field.name == "*" || field.name == "_666") UnaryExpr(OpDeRef, h.field) else BinaryExpr(OpField, h.field, field))
+        }.toMap
+        val nameSubs = if (h.isBorrow) subs.map(m => m._1 -> UnaryExpr(OpTakeRef(h.ref.head.mut), m._2)) else subs
+        val pred = goal.env.predicates(h.pred)
+        val kont = MatchProducer(h.field, pred.clean, fieldSubst, nameSubs, pred.clauses.map(c => c.name -> c.asn.sigma.rapps.filter(!_.priv).map(_.field))) >>
+          ExtractHelper(goal)
         RuleResult(newGoals, kont, this, goal)
       }
     }
@@ -180,11 +180,14 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             isCompanionNB = !h.isBorrow)
         }}
         if (counter <= 1) {
-        val nameSubs = fieldSubst.map{ case (field, var_name) =>
-          var_name -> (if (field.name == "*") UnaryExpr(OpDeRef, h.field) else BinaryExpr(OpField, h.field, field))
+        val subs = fieldSubst.map{ case (field, var_name) =>
+          var_name -> (if (field.name == "*" || field.name == "_666") UnaryExpr(OpDeRef, h.field) else BinaryExpr(OpField, h.field, field))
         }.toMap
-        val nSubsRef = if (h.isBorrow) nameSubs.map(m => m._1 -> (if (m._2.isInstanceOf[UnaryExpr]) m._2 else UnaryExpr(OpTakeRef(h.ref.head.mut), m._2))) else nameSubs
-        val kont = SubstMapProducer(nSubsRef) >> BranchProducer(Some(h.toSApp), fresh_subst ++ fieldSubst, sbst, clauses.map(_.selector)) >>
+        val nameSubs = if (h.isBorrow) subs.map(m => m._1 -> UnaryExpr(OpTakeRef(h.ref.head.mut), m._2)) else subs
+        // TODO: Why was the `if (m._2.isInstanceOf[UnaryExpr]) m._2 else ...` here?
+        // val nSubsRef = if (h.isBorrow) nameSubs.map(m => m._1 -> (if (m._2.isInstanceOf[UnaryExpr]) m._2 else UnaryExpr(OpTakeRef(h.ref.head.mut), m._2))) else nameSubs
+        val pred = goal.env.predicates(h.pred)
+        val kont = MatchProducer(h.field, pred.clean, fieldSubst, nameSubs, pred.clauses.map(c => c.name -> c.asn.sigma.rapps.filter(!_.priv).map(_.field))) >>
           ExtractHelper(goal)
         return Seq(RuleResult(newGoals, kont, this, goal))
       }}}
@@ -240,7 +243,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         // (canUnfoldPost only returns non-cyclic, but none of those are unfoldable, so can never get to unfolding non-cyclic)
         if h.tag.unrolls < goal.env.config.maxCloseDepth
         val (clauses, _, fresh_subst, fieldSubst, fut_subst) = loadPred(h, goal.vars, goal.env.predicates, false, goal.onExpiries)
-        InductiveClause(selector, asn) <- clauses
+        (InductiveClause(name, selector, asn), idx) <- clauses.zipWithIndex
         if selector != BoolConst(false)
         if asn.sigma.rapps.filter(_.priv).length == (if (clauses.length > 1) 1 else 0)
       } yield {
@@ -254,11 +257,18 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           goal.post.phi && asn.phi && selector,
           goal.post.sigma ** SFormula(noDisc) - h
         )
-        val construct_args = if (h.isPrim(goal.env.predicates)) h.fnSpec else asn.sigma.rapps.map(_.field)
+        val construct_args = if (h.isPrim(goal.env.predicates)) h.fnSpec else {
+          val fieldNames = goal.env.predicates(h.pred).clauses(idx).asn.sigma.rapps.filter(!_.priv).map(_.field)
+          val argNames = asn.sigma.rapps.filter(!_.priv).map(_.field)
+          assert(fieldNames.length == argNames.length)
+          fieldNames.zip(argNames).map(arg =>
+            if (arg._1.name.charAt(0) == '_' && arg._1.name.substring(1).forall(_.isDigit)) arg._2
+            else BinaryExpr(OpFieldBind, arg._1, arg._2))
+        }
         val kont =
           UnfoldProducer(h.toSApp, selector, Assertion(asn.phi, asn.sigma), fresh_subst ++ fieldSubst) >>
           (if (disc.length == 1) SubstProducer(disc.head.asInstanceOf[RApp].field, disc.head.asInstanceOf[RApp].fnSpec.head) else IdProducer) >>
-          AppendProducer(Construct(h.field, h.pred, construct_args)) >>
+          AppendProducer(Construct(h.field, goal.env.predicates(h.pred).clean, name, construct_args)) >>
           ExtractHelper(goal)
         RuleResult(List(goal.spawnChild(post = newPost, fut_subst = fut_subst, constraints = c,
             // Hasn't progressed since we didn't progress toward termination
@@ -287,7 +297,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         // Cannot expire before reborrowing:
         if !preBorrows.contains(h.field)
         val (clauses, sbst, _, _, fut_subst) = loadPred(h, goal.vars, goal.env.predicates, false, goal.onExpiries)
-        InductiveClause(selector, asn) <- clauses
+        InductiveClause(name, selector, asn) <- clauses
         if selector != BoolConst(false)
         // Hacky way to ensure we can only Expire the correct enum variant:
         if selector == BoolConst(true) || {
@@ -417,9 +427,12 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       
       val lft = newPreBrrw.ref.head.lft
       val lftMax = goal.pre.phi.lftUpperBounds.getOrElse(lft, lft)
-      val newPreBrrwNewFnSpec = newPreBrrw.refreshFnSpec(goal.gamma, goal.vars)
-      val newPostBrrw = newPreBrrwNewFnSpec.copy(
-        fnSpec = newPreBrrwNewFnSpec.fnSpec.map(arg => AlwaysExistsVar(arg.asInstanceOf[Var])),
+      // Only refresh fnspec if mutable
+      val newFnSpec =
+        if (newPreBrrw.ref.head.mut) newPreBrrw.refreshFnSpec(goal.gamma, goal.vars).fnSpec.map(arg => AlwaysExistsVar(arg.asInstanceOf[Var]))
+        else newPreBrrw.fnSpec
+      val newPostBrrw = newPreBrrw.copy(
+        fnSpec = newFnSpec,
         blocked = goal.pre.phi.outlivesRels.filter(or => or._2 == lftMax).map(_._1)
       )
       val fut_subst = goal.onExpiries.flatMap(_.toPostSub(newPreBrrw.field, newPreBrrw.fnSpec, newPostBrrw.fnSpec)).toMap
@@ -452,12 +465,16 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         assert(src.fnSpec.forall(_.getType(goal.gamma) != LifetimeType))
         val (newPre, fut_subst) = if (src.ref.head.mut) {
           val blocking = Named(freshVar(goal.vars, src.ref.head.lft.name.name))
-          val newSrc = src.refreshFnSpec(goal.gamma, goal.vars).copy(blocked = Set(blocking))
+          val newSrc = if (tgt.ref.head.mut)
+              src.refreshFnSpec(goal.gamma, goal.vars).copy(blocked = Set(blocking))
+            else src.copy(blocked = Set(blocking))
           val newPre = Assertion(
             goal.pre.phi && BinaryExpr(OpLftUpperBound, blocking, src.ref.head.lft),
             (goal.pre.sigma - src) ** newSrc
           )
-          val fut_subst = (goal.onExpiries ++ goal.callGoal.get.calleePost.onExpiries).flatMap(_.reborrowCallSub(tgt.field, src.field, src.fnSpec, newSrc.fnSpec, goal.vars)).toMap
+          val fut_subst = if (tgt.ref.head.mut)
+              (goal.onExpiries ++ goal.callGoal.get.calleePost.onExpiries).flatMap(_.reborrowCallSub(tgt.field, src.field, src.fnSpec, newSrc.fnSpec, goal.vars)).toMap
+            else Map.empty[Var, Expr]
           (newPre, fut_subst + (tgt.ref.head.lft.name -> blocking.name))
         } else {
           (goal.pre, Map(tgt.ref.head.lft.name -> src.ref.head.lft.name))
@@ -472,6 +489,43 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         // println("Calee Post: " + goal.callGoal.get.calleePost.pp)
         RuleResult(List(goal.spawnChild(pre = newPre, post = newPost, fut_subst = fut_subst)), IdProducer, this, goal)
       }
+    }
+  }
+
+  /*
+  KillLft: if no ref has this lft then might as well kill it
+   */
+  object KillLft extends SynthesisRule with InvertibleRule {
+
+    override def toString: Ident = "KillLft"
+
+    def apply(goal: Goal): Seq[RuleResult] = {
+      val usedLfts = goal.pre.sigma.rapps.flatMap(r => r.fnSpec.flatMap(_.collect[Named](_.isInstanceOf[Named])) ++ r.ref.map(_.lft)).toSet
+      val tryToKill = goal.pre.sigma.rapps.flatMap(_.blocked)
+      val toKill = tryToKill.find(!usedLfts(_))
+      if (toKill.isEmpty) Nil
+      else {
+        val newPre = Assertion(goal.pre.phi, goal.pre.sigma.unblockLft(toKill.get))
+        val newGoal = goal.spawnChild(pre = newPre)
+        List(RuleResult(List(newGoal), IdProducer, this, goal))
+      }
+    }
+  }
+
+  /*
+  Cannot construct: if there is a universal ghost or OE in a MustConstruct (NoExists)
+   */
+  object CannotConstruct extends SynthesisRule with InvertibleRule {
+
+    override def toString: Ident = "CannotConstruct"
+
+    def apply(goal: Goal): Seq[RuleResult] = {
+      if (goal.callGoal.isDefined || !goal.post.sigma.chunks.isEmpty) return Nil
+      val existsSat = goal.post.phi.collect[NoExists](_.isInstanceOf[NoExists]).forall(ne =>
+        ne.onExpiries.size == 0 && ne.vars.forall(v => !goal.universalGhosts(v))
+      )
+      if (existsSat) return Nil
+      List(RuleResult(List(goal.unsolvableChild), IdProducer, this, goal))
     }
   }
 }

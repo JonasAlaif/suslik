@@ -421,13 +421,17 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
     case b@RApp(_, _, r, _, _, _, _) if r.length > 0 && r.head.beenAddedToPost => b.copy(ref = r.head.copy(beenAddedToPost = false) :: r.tail)
     case h => h
   })
+  def unblockLft(l: Named): SFormula = SFormula(chunks.map {
+    case r@RApp(_, _, _, _, _, bs, _) if bs(l) => r.copy(blocked = bs - l)
+    case h => h
+  })
   def toCallGoal(post: Boolean): SFormula = SFormula(chunks.filter {
     case RApp(true, _, _, _, _, _, _) => false
     case r@RApp(_, _, ref, _, _, _, _) if post && r.isBorrow && ref.head.beenAddedToPost => false
     case _ => true
   })
   def toFuts(gamma: Gamma): PFormula = PFormula(chunks.flatMap {
-    case r@RApp(_, field, ref, _, fnSpec, _, _) if r.isBorrow && ref.head.beenAddedToPost =>
+    case r@RApp(_, field, ref, _, fnSpec, _, _) if r.isBorrow && ref.head.mut && ref.head.beenAddedToPost =>
       fnSpec.map(arg => (arg, arg.getType(gamma).get)).filter(_._2 != LifetimeType)
       .zipWithIndex.map(arg => arg._1._1 |===| OnExpiry(None, true :: List.fill(ref.length-1)(false), field, arg._2, arg._1._2))
     case _ => Seq.empty

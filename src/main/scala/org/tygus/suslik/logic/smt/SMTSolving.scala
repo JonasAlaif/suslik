@@ -250,7 +250,8 @@ object SMTSolving extends Core
   private def convertBoolExpr(e: Expr)(implicit programVars: List[Var]): SMTBoolTerm = e match {
     case Var(name) => Bools(name)
     case AlwaysExistsVar(v) => convertBoolExpr(v)
-    case NoExists(e) => if (e.onExpiries.size == 0 && e.vars.forall(v => programVars.contains(v))) True() else False()
+    // After a recursive call could get a `NoExists` in pre, making things unsound
+    case NoExists(e) => True()//if (e.onExpiries.size == 0 && e.vars.forall(v => programVars.contains(v))) True() else False()
     case e:OnExpiry => Bools(e.smtName)
     case BoolConst(true) => True()
     case BoolConst(false) => False()

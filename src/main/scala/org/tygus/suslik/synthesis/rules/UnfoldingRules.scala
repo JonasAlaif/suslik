@@ -33,12 +33,12 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
         case h@SApp(pred, args, PTag(cls, unf), card) if unf < env.config.maxOpenDepth =>
           ruleAssert(env.predicates.contains(pred), s"Open rule encountered undefined predicate: $pred")
           val freshSuffix = args.take(1).map(_.pp).mkString("_")
-          val (InductivePredicate(_, params, clauses), fresh_sbst) = env.predicates(pred).refreshExistentials(goal.vars, freshSuffix)
+          val (InductivePredicate(_, params, clauses, _), fresh_sbst) = env.predicates(pred).refreshExistentials(goal.vars, freshSuffix)
           // [Cardinality] adjust cardinality of sub-clauses
           val sbst = params.map(_._1).zip(args).toMap + (selfCardVar -> card)
           val remainingSigma = pre.sigma - h
           val newGoals = for {
-            c@InductiveClause(_sel, _asn) <- clauses
+            c@InductiveClause(_, _sel, _asn) <- clauses
             sel = _sel.subst(sbst)
             asn = _asn.subst(sbst)
             constraints = asn.phi
@@ -186,7 +186,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
 
           ruleAssert(env.predicates.contains(pred),
             s"Close rule encountered undefined predicate: $pred")
-          val (InductivePredicate(predName, params, clauses), predSbst) = env.predicates(pred).refreshExistentials(goal.vars)
+          val (InductivePredicate(predName, params, clauses, _), predSbst) = env.predicates(pred).refreshExistentials(goal.vars)
 
           //ruleAssert(clauses.lengthCompare(1) == 0, s"Predicates with multiple clauses not supported yet: $pred")
           val paramNames = params.map(_._1)
@@ -195,7 +195,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
           val substArgs = paramNames.zip(args).toMap + (selfCardVar -> card)
 
           val subDerivations = for {
-            InductiveClause(selector, asn) <- clauses
+            InductiveClause(_, selector, asn) <- clauses
             // Make sure that existential in the body are fresh
             asnExistentials = asn.vars -- paramNames.toSet -- Set(selfCardVar)
             freshSuffix = args.take(1).map(_.pp).mkString("_")
