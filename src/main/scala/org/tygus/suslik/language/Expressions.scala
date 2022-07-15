@@ -43,7 +43,7 @@ object Expressions {
     override def inputType: SSLType = LocType
     override def outputType: SSLType = LocType
   }
-  object OpDeRef extends UnOp {
+  object OpDeRef extends UnOp with AssociativeOp {
     override def level: Int = 6
     override def pp: String = "*"
     override def inputType: SSLType = LocType
@@ -919,6 +919,7 @@ object Expressions {
     }
     override def substUnknown(sigma: UnknownSubst): Expr = UnaryExpr(op, arg.substUnknown(sigma))
     override def level = op.level
+    override def associative: Boolean = op.isInstanceOf[AssociativeOp]
     override def pp: String = s"${op.pp} ${arg.printInContext(this)}"
     def getType(gamma: Gamma): Option[SSLType] = Some(op.outputType)
   }

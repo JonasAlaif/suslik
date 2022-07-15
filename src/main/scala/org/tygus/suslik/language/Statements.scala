@@ -35,7 +35,7 @@ object Statements {
             (sub, true)
           case Error =>
             builder.append(mkSpaces(offset))
-            builder.append(s"unreachable();")
+            builder.append(s"unreachable!()")
             (sub, false)
           case Sub(s) =>
             // builder.append(mkSpaces(offset))
@@ -80,20 +80,22 @@ object Statements {
             arms.map { case (constr, stmt) =>
               val (_, ret) = build(constr, offset + 2, sub, List(Var("result")))
               assert(!ret)
-              builder.append(" => {\n")
+              builder.append(" =>")
+              if (stmt.size > 0) builder.append(" {\n")
               val (resSub, mustRet) = build(stmt, offset + 4, sub, rets)
               if (mustRet) doRet(offset + 4, resSub, rets)
-              builder.append("\n" + mkSpaces(offset + 2) + "}\n")
+              if (stmt.size > 0) builder.append("\n" + mkSpaces(offset + 2) + "}\n")
+              else builder.append(",\n")
             }
             builder.append(mkSpaces(offset)).append(s"}")
             (sub, false)
           case c@Call(_, _, _, _) =>
             val Call(fun, result, args, _) = c.subst(sub)
             builder.append(mkSpaces(offset))
-            val isRes = rets.length == result.length &&
+            val isRes = rets.length > 0 && rets.length == result.length &&
               rets.zip(result).forall(ret => sub.getOrElse(ret._1, ret._1) == ret._2)
             val res = if (isRes) ""
-              else if (result.length == 0) "let _ = "
+              else if (result.length == 0) ""
               else if (result.length == 1) s"let ${result.head.pp} = "
               else "let (" + result.map(_.pp).mkString(", ") + ") = "
             val function_call = s"$res${fun.pp}(${args.map(_.pp).mkString(", ")})${if (isRes) "" else ";"}"

@@ -185,7 +185,7 @@ case class SubstProducer(from: Var, to: Expr) extends StmtProducer {
 case class SubstMapProducer(subst: Subst) extends StmtProducer {
   val arity: Int = 1
   val fn: Kont = liftToSolutions(stmts => {
-    SeqComp(Sub(subst), stmts.head).simplify
+    SeqComp(Sub(subst.filter(_._2.onExpiries.size == 0)), stmts.head).simplify
   })
 }
 
