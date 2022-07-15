@@ -672,10 +672,12 @@ object Expressions {
     }
 
     // For a reborrow "let dstF = &mut *srcF;" currently only possible in post
-    def reborrowSub(dstF: Var, srcF: Var): Option[(Var, Expr)] = if (dstF == this.field) {
+    def reborrowSub(dstF: Var, srcF: Var, dstFnSpec: Seq[Expr]): Option[(Var, Expr)] = if (dstF == this.field) {
       assert(this.post.isEmpty)
-      // If we were `?*tmp None` then we become `?*x Some(true)`
-      if (!this.futs.head)
+      if (this.futs.forall(!_))
+        Some(this.asVar -> dstFnSpec(idx))
+      else if (!this.futs.head)
+        // If we were `^*tmp None` then we become `^*x Some(true)`
         Some(this.asVar -> this.copy(post = Some(true), field = srcF))
       else None
     } else if (srcF == this.field) {

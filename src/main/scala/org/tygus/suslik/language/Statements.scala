@@ -106,15 +106,17 @@ object Statements {
               println("While still have:\n" + s2.pp())
               assert(false)
             }
-            if (!s1.isInstanceOf[Sub] && !s2.isInstanceOf[Sub]) builder.append("\n")
+            if (s1.size > 0 && s2.size > 0) builder.append(s"\n")
             build(s2, offset, nSub, rets)
           case If(cond, tb, eb) =>
             builder.append(mkSpaces(offset))
-            builder.append(s"if (${cond.subst(sub).pp}) {\n")
+            builder.append(s"if (${cond.subst(sub).pp}) {")
+            if (tb.size > 0) builder.append(s"\n")
             val (resT, mustRetT) = build(tb, offset + 2, sub, rets)
             // Result true:
             if (mustRetT) doRet(offset+2, resT, rets)
-            builder.append("\n" + mkSpaces(offset)).append(s"} else {\n")
+            builder.append("\n" + mkSpaces(offset)).append(s"} else {")
+            if (eb.size > 0) builder.append(s"\n")
             val (resF, mustRetF) = build(eb, offset + 2, sub, rets)
             // Result false:
             if (mustRetF) doRet(offset+2, resF, rets)

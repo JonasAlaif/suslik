@@ -356,7 +356,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         assert(!tgt.ref.head.beenAddedToPost)
         val tgtPred = goal.env.predicates(tgt.pred)
         assert(tgtPred.params.length == src.fnSpec.length)
-        val fut_subst = goal.onExpiries.flatMap(_.reborrowSub(tgt.field, src.field)).toMap
+        val fut_subst = goal.onExpiries.flatMap(_.reborrowSub(tgt.field, src.field, tgt.fnSpec)).toMap
         // `src.fnSpec` are existentials, need to bind them to all of the futures
         val exists_bind = if (tgt.ref.head.mut)
           src.fnSpec.zipWithIndex.zip(tgtPred.params.map(_._2)).map(p => {
