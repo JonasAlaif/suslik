@@ -58,7 +58,7 @@ abstract class PredicateTranslation[Pure, Spatial, Type,
     // predicate (even if it occurs at a top level or not)
     val (predName: Ident, baseContext: List[(Ident, Type)]) = {
       val (predName, gamma) = predicate match {
-        case InductivePredicate(name, params, clauses, _) =>
+        case InductivePredicate(_, name, params, clauses, _) =>
           val gamma = clauses.foldLeft(params.toMap)({ case (baseGamma, InductiveClause(_, selector, asn)) =>
             var gamma = selector.resolve(baseGamma, Some(BoolType)).getOrElse(baseGamma) ++ baseGamma
             gamma = asn.phi.conjuncts.foldLeft(gamma)({ case (gamma, expr) => expr.resolve(gamma, Some(BoolType)).getOrElse(gamma) }) ++ baseGamma
@@ -70,7 +70,7 @@ abstract class PredicateTranslation[Pure, Spatial, Type,
     }
 
     predicate match {
-      case InductivePredicate(name, raw_params, raw_clauses, _) =>
+      case InductivePredicate(_, name, raw_params, raw_clauses, _) =>
         val params: List[(String, Type)] =
           raw_params.map({ case (Var(name), sType) => (name, translatePredicateParamType(predName, sType)) })
         val context: Map[Ident, Type] = (baseContext ++ params).toMap

@@ -50,8 +50,9 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
   }
 
   // If this is a predicate instance, assume that from is too and copy its tag
-  def copyTag(from: Heaplet): Heaplet = this match {
-    case SApp(pred, args, _, card) => SApp(pred, args, from.asInstanceOf[SApp].tag, card)
+  def copyTag(tag: PTag): Heaplet = this match {
+    case SApp(pred, args, _, card) => SApp(pred, args, tag, card)
+    case r@RApp(_, _, _, _, _, _, _) => r.copy(tag = tag)
     case _ => this
   }
 
@@ -64,14 +65,17 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
   }
 
   def cost: Int = this match {
-    case SApp(_, _, PTag(c, u), _) => 2 + (4*c*c + u)
-    case RApp(_, _, _, _, _, _, PTag(c, u)) => 2 + (4*c*c + u)
+    case SApp(_, _, t@PTag(c, u, _), _) => 2 + 4*c*c+ 12*t.recursions + u
+    case RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) => if (priv) 0 else 2 + 4*c*c + 12*t.recursions + u
     case _ => 1
   }
 
   def postCost: Int = this match {
-    case SApp(_, _, PTag(c, u), _) => 2 + 4*(c + u)
-    case r@RApp(_, _, _, _, _, _, PTag(c, u)) if !r.isBorrow => 2 + 4*(c + u)
+    case SApp(_, _, t@PTag(c, u, _), _) => 2 + 4*(c + u + t.recursions)
+    case r@RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) if !r.isBorrow => {
+      assert(c == 0)
+      if (priv) 0 else 2 + 12*t.recursions + u
+    }
     case RApp(_, _, _, _, _, _, _) => 0
     case _ => 1
   }
@@ -156,13 +160,18 @@ case class Block(loc: Expr, sz: Int) extends Heaplet {
   }
 }
 
-case class PTag(calls: Int = 0, unrolls: Int = 0) extends PrettyPrinting {
+case class PTag(calls: Int = 0, unrolls: Int = 0, pastTypes: (List[Ident], Int) = (List.empty, 0)) extends PrettyPrinting {
   override def pp: String = this match {
-    case PTag(0, 0) => "" // Default tag
-    case _ => s"[$calls,$unrolls]"
+    case PTag(0, 0, _) => "" // Default tag
+    case _ => s"[$calls,$unrolls,$recursions]"
   }
-  def incrUnrolls: PTag = this.copy(unrolls = unrolls+1)
+  def incrUnrolls(ty: Ident): PTag = {
+    val preCyc = this.pastTypes._1.dropWhile(_ != ty)
+    if (preCyc.length == 0) this.copy(unrolls = this.unrolls+1, pastTypes = (ty :: this.pastTypes._1, this.pastTypes._2))
+    else this.copy(unrolls = this.unrolls+1, pastTypes = (preCyc, this.pastTypes._2+1))
+  }
   def incrCalls: PTag = this.copy(calls = calls+1)
+  val recursions: Int = pastTypes._2
 }
 
 /**
@@ -454,7 +463,7 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
 
   def setTagAndRef(r: RApp): SFormula = {
     assert(r.ref.length <= 1)
-    SFormula(chunks.map(_.setTag(r.tag.incrUnrolls) match {
+    SFormula(chunks.map(_.setTag(r.tag.incrUnrolls(r.pred)) match {
       case h@RApp(_, _, _, _, _, _, _) if r.isBorrow => h.setRef(r.ref.head)
       case h => h
     }))

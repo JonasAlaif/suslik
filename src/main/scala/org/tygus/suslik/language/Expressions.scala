@@ -340,7 +340,7 @@ object Expressions {
     override def resType: SSLType = LocType
   }
   object OpFieldBind extends BinOp {
-    override def level: Int = 7
+    override def level: Int = 0
     override def pp: String = ":"
     def lType: SSLType = LocType
     def rType: SSLType = LocType
@@ -409,6 +409,7 @@ object Expressions {
       if (parent.level < this.level) s
       else this match {
         case expr: BinaryExpr if associative && parent.isInstanceOf[BinaryExpr] && expr.op == parent.asInstanceOf[BinaryExpr].op => s
+        case expr: UnaryExpr if associative && parent.isInstanceOf[UnaryExpr] && expr.op == parent.asInstanceOf[UnaryExpr].op => s
         case _ => s"($s)"
       }
     }
@@ -767,7 +768,7 @@ object Expressions {
     override def normalise: Expr =
       (if (op.isInstanceOf[SymmetricOp] && left.isLiteral && !right.isLiteral) {
         BinaryExpr(op, right, left)
-      } else if (op.isInstanceOf[AssociativeOp] && right.isInstanceOf[BinaryExpr] && right.asInstanceOf[BinaryExpr].op == op) {
+      } else if (this.associative && right.isInstanceOf[BinaryExpr] && right.asInstanceOf[BinaryExpr].op == op) {
         BinaryExpr(op, BinaryExpr(op, left, right.asInstanceOf[BinaryExpr].left), right.asInstanceOf[BinaryExpr].right)
       } else {
         this

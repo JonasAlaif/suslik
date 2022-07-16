@@ -45,7 +45,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     if (rapp.ref.length >= 2) {
       val newRapp = rapp.popRef
       val ic = InductiveClause(None, BoolConst(true), Assertion(PFormula(BoolConst(true)), SFormula(List(newRapp))))
-      val ip = InductivePredicate("deref", List.empty, Seq(ic), None)
+      val ip = InductivePredicate(false, "deref", List.empty, Seq(ic), None)
       (Seq(ic), Map.empty, Map.empty, Map(Var("*") -> newRapp.field), onExpiries.flatMap(_.openOrExpireSub(rapp.field, newRapp.field, !isPre)).toMap, ip)
     } else {
       val ip = predicates(rapp.pred)
@@ -169,7 +169,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         !goal.post.onExpiries.exists(oe => oe.field == h.field && !oe.post.get && !oe.futs.head) &&
         h.ref.head.beenAddedToPost) {
         val (clauses, sbst, fresh_subst, fieldSubst, fut_subst, pred) = loadPred(h, goal.vars, goal.env.predicates, true, goal.onExpiries)
-        if (clauses.length >= 1) {
+        if (clauses.length > 0) {
         var counter: Int = 0
         val newGoals = clauses.zipWithIndex.map { case (clause, j) => {
           if (clause.selector != BoolConst(false)) counter += 1
@@ -219,7 +219,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       } yield {
         val newGamma = goal.gamma ++ (f.params ++ f.var_decl).toMap // Add f's (fresh) variables to gamma
         val call = Call(Var(f.name), f.result, f.params.map(_._1), l)
-        val calleePostSigma = f.post.sigma.setSAppTags(PTag(1, 0))
+        val calleePostSigma = f.post.sigma.setSAppTags(PTag().incrCalls)
         val callePost = Assertion(f.post.phi, calleePostSigma)
         val suspendedCallGoal = Some(SuspendedCallGoal(goal.pre, goal.post, callePost, call, freshSub))
         val newGoal = goal.spawnChild(post = f.pre, gamma = newGamma, callGoal = suspendedCallGoal)
@@ -248,7 +248,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         // TODO: we might get stuck here
         // (canUnfoldPost only returns non-cyclic, but none of those are unfoldable, so can never get to unfolding non-cyclic)
         if h.tag.unrolls < goal.env.config.maxCloseDepth
-        val (clauses, _, fresh_subst, fieldSubst, fut_subst, _) = loadPred(h, goal.vars, goal.env.predicates, false, goal.onExpiries)
+        val (clauses, _, fresh_subst, fieldSubst, fut_subst, ip) = loadPred(h, goal.vars, goal.env.predicates, false, goal.onExpiries)
         (InductiveClause(name, selector, asn), idx) <- clauses.zipWithIndex
         if selector != BoolConst(false)
         if asn.sigma.rapps.filter(_.priv).length == (if (clauses.length > 1) 1 else 0)
@@ -263,8 +263,11 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           goal.post.phi && asn.phi && selector,
           goal.post.sigma ** SFormula(noDisc) - h
         )
-        val construct_args = if (h.isPrim(goal.env.predicates)) h.fnSpec else {
-          val fieldNames = goal.env.predicates(h.pred).clauses(idx).asn.sigma.rapps.filter(!_.priv).map(_.field)
+        val construct_args = if (ip.isPrim) {
+          assert(h.fnSpec.length == 1)
+          h.fnSpec
+        } else {
+          val fieldNames = ip.clauses(idx).asn.sigma.rapps.filter(!_.priv).map(_.field)
           val argNames = asn.sigma.rapps.filter(!_.priv).map(_.field)
           assert(fieldNames.length == argNames.length)
           fieldNames.zip(argNames).map(arg =>
@@ -273,8 +276,8 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         }
         val kont =
           UnfoldProducer(h.toSApp, selector, Assertion(asn.phi, asn.sigma), fresh_subst ++ fieldSubst) >>
-          (if (disc.length == 1) SubstProducer(disc.head.asInstanceOf[RApp].field, disc.head.asInstanceOf[RApp].fnSpec.head) else IdProducer) >>
-          AppendProducer(Construct(h.field, goal.env.predicates(h.pred).clean, name, construct_args)) >>
+          (if (ip.isPrim) SubstProducer(h.field, construct_args(0))
+          else AppendProducer(Construct(h.field, ip.clean, name, construct_args))) >>
           ExtractHelper(goal)
         RuleResult(List(goal.spawnChild(post = newPost, fut_subst = fut_subst, constraints = c,
             // Hasn't progressed since we didn't progress toward termination
@@ -483,7 +486,11 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             else Map.empty[Var, Expr]
           (newPre, fut_subst + (tgt.ref.head.lft.name -> blocking.name))
         } else {
-          (goal.pre, Map(tgt.ref.head.lft.name -> src.ref.head.lft.name))
+          val newPre = Assertion(goal.pre.phi,
+            (goal.pre.sigma - src) ** src.setTag(src.tag.incrCalls)
+          )
+          val fut_subst = if (tgt.ref.head.lft.name == tgt.ref.head.lft.name) Map.empty[Var, Expr] else Map(tgt.ref.head.lft.name -> src.ref.head.lft.name)
+          (newPre, fut_subst)
         }
         // TODO: use?
         // println("\nMade onExpiry: " + src.mkOnExpiry(goal.gamma, Some(false)).pp);

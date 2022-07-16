@@ -277,7 +277,7 @@ object LogicalRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
           val _p1 = (p1 - PFormula(cs.map(_._2._2).toSet)).subst(sigma)
           val _s1 = s1.subst(sigma)
           val newGoal = goal.spawnChild(Assertion(_p1, _s1), goal.post.subst(sigma))
-          val kont = SubstMapProducer(sigma) >> IdProducer >> ExtractHelper(goal)
+          val kont = ExtractHelper(goal)
           ProofTrace.current.add(ProofTrace.DerivationTrail.withSubst(goal, Seq(newGoal), this, sigma))
           List(RuleResult(List(newGoal), kont, this, goal))
       }

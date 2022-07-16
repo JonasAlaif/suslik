@@ -16,6 +16,9 @@ object Preprocessor extends SepLogicUtils {
     */
   def preprocessProgram(prog: Program, params: SynConfig): (Seq[FunSpec], PredicateEnv, PredicateCycles, FunctionEnv, Statement) = {
     val Program(preds, funs, goal) = prog
+    for (ip <- preds) {
+      assert(!ip.priv, "Private predicates not currently supported: " + ip.pp)
+    }
     val funMap = funs.map(fs => fs.name -> fs).toMap
 
     // [Cardinality] Instrument predicates with missing cardinality constraints, unless in simple mode

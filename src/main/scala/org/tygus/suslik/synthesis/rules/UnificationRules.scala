@@ -47,7 +47,7 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
         if !s.eqModTags(t)
         sub <- t.unify(s, false, goal.gamma)
         subExpr = goal.substToFormula(sub)
-        newPostSigma = (post.sigma - s) ** t.copyTag(s)
+        newPostSigma = (post.sigma - s) ** t.copyTag(s.getTag.get)
 //        (varSub, subExpr) = goal.splitSubst(sub)
 //        newPostSigma = (post.sigma - s).subst(varSub) ** t.copyTag(s)
         if newPostSigma.chunks.distinct.size == newPostSigma.chunks.size // discard substitution if is produces duplicate chunks in the post
@@ -197,8 +197,10 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
           val newCallGoal = goal.callGoal.map(_.updateSubstitution(sigma))
           val newPre = goal.pre.subst(sigma)
           val newGoal = goal.spawnChild(pre = newPre, post = Assertion(_p2, _s2), callGoal = newCallGoal)
-          // The SubstMapProducer(sigma) here might contain OnExpiries which we don't want, so will have to filter them out later
-          val kont = SubstMapProducer(sigma) >> IdProducer >> ExtractHelper(goal)
+          // The SubstMapProducer(sigma) here might contain OnExpiries which we don't want, so we filter them out
+          val noExistsVars = p2.collect[NoExists](_.isInstanceOf[NoExists]).flatMap(_.vars)
+          val subst = sigma.filter(s => noExistsVars(s._1) || s._1.getType(goal.gamma) == LocType)
+          val kont = (if (subst.size > 0) SubstMapProducer(subst) else IdProducer) >> ExtractHelper(goal)
           ProofTrace.current.add(ProofTrace.DerivationTrail.withSubst(goal, Seq(newGoal), this, sigma))
           List(RuleResult(List(newGoal), kont, this, goal))
       }

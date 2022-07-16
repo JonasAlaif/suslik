@@ -8,6 +8,8 @@ import org.tygus.suslik.language._
 import scala.Ordering.Implicits._
 import org.tygus.suslik.synthesis.rules.Rules
 import org.tygus.suslik.synthesis.rules.LogicalRules
+import org.tygus.suslik.synthesis.rules.RuslikUnfoldingRules
+import org.tygus.suslik.synthesis.rules.UnificationRules
 
 object Specifications extends SepLogicUtils {
 
@@ -138,8 +140,8 @@ object Specifications extends SepLogicUtils {
         if (non.length > postNoncyc)
           non.drop(postNoncyc).zipWithIndex.map(ri =>
             // Optimization: once closing non-cyclic cannot open non-cyclic
-            (ri._1, this.copy(postNoncyc = this.postNoncyc + ri._2).blockNoncycPre(g))
-            // (ri._1, this.copy(postNoncyc = this.postNoncyc + ri._2).blockAllPre(g))
+            // (ri._1, this.copy(postNoncyc = this.postNoncyc + ri._2).blockNoncycPre(g))
+            (ri._1, this.copy(postNoncyc = this.postNoncyc + ri._2).blockAllPre(g))
           )
         else cyc.drop(postCyc).zipWithIndex.map(ri => (ri._1, this.copy(
           // Can no longer close non-cyclic
@@ -308,7 +310,11 @@ object Specifications extends SepLogicUtils {
     def canBeCompanion: Boolean = borrowsMatch && noBlockeds
     def isCompanion: Boolean = isCompanionNB && canBeCompanion
 
-    def isTopLevel: Boolean = label == topLabel
+    def isTopLevel: Boolean = label == topLabel || rulesApplied.forall(r =>
+      r == RuslikUnfoldingRules.AddToPost ||
+      r == LogicalRules.SubstLeft ||
+      r == UnificationRules.SubstRight
+    )
 
     def getPredicates(p: SApp => Boolean): Seq[SApp] = pre.getPredicates(p) ++ post.getPredicates(p)
 

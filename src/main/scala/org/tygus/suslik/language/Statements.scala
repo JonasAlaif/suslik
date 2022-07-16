@@ -39,10 +39,16 @@ object Statements {
             (sub, false)
           case Sub(s) =>
             // builder.append(mkSpaces(offset))
-            // builder.append(s"// subst(${s.map(m => s"${m._1.pp} -> ${m._2.pp}").mkString(", ")})")
-            // TODO: why are there futures in here??
-            // (sub.mapValues(v => if (v.isInstanceOf[OnExpiry]) v else v.subst(s)) ++ s.mapValues(v => if (v.isInstanceOf[OnExpiry]) v else v.subst(sub)), true)
-            (sub.mapValues(v => v.subst(s)) ++ s.mapValues(v => v.subst(sub)), true)
+            // builder.append(s"// subst(${s.map(m => s"${m._1.pp} -> ${m._2.pp}").mkString(", ")})\n")
+            var newSub = sub.mapValues(v => v.subst(s)) ++ s
+            var changed = true
+            while (changed) {
+              val updateSub = newSub.mapValues(v => v.subst(newSub))
+              changed = newSub != updateSub
+              newSub = updateSub
+            }
+            // builder.append(s"// [${newSub.map(m => s"${m._1.pp} -> ${m._2.pp}").mkString(", ")}]\n\n")
+            (newSub, true)
           case Malloc(to, _, sz) =>
             // Ignore type
             builder.append(mkSpaces(offset))

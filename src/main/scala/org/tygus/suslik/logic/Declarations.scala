@@ -153,7 +153,7 @@ case class InductiveClause(name: Option[String], selector: Expr, asn: Assertion)
   * TODO: add higher-order predicates, e.g., a list parameterised by a predicate
   *
   */
-case class InductivePredicate(full_name: Ident, params: Formals, clauses: Seq[InductiveClause], clean_name: Option[String])
+case class InductivePredicate(priv: Boolean, full_name: Ident, params: Formals, clauses: Seq[InductiveClause], clean_name: Option[String])
     extends TopLevelDeclaration with PureLogicUtils {
 
   val isPrim: Boolean = full_name.startsWith("PRIM_")
@@ -200,12 +200,11 @@ case class InductivePredicate(full_name: Ident, params: Formals, clauses: Seq[In
     (this.copy(clauses = this.clauses.map(c => InductiveClause(c.name, c.selector.subst(sbst), c.asn.subst(sbst)))), sbst)
   }
 
-  def vars: Set[Var] = clauses.flatMap(c => c.selector.vars ++ c.asn.vars).toSet
+  val vars: Set[Var] = clauses.flatMap(c => c.selector.vars ++ c.asn.vars).toSet
 
-  def fields: Set[Var] = clauses.flatMap(c => c.asn.sigma.rapps.map(_.field)).toSet
+  val fields: Set[Var] = clauses.flatMap(c => c.asn.sigma.rapps.map(_.field)).toSet
 
-  def existentials: Set[Var] = vars -- fields -- params.map(_._1).toSet -- Set(selfCardVar)
-
+  val existentials: Set[Var] = vars -- fields -- params.map(_._1).toSet -- Set(selfCardVar)
 }
 
 
