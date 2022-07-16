@@ -69,6 +69,7 @@ object SynthesisRunner extends SynthesisRunnerUtil {
     } catch {
       case SynthesisException(msg) =>
         System.err.println(msg)
+        throw new RuntimeException();
       case SynTimeOutException(msg) =>
         System.err.println(msg)
     }

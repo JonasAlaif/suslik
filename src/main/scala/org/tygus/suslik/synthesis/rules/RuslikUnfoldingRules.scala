@@ -146,7 +146,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val subs = fieldSubst.map{ case (field, var_name) =>
           var_name -> (if (field.name == "*" || field.name == "_666") {
             if (h.isBorrow) UnaryExpr(OpDeRef, UnaryExpr(OpDeRef, h.field)) else UnaryExpr(OpDeRef, h.field)
-          } else BinaryExpr(OpField, h.field, field))
+          } else BinaryExpr(OpField, h.field, Var(field.name.stripPrefix("_"))))
         }.toMap
         val nameSubs = if (h.isBorrow) subs.map(m => m._1 -> UnaryExpr(OpTakeRef(h.ref.head.mut), m._2)) else subs
         val kont = MatchProducer(h.field, pred.clean, fieldSubst, nameSubs, pred.clauses.map(c => c.name -> c.asn.sigma.rapps.filter(!_.priv).map(_.field))) >>
