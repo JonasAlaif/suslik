@@ -72,7 +72,7 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
 
   def postCost: Int = this match {
     case SApp(_, _, t@PTag(c, u, _), _) => 2 + 4*(c + u + t.recursions)
-    case r@RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) if !r.isBorrow => {
+    case r@RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) if !r.isBorrow || !r.ref.head.beenAddedToPost => {
       assert(c == 0)
       if (priv) 0 else 2 + 12*t.recursions + u
     }

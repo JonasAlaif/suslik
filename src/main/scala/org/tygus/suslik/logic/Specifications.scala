@@ -222,7 +222,7 @@ object Specifications extends SepLogicUtils {
         var newAdded = false
         matchedWith = matchedWith.map(mw => {
           val newFields = rapps.filter(r => !mw._2(r.field)).filter(r =>
-            mw._1.pred == r.pred && mw._1.field.name.endsWith(r.field.name)
+            mw._1.pred == r.pred && mw._1.ref.length == r.ref.length && mw._1.field.name.endsWith(r.field.name)
           ).map(_.field)
           newAdded = newAdded || newFields.length > 0
           mw._1 -> (mw._2 ++ newFields)
@@ -331,9 +331,11 @@ object Specifications extends SepLogicUtils {
     // Such RApps should not be written to and should be expired eagerly
     def isRAppExistential(r: RApp, g: Gamma): Boolean = !r.isWriteableRef(existentials) || r.fnSpec.filter(_.getType(g).get != LifetimeType).zipWithIndex.forall(a => {
       if (a._1.onExpiries.size > 0) return false
-      val vs = a._1.vars
+      val v = if (a._1.isInstanceOf[Var]) a._1.asInstanceOf[Var]
+        else if (a._1.isInstanceOf[AlwaysExistsVar]) a._1.asInstanceOf[AlwaysExistsVar].v
+        else return false
       val phiVars = post.phi.vars
-      vs.forall(existentials.contains) && !vs.exists(phiVars.contains) &&
+      existentials(v) && !phiVars(v) &&
         !post.onExpiries.exists(oe => oe.field == r.field && !oe.futs.head && (oe.post.get || (oe.futs.length > 1 && oe.futs.tail.head)))
     })
     def hasPotentialReborrows(r: RApp): Boolean = !potentialReborrows(r).isEmpty || r.hasBlocker //post.sigma.owneds.exists(_.fnSpec.exists(_ == r.ref.head.lft.name))

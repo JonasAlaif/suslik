@@ -119,6 +119,7 @@ case class ExtractHelper(goal: Goal) extends StmtProducer {
       // Substitute all unknowns with true
       val finalized = (f.pre.phi.unknowns ++ f.post.phi.unknowns).foldLeft(f)({case (spec, u) => spec.substUnknown(Map(u -> Expressions.eTrue))})
       val (newHelper, newCall) = Procedure(finalized, stmt).removeUnusedParams(goal.toCall)
+      // TODO: CopyOut substitution will not be copied across a call boundary!
       (newCall, newHelper.simplifyParams :: helpers)
     } else
       (stmt, helpers)

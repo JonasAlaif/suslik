@@ -677,10 +677,10 @@ object Expressions {
       assert(this.post.isEmpty)
       if (this.futs.forall(!_))
         Some(this.asVar -> dstFnSpec(idx))
-      else if (!this.futs.head)
-        // If we were `^*tmp None` then we become `^*x Some(true)`
+      else
+        // If we were `?^?tmp None` then we become `?^?x Some(true)`
+        // TODO: check that this is sound for e.g. `^^tmp None`
         Some(this.asVar -> this.copy(post = Some(true), field = srcF))
-      else None
     } else if (srcF == this.field) {
       assert(this.post.isDefined)
       if (this.post.get && this.futs.head == false)
