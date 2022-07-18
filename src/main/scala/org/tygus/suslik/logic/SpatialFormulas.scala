@@ -429,8 +429,7 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
     ) {
       val sub = (this.field :: this.fnSpec.toList ++ this.ref.tail.map(_.lft))
             .zip(that.field :: that.fnSpec.toList ++ that.ref.tail.map(_.lft)).toMap
-      val subLft = if (!this.ref.head.lft.fa || !that.ref.head.lft.fa) sub + (this.ref.head.lft -> that.ref.head.lft) else sub
-      Some(subLft)
+      Some(sub)
     } else None
   }
 

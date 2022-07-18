@@ -389,9 +389,9 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             (OnExpiry(None, true :: List.fill(tgt.ref.length-1)(false), tgt.field, p._1._2, p._2) |===| p._1._1)
           }).toSet).resolveOverloading(goal.gamma)
         else goal.substToFormula(sub)
-        val addLftEq = if (tgt.ref.head.mut && !src.ref.head.lft.fa) BinaryExpr(OpLftEq, src.ref.head.lft, tgt.ref.head.lft) else BoolConst(true)
+        val addLftRel = BinaryExpr(OpOutlived, tgt.ref.head.lft, src.ref.head.lft)
         val newPost = Assertion(
-          goal.post.phi && exists_bind && addLftEq,
+          goal.post.phi && exists_bind && addLftRel,
           (goal.post.sigma - tgt - src) ** src.copy(fnSpec = tgt.fnSpec).mkUnblockable
         )
         val kont =
@@ -482,29 +482,28 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         // TODO:
         assert(src.fnSpec.forall(_.getType(goal.gamma) != LifetimeType))
         val (newPre, fut_subst, newCG) = if (src.ref.head.mut) {
-          val blocking = Named(freshVar(goal.vars, src.ref.head.lft.name.name), false)
-          val newSrc = if (tgt.ref.head.mut)
-              src.refreshFnSpec(goal.gamma, goal.vars).block(blocking)
-            else src.block(blocking)
+          val newSrc = if (tgt.ref.head.mut) src.refreshFnSpec(goal.gamma, goal.vars) else src
+          val newSrcBlck = newSrc.block(tgt.ref.head.lft).setTag(newSrc.tag.incrCalls)
           val newPre = Assertion(
             goal.pre.phi,
-            (goal.pre.sigma - src) ** newSrc.setTag(newSrc.tag.incrCalls)
+            (goal.pre.sigma - src) ** newSrcBlck
           )
-          val fut_subst = if (tgt.ref.head.mut)
+          val fut_subst = if (tgt.ref.head.mut) {
               (goal.onExpiries ++ goal.callGoal.get.calleePost.onExpiries).flatMap(
                 _.reborrowCallSub(tgt.field, src.field, src.fnSpec, newSrc.fnSpec, goal.vars)
               ).toMap
-            else Map.empty[Var, Expr]
+          } else Map.empty[Var, Expr]
           (
             newPre,
-            fut_subst + (tgt.ref.head.lft.name -> blocking.name),
-            Some(goal.callGoal.get.addPostFact(BinaryExpr(OpOutlived, blocking, src.ref.head.lft)))
+            fut_subst,
+            Some(goal.callGoal.get.addPostFact(BinaryExpr(OpOutlived, tgt.ref.head.lft, src.ref.head.lft)))
           )
         } else {
           val newPre = Assertion(goal.pre.phi,
             (goal.pre.sigma - src) ** src.setTag(src.tag.incrCalls)
           )
-          val fut_subst = if (tgt.ref.head.lft.name == tgt.ref.head.lft.name) Map.empty[Var, Expr] else Map(tgt.ref.head.lft.name -> src.ref.head.lft.name)
+          val fut_subst = if (tgt.ref.head.lft.name == src.ref.head.lft.name) Map.empty[Var, Expr]
+                          else Map(tgt.ref.head.lft.name -> src.ref.head.lft.name)
           (newPre, fut_subst, goal.callGoal)
         }
         // TODO: use?

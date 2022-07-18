@@ -702,12 +702,15 @@ object Expressions {
 
     // For a reborrow "let dstF = &mut *srcF;" currently only possible from pre
     def reborrowCallSub(dstF: Var, srcF: Var, srcFnSpec: Seq[Expr], newFnSpec: Seq[Expr], vars: Set[Var]): Option[(Var, Expr)] = if (dstF == this.field) {
-      assert(this.post.isEmpty, "Found OnExp with nonempty post: " + this.pp + " reborriwing from " + srcF.pp)
-      if (this.futs.head)
+      val isFut = this.futs.head || (this.post.isDefined && this.post.get)
+      if (isFut)
+        // If we were `*^arg Some(?)` or `*?arg Some(true)` then its the new value (can subst `None` for `Some(false)`)
         if (this.futs.tail.forall(!_)) Some(this.asVar -> newFnSpec(idx))
+        // Otherwise we could be talking about the post `^arg Some(?)` or `?arg Some(true)` (dead in post so doesn't matter if ? is * or ^)
         // If we were `^^arg None` then we become `^*x Some(false)`
         else Some(this.asVar -> this.copy(post = Some(false), field = srcF, futs = false :: this.futs.tail))
       else {
+        // Otherwise we could be `**arg Some(false)` (can subst `None` for `Some(false)`)
         if (this.futs.forall(!_)) Some(this.asVar -> srcFnSpec(idx))
         else {
           val v = this.copy(post = Some(false), field = srcF).asVar
@@ -739,7 +742,7 @@ object Expressions {
 
     override def getNamed: Option[Named] = Some(this)
     override def subst(sigma: Subst): Lifetime = sigma.get(this.name) match {
-      // If Var then its due to a refresh (e.g. when creating companion)
+      // If Var then its due to a refresh (e.g. when creating companion), pick will also cause this but that shouldn't matter so late
       case Some(e) => if (e.isInstanceOf[Var]) Named(e.asInstanceOf[Var], false) else {
       // All other times it should be here
         assert(fa || e != NilLifetime); e.asInstanceOf[Lifetime]
@@ -788,7 +791,8 @@ object Expressions {
       }).simplify
 
     def simplify: Expr = op match {
-      case OpEq | OpBoolEq | OpLftEq | OpSetEq | OpIntervalEq if left == right => BoolConst(true)
+      case OpEq | OpBoolEq | OpLftEq | OpSetEq | OpIntervalEq |
+        OpLeq | OpOutlived | OpSubset | OpSubinterval if left == right => BoolConst(true)
       case OpLftEq if !(left.isInstanceOf[Lifetime] && right.isInstanceOf[Lifetime]) => ???
       case OpOutlived if !(left.isInstanceOf[Lifetime] && right.isInstanceOf[Lifetime]) => ???
       case OpOutlived if right == NilLifetime => BinaryExpr(OpLftEq, left, right).simplify

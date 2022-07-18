@@ -87,10 +87,10 @@ object Statements {
               val (_, ret) = build(constr, offset + 2, sub, List(Var("result")))
               assert(!ret)
               builder.append(" =>")
-              if (stmt.size > 0) builder.append(" {\n")
+              if (stmt.size > 0 || rets.length == 0) builder.append(if (stmt.size == 0) " {" else " {\n")
               val (resSub, mustRet) = build(stmt, offset + 4, sub, rets)
               if (mustRet) doRet(offset + 4, resSub, rets)
-              if (stmt.size > 0) builder.append("\n" + mkSpaces(offset + 2) + "}\n")
+              if (stmt.size > 0 || rets.length == 0) builder.append(if (stmt.size == 0) "}\n" else ("\n" + mkSpaces(offset + 2) + "}\n"))
               else builder.append(",\n")
             }
             builder.append(mkSpaces(offset)).append(s"}")
