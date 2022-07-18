@@ -329,15 +329,19 @@ object Specifications extends SepLogicUtils {
 
     // If the entire RApp is FULLY existential (fnSpec is existential and unconstrained by phi)
     // Such RApps should not be written to and should be expired eagerly
-    def isRAppExistential(r: RApp, g: Gamma): Boolean = !r.isWriteableRef(existentials) || r.fnSpec.filter(_.getType(g).get != LifetimeType).forall(a => {
-      if (a.onExpiries.size > 0) return false
-      val v = if (a.isInstanceOf[Var]) a.asInstanceOf[Var]
-        else if (a.isInstanceOf[AlwaysExistsVar]) a.asInstanceOf[AlwaysExistsVar].v
-        else return false
-      val phiVars = post.phi.vars
-      existentials(v) && !phiVars(v) &&
-        !post.onExpiries.exists(oe => oe.field == r.field && !oe.futs.head && (oe.post.get || (oe.futs.length > 1 && oe.futs.tail.head)))
-    })
+    def isRAppExistential(r: RApp): Boolean = !r.isWriteableRef(existentials) ||
+      // Might as well expire without write if we have no choice; can write to it after expiry if we want to
+      // since all the fields will still be there (unlike if we did have an enum)
+      (r.ref.length <= 1 && this.env.predicates(r.pred).clauses.length <= 1) ||
+      r.fnSpec.filter(_.getType(this.gamma).get != LifetimeType).forall(a => {
+        if (a.onExpiries.size > 0) return false
+        val v = if (a.isInstanceOf[Var]) a.asInstanceOf[Var]
+          else if (a.isInstanceOf[AlwaysExistsVar]) a.asInstanceOf[AlwaysExistsVar].v
+          else return false
+        val phiVars = post.phi.vars
+        existentials(v) && !phiVars(v) &&
+          !post.onExpiries.exists(oe => oe.field == r.field && !oe.futs.head && (oe.post.get || (oe.futs.length > 1 && oe.futs.tail.head)))
+      })
     def hasPotentialReborrows(r: RApp): Boolean = r.canBeBlocked && this.post.sigma.potentialTgtLfts(r.ref.head.lft)
     def potentialReborrows(r: RApp): List[(RApp, ExprSubst)] = post.sigma.borrows.flatMap(b => r.reborrow(b, this.pre.phi.outlivesRels).map((b, _)))
 

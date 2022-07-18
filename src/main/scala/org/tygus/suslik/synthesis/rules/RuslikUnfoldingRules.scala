@@ -317,7 +317,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         // Expire non-writable borrows eagerly
         if filter(h, goal)
         // Cannot expire existential
-        if !goal.existentials.contains(h.field)
+        if h.ref.head.beenAddedToPost
         // Cannot expire before reborrowing:
         if !preBorrows.contains(h.field)
         val (clauses, sbst, _, _, fut_subst, _) = loadPred(h, goal.vars, goal.env.predicates, false, goal.onExpiries, goal.env.predicateCycles)
@@ -352,15 +352,13 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     }
   }
   object ExpireNoWrite extends Expire {
-    override def filter(r: RApp, goal: Goal): Boolean = (!goal.isRAppExistential(r, goal.gamma) && (r.ref.length > 1 || goal.env.predicates(r.pred).clauses.length > 1)) || goal.hasPotentialReborrows(r)
+    // Can always expire -> ExpireFinal will take the ones we should expire now
+    override def filter(r: RApp, goal: Goal): Boolean = true
   }
   object ExpireFinal extends Expire with InvertibleRule {
     override def filter(r: RApp, goal: Goal): Boolean =
       // Don't need to try writing
-      (goal.isRAppExistential(r, goal.gamma) ||
-      // Might as well expire if we have no choice; can write to it after expiry if we want to
-      // since all the fields will still be there (unlike if we did have an enum)
-      (r.ref.length <= 1 && goal.env.predicates(r.pred).clauses.length <= 1)) &&
+      goal.isRAppExistential(r) &&
       // Don't need to try reborrowing
       !goal.hasPotentialReborrows(r)
   }
@@ -417,7 +415,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
 
       for {
         brrw <- goal.post.sigma.borrows
-        if !goal.isRAppExistential(brrw, goal.gamma) //brrw.isWriteableBorrow(goal.existentials)
+        if !goal.isRAppExistential(brrw)
       } yield {
         val newOwned = brrw.copy(field = Var(brrw.field.name + "_NV"), ref = brrw.ref.tail, blocked = None, tag = brrw.tag.copy(calls = 0))
         val newBrrw = brrw.refreshFnSpec(goal.gamma, goal.vars).mkUnblockable
