@@ -40,8 +40,8 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
   }
 
   // The returned ip is the non-modified one
-  def loadPred(rapp: RApp, vars: Set[Var], predicates: PredicateEnv, isPre: Boolean, onExpiries: Set[OnExpiry]): (Seq[InductiveClause], Subst, SubstVar, SubstVar, Subst, InductivePredicate) = {
-    assert(!(isPre && rapp.hasBlocker))
+  def loadPred(rapp: RApp, vars: Set[Var], predicates: PredicateEnv, isPre: Boolean, onExpiries: Set[OnExpiry], cycPreds: PredicateCycles): (Seq[InductiveClause], Subst, SubstVar, SubstVar, Subst, InductivePredicate) = {
+    assert(!rapp.hasBlocker)
     if (rapp.ref.length >= 2) {
       val newRapp = rapp.popRef
       val ic = InductiveClause(None, BoolConst(true), Assertion(PFormula(BoolConst(true)), SFormula(List(newRapp))))
@@ -59,7 +59,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         e -> (if (e.name == "_666") Var("bx_" + rapp.field.name) else Var(e.name + "_" + rapp.field.name))
       ).toMap
       val subst = args_subst ++ existentials_subst ++ fields_subst
-      val newIp = ip.clauses.map(c => InductiveClause(c.name, c.selector.subst(subst), c.asn.subst(subst).setTagAndRef(rapp)))
+      val newIp = ip.clauses.map(c => InductiveClause(c.name, c.selector.subst(subst), c.asn.subst(subst).setTagAndRef(rapp, cycPreds)))
       // !isBorrow: any futures will be dealt with by addToPost
       val futures_subst: Subst = if (!rapp.isBorrow) Map.empty
         else if (ip.isPrim || ip.clauses.length == 0) {
@@ -85,7 +85,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
 
   def loadPrimPred(rapp: RApp, vars: Set[Var], predicates: PredicateEnv, onExpiries: Set[OnExpiry]): (Assertion, Subst) = {
     // There should be no existentials in a primitive pred (so `isPre` is irrelevant)
-    val (pred_clauses, _, exists, subst, fut_subst, _) = loadPred(rapp.copy(ref = rapp.ref match { case Nil => Nil; case r :: _ => List(r) }), vars, predicates, true, onExpiries)
+    val (pred_clauses, _, exists, subst, fut_subst, _) = loadPred(rapp.copy(ref = rapp.ref match { case Nil => Nil; case r :: _ => List(r) }), vars, predicates, true, onExpiries, Set.empty)
     assert(subst.isEmpty)
     assert(exists.isEmpty)
     assert(pred_clauses.length == 1 && pred_clauses.head.selector == BoolConst(true))
@@ -136,7 +136,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         // Only for non-primitive types
         if !h.isPrim(goal.env.predicates) || h.ref.length >= 2
         if h.tag.unrolls < goal.env.config.maxOpenDepth
-        (clauses, sbst, fresh_subst, fieldSubst, fut_subst, pred) = loadPred(h, goal.vars, goal.env.predicates, true, goal.onExpiries)
+        (clauses, sbst, fresh_subst, fieldSubst, fut_subst, pred) = loadPred(h, goal.vars, goal.env.predicates, true, goal.onExpiries, goal.env.predicateCycles)
         if clauses.length > 0
       } yield {
         val newGoals = clauses.zipWithIndex.map { case (clause, j) => {
@@ -177,7 +177,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         if !h.priv && !h.hasBlocker && (!h.isPrim(goal.env.predicates) || h.ref.length >= 2) && h.tag.unrolls < goal.env.config.maxOpenDepth &&
         !goal.post.onExpiries.exists(oe => oe.field == h.field && !oe.post.get && !oe.futs.head) &&
         h.ref.head.beenAddedToPost) {
-        val (clauses, sbst, fresh_subst, fieldSubst, fut_subst, pred) = loadPred(h, goal.vars, goal.env.predicates, true, goal.onExpiries)
+        val (clauses, sbst, fresh_subst, fieldSubst, fut_subst, pred) = loadPred(h, goal.vars, goal.env.predicates, true, goal.onExpiries, goal.env.predicateCycles)
         if (clauses.length > 0) {
         var counter: Int = 0
         val newGoals = clauses.zipWithIndex.map { case (clause, j) => {
@@ -257,7 +257,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         // TODO: we might get stuck here
         // (canUnfoldPost only returns non-cyclic, but none of those are unfoldable, so can never get to unfolding non-cyclic)
         if h.tag.unrolls < goal.env.config.maxCloseDepth
-        val (clauses, _, fresh_subst, fieldSubst, fut_subst, ip) = loadPred(h, goal.vars, goal.env.predicates, false, goal.onExpiries)
+        val (clauses, _, fresh_subst, fieldSubst, fut_subst, ip) = loadPred(h, goal.vars, goal.env.predicates, false, goal.onExpiries, goal.env.predicateCycles)
         (InductiveClause(name, selector, asn), idx) <- clauses.zipWithIndex
         if selector != BoolConst(false)
         if asn.sigma.rapps.filter(_.priv).length == (if (clauses.length > 1) 1 else 0)
@@ -314,7 +314,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         if !goal.existentials.contains(h.field)
         // Cannot expire before reborrowing:
         if !preBorrows.contains(h.field)
-        val (clauses, sbst, _, _, fut_subst, _) = loadPred(h, goal.vars, goal.env.predicates, false, goal.onExpiries)
+        val (clauses, sbst, _, _, fut_subst, _) = loadPred(h, goal.vars, goal.env.predicates, false, goal.onExpiries, goal.env.predicateCycles)
         InductiveClause(name, selector, asn) <- clauses
         if selector != BoolConst(false)
         // Hacky way to ensure we can only Expire the correct enum variant:
@@ -329,8 +329,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           pre_disc.fnSpec.head.asInstanceOf[Const] == sel.right
         }
       } yield {
-        val blocked = asn.sigma.blockRapps(h);
-        assert(blocked.borrows.forall(_.blocked == h.blocked));
+        val blocked = if (h.isUnblockable) asn.sigma.mkUnblockable else asn.sigma
         val newPost = Assertion(
           // Assumption: selector will be substituted in (since it's an equality when clauses.length != 1)
           goal.post.phi && asn.phi && selector,
@@ -366,10 +365,9 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     override def toString: Ident = "Reborrow"
 
     def apply(goal: Goal): Seq[RuleResult] = {
-      val reborrowSrcs = goal.post.sigma.borrows.filter(b => !goal.existentials(b.field))
       for {
-        src <- reborrowSrcs
-        (tgt, subs) <- goal.potentialReborrows(src)
+        src <- goal.post.sigma.borrows
+        (tgt, sub) <- goal.potentialReborrows(src)
       } yield {
         assert(!tgt.ref.head.beenAddedToPost)
         val tgtPred = goal.env.predicates(tgt.pred)
@@ -377,23 +375,19 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val fut_subst = goal.onExpiries.flatMap(_.reborrowSub(tgt.field, src.field, tgt.fnSpec)).toMap
         // `src.fnSpec` are existentials, need to bind them to all of the futures
         val exists_bind = if (tgt.ref.head.mut)
-          src.fnSpec.zipWithIndex.zip(tgtPred.params.map(_._2)).filter(_._2 != LifetimeType).map(p => {
+          PFormula(src.fnSpec.zipWithIndex.zip(tgtPred.params.map(_._2)).filter(_._2 != LifetimeType).map(p => {
             (OnExpiry(None, true :: List.fill(tgt.ref.length-1)(false), tgt.field, p._1._2, p._2) |===| p._1._1)
-          })
-        else tgt.fnSpec.zip(src.fnSpec).map(p => (p._1 |===| p._2))
+          }).toSet).resolveOverloading(goal.gamma)
+        else goal.substToFormula(sub)
+        val addLftEq = if (tgt.ref.head.mut && !src.ref.head.lft.fa) BinaryExpr(OpLftEq, src.ref.head.lft, tgt.ref.head.lft) else BoolConst(true)
         val newPost = Assertion(
-          goal.post.phi && PFormula(exists_bind.toSet).resolveOverloading(goal.gamma),
-          (goal.post.sigma - tgt - src) ** src.copy(fnSpec = tgt.fnSpec, blocked = Set())
-        )
-        // Add lifetime info:
-        val newPre = Assertion(
-          goal.pre.phi && BinaryExpr(OpOutlived, tgt.ref.head.lft.name, src.ref.head.lft.name),
-          goal.pre.sigma
+          goal.post.phi && exists_bind && addLftEq,
+          (goal.post.sigma - tgt - src) ** src.copy(fnSpec = tgt.fnSpec).mkUnblockable
         )
         val kont =
           SubstProducer(tgt.field, src.field) >>
           ExtractHelper(goal)
-        RuleResult(List(goal.spawnChild(pre = newPre, post = newPost, fut_subst = fut_subst,
+        RuleResult(List(goal.spawnChild(post = newPost, fut_subst = fut_subst,
             // Hasn't progressed since we didn't progress toward termination, but can be companion
             hasProgressed = false, isCompanionNB = true)), kont, this, goal)
       }
@@ -415,8 +409,8 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         brrw <- goal.post.sigma.borrows
         if !goal.isRAppExistential(brrw, goal.gamma) //brrw.isWriteableBorrow(goal.existentials)
       } yield {
-        val newOwned = brrw.copy(field = Var(brrw.field.name + "_NV"), ref = brrw.ref.tail, blocked = Set(), tag = brrw.tag.copy(calls = 0))
-        val newBrrw = brrw.refreshFnSpec(goal.gamma, goal.vars).copy(blocked = Set())
+        val newOwned = brrw.copy(field = Var(brrw.field.name + "_NV"), ref = brrw.ref.tail, blocked = None, tag = brrw.tag.copy(calls = 0))
+        val newBrrw = brrw.refreshFnSpec(goal.gamma, goal.vars).mkUnblockable
         val newPost = Assertion(post.phi, (post.sigma ** newOwned - brrw) ** newBrrw)
 
         val fut_subst = goal.onExpiries.flatMap(
@@ -443,17 +437,13 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       val preBrrw = preBrrws.head
       val newPreBrrw = preBrrw.copy(ref = preBrrw.ref.head.copy(beenAddedToPost = true) :: preBrrw.ref.tail)
       val newPre = Assertion(goal.pre.phi, (goal.pre.sigma - preBrrw) ** newPreBrrw)
-      
-      val lft = newPreBrrw.ref.head.lft
-      val lftMax = goal.pre.phi.lftUpperBounds.getOrElse(lft, lft)
+
       // Only refresh fnspec if mutable
       val newFnSpec =
         if (newPreBrrw.ref.head.mut) newPreBrrw.refreshFnSpec(goal.gamma, goal.vars, true).fnSpec
         else newPreBrrw.fnSpec
-      val newPostBrrw = newPreBrrw.copy(
-        fnSpec = newFnSpec,
-        blocked = goal.pre.phi.outlivesRels.filter(or => or._2 == lftMax).map(_._1)
-      )
+      assert(!newPreBrrw.hasBlocker)
+      val newPostBrrw = newPreBrrw.copy(fnSpec = newFnSpec)
       val fut_subst = goal.onExpiries.flatMap(_.toPostSub(newPreBrrw.field, newPreBrrw.fnSpec, newPostBrrw.fnSpec)).toMap
       // println("fut_subst: " + fut_subst)
 
@@ -471,25 +461,23 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     override def toString: Ident = "ReborrowCall"
 
     def apply(goal: Goal): Seq[RuleResult] = {
-      if (goal.callGoal.isEmpty) return Nil// || goal.callGoal.get.call.companion.isDefined) return Nil
+      if (goal.callGoal.isEmpty) return Nil
       for {
         (src, c, isCyc) <- goal.constraints.canUnfoldPre(goal)
         if src.isBorrow
-        // If blocked has either been used as an arg already or was before
-        if !src.hasBlocker
         tgt <- goal.post.sigma.borrows
-        sub <- src.unify(tgt, true, goal.gamma)
+        sub <- src.reborrow(tgt, goal.pre.phi.outlivesRels)
       } yield {
         assert(!goal.existentials(src.field) && goal.existentials(tgt.field))
         // TODO:
         assert(src.fnSpec.forall(_.getType(goal.gamma) != LifetimeType))
-        val (newPre, fut_subst) = if (src.ref.head.mut) {
-          val blocking = Named(freshVar(goal.vars, src.ref.head.lft.name.name))
+        val (newPre, fut_subst, newCG) = if (src.ref.head.mut) {
+          val blocking = Named(freshVar(goal.vars, src.ref.head.lft.name.name), false)
           val newSrc = if (tgt.ref.head.mut)
-              src.refreshFnSpec(goal.gamma, goal.vars).copy(blocked = Set(blocking))
-            else src.copy(blocked = Set(blocking))
+              src.refreshFnSpec(goal.gamma, goal.vars).block(blocking)
+            else src.block(blocking)
           val newPre = Assertion(
-            goal.pre.phi && BinaryExpr(OpLftUpperBound, blocking, src.ref.head.lft),
+            goal.pre.phi,
             (goal.pre.sigma - src) ** newSrc.setTag(newSrc.tag.incrCalls)
           )
           val fut_subst = if (tgt.ref.head.mut)
@@ -497,24 +485,28 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
                 _.reborrowCallSub(tgt.field, src.field, src.fnSpec, newSrc.fnSpec, goal.vars)
               ).toMap
             else Map.empty[Var, Expr]
-          (newPre, fut_subst + (tgt.ref.head.lft.name -> blocking.name))
+          (
+            newPre,
+            fut_subst + (tgt.ref.head.lft.name -> blocking.name),
+            Some(goal.callGoal.get.addPostFact(BinaryExpr(OpOutlived, blocking, src.ref.head.lft)))
+          )
         } else {
           val newPre = Assertion(goal.pre.phi,
             (goal.pre.sigma - src) ** src.setTag(src.tag.incrCalls)
           )
           val fut_subst = if (tgt.ref.head.lft.name == tgt.ref.head.lft.name) Map.empty[Var, Expr] else Map(tgt.ref.head.lft.name -> src.ref.head.lft.name)
-          (newPre, fut_subst)
+          (newPre, fut_subst, goal.callGoal)
         }
         // TODO: use?
         // println("\nMade onExpiry: " + src.mkOnExpiry(goal.gamma, Some(false)).pp);
-        val phiPost = PFormula(src.fnSpec.zip(tgt.fnSpec).map(args => args._1 |===| args._2).toSet + (src.field |===| tgt.field)).resolveOverloading(goal.gamma)
+        val phiPost = goal.substToFormula(sub)
         val newPost = Assertion(goal.post.phi && phiPost, goal.post.sigma - tgt)
         // println("Calculating fut_subst for: " + goal.rulesApplied)
         // println("Pre: " + goal.pre.pp)
         // println("Post: " + goal.post.pp)
         // println("Calee Post: " + goal.callGoal.get.calleePost.pp)
         RuleResult(List(goal.spawnChild(
-          pre = newPre, post = newPost, fut_subst = fut_subst, constraints = c
+          pre = newPre, post = newPost, fut_subst = fut_subst, constraints = c, callGoal = newCG
         )), IdProducer, this, goal)
       }
     }
@@ -529,7 +521,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
 
     def apply(goal: Goal): Seq[RuleResult] = {
       val usedLfts = goal.pre.sigma.rapps.flatMap(r => r.fnSpec.flatMap(_.collect[Named](_.isInstanceOf[Named])) ++ r.ref.map(_.lft)).toSet
-      val tryToKill = goal.pre.sigma.rapps.flatMap(_.blocked)
+      val tryToKill = goal.pre.sigma.rapps.flatMap(_.getBlocker)
       val toKill = tryToKill.find(!usedLfts(_))
       if (toKill.isEmpty) Nil
       else {

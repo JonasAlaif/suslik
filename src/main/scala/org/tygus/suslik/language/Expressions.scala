@@ -319,12 +319,6 @@ object Expressions {
     def lType: SSLType = IntervalType
     def rType: SSLType = IntervalType
   }
-  object OpLftUpperBound extends RelOp {
-    def level: Int = 3
-    override def pp: String = "upto"
-    def lType: SSLType = LifetimeType
-    def rType: SSLType = LifetimeType
-  }
   object OpOutlived extends RelOp {
     def level: Int = 3
     override def pp: String = "<="
@@ -365,7 +359,7 @@ object Expressions {
           val acc1 = if (p(n)) acc + n.asInstanceOf[R] else acc
           collector(acc1)(e)
         case e@OnExpiry(_, _, _, _, _) if p(e) => acc + e.asInstanceOf[R]
-        case n@Named(v) => {
+        case n@Named(v, _) => {
           val acc1 = if (p(n)) acc + n.asInstanceOf[R] else acc
           collector(acc1)(v)
         }
@@ -456,7 +450,7 @@ object Expressions {
       }
       case NoExists(_) => if (BoolType.conformsTo(target)) Some(gamma) else None
       case OnExpiry(_, _, _, _, ty) => if (ty.conformsTo(target)) Some(gamma) else None
-      case Named(lft) => if (LifetimeType.conformsTo(target)) lft.resolve(gamma, target) else None
+      case Named(lft, _) => if (LifetimeType.conformsTo(target)) lft.resolve(gamma, target) else None
       case NilLifetime => if (LifetimeType.conformsTo(target)) Some(gamma) else None
       case BoolConst(_) => if (BoolType.conformsTo(target)) Some(gamma) else None
       case LocConst(_) => if (LocType.conformsTo(target)) Some(gamma) else None
@@ -547,7 +541,7 @@ object Expressions {
           expr.right.resolveOverloading(gamma)).normalise
       case Var(_)
       | AlwaysExistsVar(_)
-      | Named(_)
+      | Named(_, _)
       | OnExpiry(_, _, _, _, _)
       | NilLifetime
       | BoolConst(_)
@@ -580,6 +574,7 @@ object Expressions {
       case _ => Seq(this)
     }
     def isLiteral = this.isInstanceOf[Const] || this.isInstanceOf[SetLiteral]
+    def getAlwaysExists: Option[Var] = None
   }
 
   // Program-level variable: program-level or ghost
@@ -603,6 +598,7 @@ object Expressions {
     override def pp: String = "(" + v.pp + ")"
     override def subst(sigma: Subst): Expr = if (sigma.contains(v)) v.subst(sigma) else this
     override def getType(gamma: Gamma): Option[SSLType] = v.getType(gamma)
+    override def getAlwaysExists: Option[Var] = Some(v)
   }
 
   // For existentials (like ^result) post is always None
@@ -737,21 +733,23 @@ object Expressions {
     override def getType(gamma: Gamma): Option[SSLType] = Some(LifetimeType)
     def rustLft: Option[String] = None
   }
-  // Program-level variable: program-level or ghost
-  case class Named(name: Var) extends Lifetime {
-    override def pp: String = name.pp
+  // Named lifetime, universally quant or exists
+  case class Named(name: Var, fa: Boolean) extends Lifetime {
+    override def pp: String = (if (!fa) "(" else "") + name.pp + (if (!fa) ")" else "")
 
     override def getNamed: Option[Named] = Some(this)
     override def subst(sigma: Subst): Lifetime = sigma.get(this.name) match {
-      case Some(NilLifetime) => NilLifetime
-      case Some(IntConst(i)) if i == 0 => NilLifetime
-      case Some(e) => Named(e.asInstanceOf[Var])
+      // If Var then its due to a refresh (e.g. when creating companion)
+      case Some(e) => if (e.isInstanceOf[Var]) Named(e.asInstanceOf[Var], false) else {
+      // All other times it should be here
+        assert(fa || e != NilLifetime); e.asInstanceOf[Lifetime]
+      }
       case None => this
     }
       
     override def rustLft: Option[String] = Some("'" + pp.dropRight(2))
+    override def getAlwaysExists: Option[Var] = if (!fa) Some(name) else None
     
-    def refresh(field: String): Named = Named(Var(field + "_" + name.name))
   }
   case object NilLifetime extends Lifetime {
     override def getNamed: Option[Named] = None
@@ -791,7 +789,9 @@ object Expressions {
 
     def simplify: Expr = op match {
       case OpEq | OpBoolEq | OpLftEq | OpSetEq | OpIntervalEq if left == right => BoolConst(true)
-      case OpLftEq if (!left.isInstanceOf[Var] && left != NilLifetime) || (!right.isInstanceOf[Var] && right != NilLifetime) => ???
+      case OpLftEq if !(left.isInstanceOf[Lifetime] && right.isInstanceOf[Lifetime]) => ???
+      case OpOutlived if !(left.isInstanceOf[Lifetime] && right.isInstanceOf[Lifetime]) => ???
+      case OpOutlived if right == NilLifetime => BinaryExpr(OpLftEq, left, right).simplify
       case OpEq => (left, right) match {
         case (IntConst(left), IntConst(right)) if left != right => BoolConst(false)
         case (TupleExpr(left), TupleExpr(right)) if left.length != right.length => BoolConst(false)

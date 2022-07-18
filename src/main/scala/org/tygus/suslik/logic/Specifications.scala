@@ -33,7 +33,7 @@ object Specifications extends SepLogicUtils {
     def -(other: Assertion): Assertion = Assertion(PFormula(phi.conjuncts -- other.phi.conjuncts), sigma - other.sigma)
 
     def subst(s: Map[Var, Expr]): Assertion = if (s.isEmpty) this else Assertion(phi.subst(s), sigma.subst(s))
-    def setTagAndRef(h: RApp): Assertion = Assertion(phi, sigma.setTagAndRef(h))
+    def setTagAndRef(h: RApp, cycPreds: PredicateCycles): Assertion = Assertion(phi, sigma.setTagAndRef(h, cycPreds))
 
     /**
       * @param takenNames  -- names that are already taken
@@ -67,7 +67,7 @@ object Specifications extends SepLogicUtils {
     def size: Int = phi.size + sigma.size
 
     def cost: Int = sigma.cost
-    def postCost: Int = sigma.postCost
+    def postCost(preBrrws: List[RApp]): Int = sigma.postCost(preBrrws)
   }
 
   /**
@@ -338,18 +338,8 @@ object Specifications extends SepLogicUtils {
       existentials(v) && !phiVars(v) &&
         !post.onExpiries.exists(oe => oe.field == r.field && !oe.futs.head && (oe.post.get || (oe.futs.length > 1 && oe.futs.tail.head)))
     })
-    // r.hasBlocker is not always complete (e.g. after using take with itermut)
-    def hasPotentialReborrows(r: RApp): Boolean = !potentialReborrows(r).isEmpty || r.hasBlocker || post.sigma.rapps.exists(_.fnSpec.exists(_ == r.ref.head.lft.name))
-    def potentialReborrows(r: RApp): List[(RApp, ExprSubst)] = post.sigma.borrows.filter(b =>
-      // Mutability matches
-      (r.ref.head.mut || !b.ref.head.mut) && r.ref.tail == b.ref.tail &&
-      // Optimization? The source should be potentially blocked
-      (r.blocked(b.ref.head.lft) ||
-      // Otherwise we can look for outlives rel
-        pre.phi.outlivesRels.contains((b.ref.head.lft, r.ref.head.lft)) || b.ref.head.lft == r.ref.head.lft) &&
-      // Target should be getting created
-      existentials(b.field)
-    ).flatMap(tgt => r.unify(tgt, true, this.gamma).map((tgt, _)))
+    def hasPotentialReborrows(r: RApp): Boolean = r.canBeBlocked && this.post.sigma.potentialTgtLfts(r.ref.head.lft)
+    def potentialReborrows(r: RApp): List[(RApp, ExprSubst)] = post.sigma.borrows.flatMap(b => r.reborrow(b, this.pre.phi.outlivesRels).map((b, _)))
 
     // All variables this goal has ever used
     def vars: Set[Var] = gamma.keySet
@@ -417,8 +407,8 @@ object Specifications extends SepLogicUtils {
       */
     //    lazy val cost: Int = pre.cost.max(post.cost)
     lazy val cost: Int = callGoal match {
-        case None => pre.cost + post.postCost  // + existentials.size //
-        case Some(cg) => 10 + cg.callerPre.cost + cg.callerPost.postCost // + (cg.callerPost.vars -- allUniversals).size //
+        case None => pre.cost + post.postCost(pre.sigma.borrows)  // + existentials.size //
+        case Some(cg) => 10 + cg.callerPre.cost + cg.callerPost.postCost(pre.sigma.borrows) // + (cg.callerPost.vars -- allUniversals).size //
       }
   }
 
@@ -479,6 +469,8 @@ object Specifications extends SepLogicUtils {
     }
 
     def actualCall: Call = call.copy(args = call.args.map(_.subst(freshToActual)))
+
+    def addPostFact(e: Expr): SuspendedCallGoal = this.copy(callerPost = this.callerPost.copy(phi = this.callerPost.phi && e))
 
     lazy val cost: Int = calleePost.cost
   }

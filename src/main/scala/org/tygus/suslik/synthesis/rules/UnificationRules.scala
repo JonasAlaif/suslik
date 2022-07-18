@@ -45,7 +45,7 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
         s <- postCandidates.take(1) // DANGER: in block phase this relies on alloc and unify discovering existential heaplets in the same order
         t <- pre.sigma.chunks
         if !s.eqModTags(t)
-        sub <- t.unify(s, false, goal.gamma)
+        sub <- t.unify(s)
         subExpr = goal.substToFormula(sub)
         newPostSigma = (post.sigma - s) ** t.copyTag(s.getTag.get)
 //        (varSub, subExpr) = goal.splitSubst(sub)
@@ -179,6 +179,8 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
         case (r, l@Var(_)) if canSubst(l, r) => Some(l, r)
         case (AlwaysExistsVar(l), r) if canSubst(l, r) => Some(l, r)
         case (r, AlwaysExistsVar(l)) if canSubst(l, r) => Some(l, r)
+        case (Named(l, _), r) if canSubst(l, r) => Some(l, r)
+        case (r, Named(l, _)) if canSubst(l, r) => Some(l, r)
         case _ => None
       }
       def equalitySides(e: Expr): Option[(Var, (Expr, Expr))] = extractEquality(e).flatMap(tupled(extractSides)).map(m => (m._1 -> (m._2, e)))

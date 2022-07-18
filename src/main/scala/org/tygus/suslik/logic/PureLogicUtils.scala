@@ -65,6 +65,7 @@ trait PureLogicUtils {
     case _:LocConst => e
     case _:BoolConst => e
     case _:Var => e
+    case _:Named => e
     case NoExists(e1) => NoExists(desugar(e1))
     case _:OnExpiry => e
     case IfThenElse(e1,e2,e3) => IfThenElse(desugar(e1),desugar(e2), desugar(e3))

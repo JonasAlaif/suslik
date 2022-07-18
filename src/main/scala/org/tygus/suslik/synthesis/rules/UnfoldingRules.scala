@@ -45,7 +45,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
             body = asn.sigma
             newPrePhi = pre.phi && constraints && sel
             // The tags in the body should be one more than in the current application:
-            _newPreSigma1 = mkSFormula(body.chunks).setSAppTags(tag.incrUnrolls(h.pred))
+            _newPreSigma1 = mkSFormula(body.chunks).setSAppTags(tag.incrUnrolls(h.pred, true))
             newPreSigma = _newPreSigma1 ** remainingSigma
           } yield (sel, goal.spawnChild(Assertion(newPrePhi, newPreSigma),
             childId = Some(clauses.indexOf(c)),
@@ -203,7 +203,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
             // Make sure that can unfold only once
             actualAssertion = asn.subst(freshExistentialsSubst).subst(substArgs)
             actualConstraints = actualAssertion.phi
-            actualBody = actualAssertion.sigma.setSAppTags(tag.incrUnrolls(a.pred))
+            actualBody = actualAssertion.sigma.setSAppTags(tag.incrUnrolls(a.pred, true))
             // If we unfolded too much: back out
             //             if !actualBody.chunks.exists(h => exceedsMaxDepth(h))
           } yield {

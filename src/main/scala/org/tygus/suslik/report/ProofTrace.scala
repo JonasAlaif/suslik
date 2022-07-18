@@ -269,7 +269,7 @@ object ProofTraceJson {
       case SetLiteral(elems) => AST("{}", elems.map(fromExpr))
       case TupleExpr(exprs) => AST("()", exprs.map(tpl => fromExpr(tpl._1)))
       case IfThenElse(cond, left, right) => AST("ite", Seq(cond, left, right).map(fromExpr))
-      case Named(lft) => fromExpr(lft)
+      case Named(lft, _) => fromExpr(lft)
       case NilLifetime => AST("NilLifetime")
       case Unknown(name, params, pendingSubst) =>
         AST("Unknown", AST(name) +: params.toSeq.map(fromExpr) :+ fromSubst(pendingSubst))
@@ -301,7 +301,7 @@ object ProofTraceJson {
       "+" -> OpOverloadedPlus, "*" -> OpOverloadedStar, "in" -> OpOverloadedIn,
       "!=" -> OpNotEqual, ">" -> OpGt, ">=" -> OpGeq,
       "==[bool]" -> OpBoolEq, "==[lft]" -> OpLftEq, "->" -> OpImplication,
-      "<=[int]" -> OpLeq, "upto" -> OpLftUpperBound, "<=[lft]" -> OpOutlived,
+      "<=[int]" -> OpLeq, "<=[lft]" -> OpOutlived,
       "<" -> OpLt, "&&" -> OpAnd, "||" -> OpOr,
       "+[int]" -> OpPlus, "-[int]" -> OpMinus, "*[int]" -> OpMultiply,
       "++" -> OpUnion, "--" -> OpDiff, "*[set[int]]" -> OpIntersect,

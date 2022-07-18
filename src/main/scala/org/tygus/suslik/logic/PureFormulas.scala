@@ -33,16 +33,10 @@ case class PFormula(conjuncts: SortedSet[Expr]) extends PrettyPrinting with HasE
   }
 
   def unknowns: Set[Unknown] = collect[Unknown](_.isInstanceOf[Unknown])
-  def lftUpperBounds: Map[Named, Named] = {
-    val bounds = this.collect[BinaryExpr](p => p.isInstanceOf[BinaryExpr] && p.asInstanceOf[BinaryExpr].op == OpLftUpperBound)
-      .map(p => p.left.asInstanceOf[Named] -> p.right.asInstanceOf[Named])
-    assert(bounds.forall(bound => bounds.filter(_._1 == bound._1).size == 1))
-    bounds.toMap
-  }
   // TODO separate outlives rels and blocked rels
   def outlivesRels: Set[(Named, Named)] = {
     var rels = this.collect[BinaryExpr](p => p.isInstanceOf[BinaryExpr] && p.asInstanceOf[BinaryExpr].op == OpOutlived)
-      .map(p => Named(p.left.asInstanceOf[Var]) -> Named(p.right.asInstanceOf[Var]))
+      .map(p => p.left.asInstanceOf[Named] -> p.right.asInstanceOf[Named])
     var changed = true
     while (changed) {
       changed = false

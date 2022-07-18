@@ -271,9 +271,16 @@ object SMTSolving extends Core
       val r = convertIntExpr(right)
       l === r
     }
-    case BinaryExpr(OpLftEq, left, right) => True()
-    case BinaryExpr(OpLftUpperBound, left, right) => True()
-    case BinaryExpr(OpOutlived, left, right) => True()
+    case BinaryExpr(OpLftEq, left, right) => {
+      val l = convertIntExpr(left)
+      val r = convertIntExpr(right)
+      l === r
+    }
+    case BinaryExpr(OpOutlived, left, right) => {
+      val l = convertIntExpr(left)
+      val r = convertIntExpr(right)
+      l <= r
+    }
     case BinaryExpr(OpBoolEq, left, right) => {
       val l = convertBoolExpr(left)
       val r = convertBoolExpr(right)
@@ -338,7 +345,7 @@ object SMTSolving extends Core
     case Var(name) => Ints(name)
     case AlwaysExistsVar(v) => convertIntExpr(v)
     case e:OnExpiry => Ints(e.smtName)
-    case Named(v) => convertIntExpr(v)
+    case Named(v, _) => convertIntExpr(v)
     // case NilLifetime => Ints(0)
     case IntConst(c) => Ints(c)
     case LocConst(c) => Ints(c)

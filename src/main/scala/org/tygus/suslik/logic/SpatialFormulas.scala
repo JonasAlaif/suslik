@@ -31,7 +31,7 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
 
   // Unify with that modulo theories:
   // produce pairs of expressions that must be equal for the this and that to be the same heaplet
-  def unify(that: Heaplet, isReborrow: Boolean, gamma: Gamma): Option[ExprSubst]
+  def unify(that: Heaplet): Option[ExprSubst]
 
   // Unify syntactically: find a subst for existentials in this
   // that makes it syntactically equal to that
@@ -44,6 +44,7 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
   def getTag: Option[PTag] = None
 
   def setTag(t: PTag): Heaplet = this
+  def getPred: Ident = ???
 
   def eqModTags(other: Heaplet): Boolean = {
     this.setTag(PTag()) == other.setTag(PTag())
@@ -65,18 +66,20 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
   }
 
   def cost: Int = this match {
-    case SApp(_, _, t@PTag(c, u, _), _) => 2 + 4*c*c+ 12*t.recursions + u
-    case RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) => if (priv) 0 else 2 + 4*c*c + 12*t.recursions + u
+    case SApp(_, _, t@PTag(c, u, _), _) => 2 + 4*c*c+ 8*t.recursions + u
+    case RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) => if (priv) 0 else 2 + 4*c*c + 8*t.recursions + u
     case _ => 1
   }
 
-  def postCost: Int = this match {
+  def postCost(preBrrws: List[RApp]): Int = this match {
     case SApp(_, _, t@PTag(c, u, _), _) => 2 + 4*(c + u + t.recursions)
-    case r@RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) if !r.isBorrow || !r.ref.head.beenAddedToPost => {
-      assert(c == 0)
-      if (priv) 0 else 2 + 12*t.recursions + u
+    case r@RApp(_, _, _, _, _, _, _) if r.isBorrow && r.ref.head.beenAddedToPost => {
+      2*preBrrws.filter(_.field.name.endsWith(r.field.name)).map(_.tag.unrolls - r.tag.unrolls).max
     }
-    case RApp(_, _, _, _, _, _, _) => 0
+    case r@RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) => {
+      assert(c == 0)
+      if (priv) 0 else 2 + 8*t.recursions + u
+    }
     case _ => 1
   }
 }
@@ -112,7 +115,7 @@ case class PointsTo(loc: Expr, offset: Int = 0, value: Expr) extends Heaplet {
   }
 
   // This only unifies the rhs of the points-to, because lhss are unified by a separate rule
-  override def unify(that: Heaplet, isReborrow: Boolean, gamma: Gamma): Option[ExprSubst] = that match {
+  override def unify(that: Heaplet): Option[ExprSubst] = that match {
     case PointsTo(l, o, v) if l == loc && o == offset => Some(Map(value -> v))
     case _ => None
   }
@@ -149,7 +152,7 @@ case class Block(loc: Expr, sz: Int) extends Heaplet {
     case _ => super.compare(that)
   }
 
-  override def unify(that: Heaplet, isReborrow: Boolean, gamma: Gamma): Option[ExprSubst] = that match {
+  override def unify(that: Heaplet): Option[ExprSubst] = that match {
     case Block(l, s) if sz == s => Some(Map(loc -> l))
     case _ => None
   }
@@ -165,10 +168,13 @@ case class PTag(calls: Int = 0, unrolls: Int = 0, pastTypes: (List[Ident], Int) 
     case PTag(0, 0, _) => "" // Default tag
     case _ => s"[$calls,$unrolls,$recursions]"
   }
-  def incrUnrolls(ty: Ident): PTag = {
+  def incrUnrolls(ty: Ident, isCyc: Boolean): PTag = {
     val preCyc = this.pastTypes._1.dropWhile(_ != ty)
-    if (preCyc.length == 0) this.copy(unrolls = this.unrolls+1, pastTypes = (ty :: this.pastTypes._1, this.pastTypes._2))
-    else this.copy(unrolls = this.unrolls+1, pastTypes = (preCyc, this.pastTypes._2+1))
+    if (preCyc.length == 0) {
+      val pastTypes = (if (ty == "") this.pastTypes._1 else ty :: this.pastTypes._1, if (isCyc) this.pastTypes._2 else 0)
+      this.copy(unrolls = this.unrolls+1, pastTypes = pastTypes)
+    }
+    else this.copy(unrolls = this.unrolls+1, pastTypes = (preCyc, if (isCyc) this.pastTypes._2+1 else 0))
   }
   def incrCalls: PTag = this.copy(calls = calls+1)
   val recursions: Int = pastTypes._2
@@ -237,8 +243,9 @@ case class SApp(pred_with_info: Ident, args: Seq[Expr], tag: PTag, card: Expr) e
   override def getTag: Option[PTag] = Some(tag)
 
   override def setTag(t: PTag): Heaplet = this.copy(tag = t)
+  override def getPred: Ident = this.pred
 
-  override def unify(that: Heaplet, isReborrow: Boolean, gamma: Gamma): Option[ExprSubst] = that match {
+  override def unify(that: Heaplet): Option[ExprSubst] = that match {
     case SApp(p, as, _, c) if pred_with_info == p => Some((card :: args.toList).zip(c :: as.toList).toMap)
     case _ => None
   }
@@ -268,15 +275,25 @@ case class Ref(lft: Named, mut: Boolean, beenAddedToPost: Boolean) extends Prett
   *       Rust predicate application. For example:
   *       x: &a mut i32(value)<&blocked_by>
   */
-case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: Seq[Expr], blocked: Set[Named], tag: PTag) extends Heaplet {
+case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: Seq[Expr], blocked: Option[Lifetime], tag: PTag) extends Heaplet {
   def toSApp: SApp = SApp(pred, fnSpec, tag, IntConst(0))
 
   val isBorrow: Boolean = ref.length > 0
+  def fnSpecLfts: Seq[Lifetime] = this.fnSpec.flatMap(f => {
+    val lfts = f.collect[Lifetime](_.isInstanceOf[Lifetime])
+    assert(lfts.size == 0 || (lfts.size == 1 && lfts.head == f))
+    lfts.headOption
+  })
+  def potentialTgtLfts: List[Named] = this.ref.flatMap(ref => if (ref.beenAddedToPost) None else Some(ref.lft)) ++ this.fnSpecLfts.flatMap(_.getNamed)
   def popRef: RApp = this.copy(field = Var("de_" + field.name),
     ref = (if (ref.tail.head.mut) ref.head else ref.tail.head.copy(beenAddedToPost = ref.head.beenAddedToPost))
-      :: ref.tail.tail
+      :: ref.tail.tail,
+    tag = this.tag.incrUnrolls("", true)
   )
-  val hasBlocker: Boolean = blocked.nonEmpty
+  def getBlocker: Option[Named] = blocked.map(_.getNamed.get)
+  val hasBlocker: Boolean = blocked.isDefined && blocked.get.getNamed.isDefined
+  val canBeBlocked: Boolean = isBorrow && blocked.isEmpty && ref.head.beenAddedToPost
+  val isUnblockable: Boolean = !canBeBlocked
 
   def isWriteableRef(existentials: Set[Var]): Boolean = !priv && isBorrow && ref.head.mut && ref.head.beenAddedToPost
 
@@ -291,9 +308,13 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
 
   def isOpaque(predicates: PredicateEnv): Boolean = predicates(pred).isOpaque
 
-  def block: RApp = {
+  def mkUnblockable: RApp = {
     assert(!hasBlocker)
-    this.copy(blocked = Set(Named(Var(field.name + "-L"))))
+    if (this.isBorrow && this.ref.head.mut) this.copy(blocked = Some(NilLifetime)) else this
+  }
+  def block(lft: Named): RApp = {
+    assert(!hasBlocker)
+    this.copy(blocked = Some(lft))
   }
 
   def fnSpecNoLftTyped(gamma: Gamma): Seq[((Expr, SSLType), Int)] =
@@ -333,13 +354,14 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
 
   def subst(sigma: Map[Var, Expr]): Heaplet =
     throw new SynthesisException(s"Trying to subst `$pp`")
+  // Can kill lft
   def substKill(sigma: Map[Var, Expr]): Option[Heaplet] = {
-    val r = ref.flatMap(_.subst(sigma))
+    val r = ref.map(_.subst(sigma))
     // My lft was killed
-    if (isBorrow && r.isEmpty) None
+    if (r.exists(_.isEmpty)) None
     else Some(this.copy(
       field = field.subst(sigma).asInstanceOf[Var],
-      ref = r,
+      ref = r.map(_.get),
       fnSpec = fnSpec.map(_.subst(sigma)),
       blocked = blocked.flatMap(_.subst(sigma).getNamed)
     ))
@@ -368,38 +390,46 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
   override def getTag: Option[PTag] = Some(tag)
 
   override def setTag(t: PTag): Heaplet = this.copy(tag = t)
+  override def getPred: Ident = this.pred
 
   def setRef(newRef: Ref): RApp = this.copy(ref = newRef :: this.ref)
 
   // this is the RApp in pre (source), that is in post (target)
-  override def unify(that: Heaplet, isReborrow: Boolean, gamma: Gamma): Option[ExprSubst] = that match {
+  override def unify(that: Heaplet): Option[ExprSubst] = that match {
     // Unifying borrow in pre/post which has been duplicated with beenAddedToPost
-    case o@RApp(pri, tgt, rs, p, spec, _, _) if !isReborrow && this.field == tgt && o.isBorrow && (!this.hasBlocker || o.hasBlocker) => {
+    case o@RApp(pri, tgt, rs, p, spec, _, _) if this.field == tgt && o.isBorrow && (!this.hasBlocker || o.canBeBlocked) => {
       assert(pri == this.priv && p == this.pred && this.ref == rs && this.ref.head.beenAddedToPost)
       val subst = this.fnSpec.zip(spec.toList)
-      // Not necessary (since if o.hasBlocker then it's o.fnSpec is existential and we just bound that to this.fnSpec)
-      // if (o.hasBlocker) subst ++ o.fnSpecNoLftTyped(gamma).map(arg => arg._1._1 -> OnExpiry(Some(true), true :: List.fill(this.ref.length-1)(false), this.field, arg._2, arg._1._2))
       Some(subst.toMap)
     }
-    // Reborrowing
     case o@RApp(false, tgt, r, p, spec, _, _)
-      if this.pred == p && this.isBorrow && o.isBorrow &&
-        // Either tgt is immut or src is mut
-        isReborrow && (this.ref.head.mut || !r.head.mut) && r.tail == this.ref.tail &&
-        !this.priv =>
-      // Doing reborrow (src `this.hasBlocker` may or may not be true, depending on if it's in pre or post):
-      assert(!o.hasBlocker)
-      val subs = (this.field :: this.fnSpec.toList).zip(tgt :: spec.toList).toMap
-      Some(subs)
-      // TODO: should only unify borrows (field -> tgt) if in a call goal!
-    // Unifying owned
-    // Neither can be private.
-    case o@RApp(false, tgt, r, p, spec, _, _)
-      if !isReborrow && this.pred == p && !o.isBorrow && !this.isBorrow && !this.hasBlocker && !this.priv =>
+      if this.pred == p && !o.isBorrow && !this.isBorrow && !this.hasBlocker && !this.priv =>
       // Non-borrow unify
       val subs = (this.field :: this.fnSpec.toList).zip(tgt :: spec.toList).toMap
       Some(subs)
     case _ => None
+  }
+
+  // this is the RApp in pre (source), that is in post (target)
+  def reborrow(that: RApp, outlivesRels: Set[(Named, Named)]): Option[ExprSubst] = {
+    assert(that.ref.head.beenAddedToPost || that.blocked.isEmpty)
+    if (
+      this.canBeBlocked && !this.priv &&
+      !that.ref.head.beenAddedToPost && !that.priv &&
+      this.pred == that.pred &&
+      // Mutability matches
+      (this.ref.head.mut || !that.ref.head.mut) &&
+      // Have to be equal (could potentially have the situation `'a: 'b, 'b: 'a` but then we should ensure that one is subst fo the other)
+      this.ref.tail.map(_.mut) == that.ref.tail.map(_.mut) &&
+      // this.fnSpecLfts == that.fnSpecLfts &&
+      // Lifetimes outlive
+      (!this.ref.head.lft.fa || this.ref.head.lft == that.ref.head.lft || outlivesRels.contains((that.ref.head.lft, this.ref.head.lft)))
+    ) {
+      val sub = (this.field :: this.fnSpec.toList ++ this.ref.tail.map(_.lft))
+            .zip(that.field :: that.fnSpec.toList ++ that.ref.tail.map(_.lft)).toMap
+      val subLft = if (!this.ref.head.lft.fa) sub + (this.ref.head.lft -> that.ref.head.lft) else sub
+      Some(subLft)
+    } else None
   }
 
   override def unifySyntactic(that: Heaplet, unificationVars: Set[Var]): Option[Subst] = None
@@ -427,6 +457,7 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   // RApps for the function signature
   def sigRapps: List[RApp] = for (b@RApp(false, _, _, _, _, _, _) <- chunks) yield b
 
+  def potentialTgtLfts: Set[Named] = rapps.flatMap(_.potentialTgtLfts).toSet
   def borrows: List[RApp] = rapps.filter(_.isBorrow)
   def owneds: List[RApp] = rapps.filter(!_.isBorrow)
   def prims(predicates: PredicateEnv): List[RApp] = rapps.filter(_.isPrim(predicates))
@@ -435,7 +466,7 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
     case h => h
   })
   def unblockLft(l: Named): SFormula = SFormula(chunks.map {
-    case r@RApp(_, _, _, _, _, bs, _) if bs(l) => r.copy(blocked = bs - l)
+    case r@RApp(_, _, _, _, _, bs, _) if bs.isDefined && bs.get.getNamed.get == l => r.copy(blocked = None)
     case h => h
   })
   def toCallGoal(post: Boolean): SFormula = SFormula(chunks.filter {
@@ -450,8 +481,8 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
     case _ => Seq.empty
   }.toSet).resolveOverloading(gamma)
 
-  def blockRapps(r: RApp): SFormula = if (!r.hasBlocker) this else SFormula(chunks.map {
-    case b@RApp(_, _, _, _, _, _, _) => b.copy(blocked = r.blocked)
+  def mkUnblockable: SFormula = SFormula(chunks.map {
+    case b@RApp(_, _, _, _, _, _, _) => b.mkUnblockable
     case h => h
   })
 
@@ -465,9 +496,9 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
     chunks.foldLeft(Set.empty[R])((a, h) => a ++ h.collect(p))
   }
 
-  def setTagAndRef(r: RApp): SFormula = {
+  def setTagAndRef(r: RApp, cycPreds: PredicateCycles): SFormula = {
     assert(r.ref.length <= 1)
-    SFormula(chunks.map(_.setTag(r.tag.incrUnrolls(r.pred)) match {
+    SFormula(chunks.map(c => c.setTag(r.tag.incrUnrolls(r.pred, cycPreds(c.getPred))) match {
       case h@RApp(_, _, _, _, _, _, _) if r.isBorrow => h.setRef(r.ref.head)
       case h => h
     }))
@@ -525,7 +556,7 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   def size: Int = chunks.map(_.size).sum
 
   def cost: Int = chunks.map(_.cost).sum
-  def postCost: Int = chunks.map(_.postCost).sum
+  def postCost(preBrrws: List[RApp]): Int = chunks.map(_.postCost(preBrrws)).sum
 
   //  def cost: Int = chunks.foldLeft(0)((m, c) => m.max(c.cost))
 }
