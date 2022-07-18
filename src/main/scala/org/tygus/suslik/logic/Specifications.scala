@@ -332,7 +332,7 @@ object Specifications extends SepLogicUtils {
     def isRAppExistential(r: RApp): Boolean = !r.isWriteableRef(existentials) ||
       // Might as well expire without write if we have no choice; can write to it after expiry if we want to
       // since all the fields will still be there (unlike if we did have an enum)
-      (r.ref.length <= 1 && this.env.predicates(r.pred).clauses.length <= 1) ||
+      (r.ref.length <= 1 && !this.env.predicates(r.pred).isPrim && this.env.predicates(r.pred).clauses.length <= 1) ||
       r.fnSpec.filter(_.getType(this.gamma).get != LifetimeType).forall(a => {
         if (a.onExpiries.size > 0) return false
         val v = if (a.isInstanceOf[Var]) a.asInstanceOf[Var]
