@@ -369,6 +369,9 @@ object Expressions {
           val acc1 = if (p(n)) acc + n.asInstanceOf[R] else acc
           collector(acc1)(v)
         }
+        case t@TupleExpr(exprs) =>
+          val acc1 = if (p(t)) acc + t.asInstanceOf[R] else acc
+          exprs.foldLeft(acc1)((a,e) => collector(a)(e._1))
         case NilLifetime if p(NilLifetime) => acc + NilLifetime.asInstanceOf[R]
         case c@IntConst(_) if p(c) => acc + c.asInstanceOf[R]
         case c@LocConst(_) if p(c) => acc + c.asInstanceOf[R]
@@ -630,7 +633,7 @@ object Expressions {
     } else None
 
     // For a write "*dstF = srcF;" currently only possible in post
-    def writeSub(dstF: Var, srcF: Var, fnSpec: Seq[Expr], inPost: Boolean): Option[(Var, Expr)] = {
+    def writeSub(dstF: Var, srcF: Var, fnSpecSrc: Seq[Expr], fnSpecDst: Seq[Expr], inPost: Boolean): Option[(Var, Expr)] = {
       assert(inPost)
       if (dstF == this.field) {
         assert(this.post.isDefined)
@@ -638,13 +641,14 @@ object Expressions {
         // "??; // expire x_rb -> x;" it would become `^^x_rb Some(true)`. At this point we don't
         // want a write "??; *x_rb = tmp; ..." to act on this, but only on `?*x_rb Some(true)`.
         if (this.futs.head == false && this.post.get == inPost) {
-          if (futs.length == 1) Some(this.asVar -> fnSpec(this.idx))
+          if (futs.length == 1) Some(this.asVar -> fnSpecSrc(this.idx))
           else
             // If we were `^*x_rb Some(true)` then we become `^tmp None` (since tmp is an existential)
             Some(this.asVar -> this.copy(post = None, futs = this.futs.tail, field = srcF))
         } else if (this.futs.length > 1 && this.futs.head == false && this.futs.tail.head == true && this.post.get == !inPost) {
           // If we were `^*x_rb Some(false)` then we become `**tmp Some(true)` (since tmp is an existential)
-          Some(this.asVar -> this.copy(post = Some(true), futs = false :: false :: this.futs.tail.tail))
+          if (this.futs.tail.tail.forall(!_)) Some(this.asVar -> fnSpecDst(this.idx))
+          else Some(this.asVar -> this.copy(post = Some(true), futs = false :: false :: this.futs.tail.tail))
         } else None
       } else None
     }
@@ -659,6 +663,17 @@ object Expressions {
           Some(this.asVar -> this.copy(futs = this.futs.tail, field = srcF))
         } else None
       } else None
+    }
+
+    // For an open "let Pred { f, g, ... } = &mut *dstF;" or "// expire { f, g, ... } -> dstF;"
+    def openOrExpirePredSub(newFields: Map[Var, Seq[Expr]], expire: Boolean): Option[(Var, Expr)] = {
+      // May have substituted in args which are OEs (thus not in newFields map)
+      if (!newFields.contains(this.field)) None else {
+        assert(!this.post.isDefined)
+        // Same reasoning as write
+        if (this.futs.forall(!_)) Some(this.asVar -> newFields(this.field)(idx))
+        else Some(this.asVar -> this.copy(post = Some(expire), futs = false :: this.futs))
+      }
     }
 
     // For a read "let v = *f;" currently only possible in pre

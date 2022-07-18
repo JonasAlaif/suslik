@@ -297,13 +297,17 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
   }
 
   def fnSpecNoLftTyped(gamma: Gamma): Seq[((Expr, SSLType), Int)] =
-    this.fnSpec.map(arg => (arg, arg.getType(gamma).get)).filter(_._2 != LifetimeType).zipWithIndex
-  def refreshFnSpec(gamma: Gamma, vars: Set[Var]): RApp = {
+    this.fnSpec.map(arg => (arg, arg.getType(gamma).get)).zipWithIndex.filter(_._1._2 != LifetimeType)
+  def refreshFnSpec(gamma: Gamma, vars: Set[Var], wrapInAlwaysExists: Boolean = false): RApp = {
       val newVars = this.fnSpec.map(e => (e, e.getType(gamma).get)).zipWithIndex.map(
         i => if (i._1._2 != LifetimeType) (Var(this.field.pp + i._2), i._1._2) else i._1
       )
       val sub = refreshVars(newVars.flatMap(i => if (i._2 != LifetimeType) Some(i._1.asInstanceOf[Var]) else None).toList, vars)
-      this.copy(fnSpec = newVars.map(i => if (i._2 != LifetimeType) sub(i._1.asInstanceOf[Var]) else i._1))
+      this.copy(fnSpec = newVars.map(i => if (i._2 != LifetimeType) {
+          val v = sub(i._1.asInstanceOf[Var])
+          if (wrapInAlwaysExists) AlwaysExistsVar(v) else v
+        } else i._1
+      ))
   }
   def mkOnExpiry(gamma: Gamma, isPost: Option[Boolean]): PFormula =
     PFormula(this.fnSpecNoLftTyped(gamma).map(arg => arg._1._1 |===| OnExpiry(isPost, List.fill(this.ref.length)(false), this.field, arg._2, arg._1._2)).toSet
@@ -441,8 +445,8 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   })
   def toFuts(gamma: Gamma): PFormula = PFormula(chunks.flatMap {
     case r@RApp(_, field, ref, _, fnSpec, _, _) if r.isBorrow && ref.head.mut && ref.head.beenAddedToPost =>
-      fnSpec.map(arg => (arg, arg.getType(gamma).get)).filter(_._2 != LifetimeType)
-      .zipWithIndex.map(arg => arg._1._1 |===| OnExpiry(None, true :: List.fill(ref.length-1)(false), field, arg._2, arg._1._2))
+      r.fnSpecNoLftTyped(gamma)
+        .map(arg => arg._1._1 |===| OnExpiry(None, true :: List.fill(ref.length-1)(false), field, arg._2, arg._1._2))
     case _ => Seq.empty
   }.toSet).resolveOverloading(gamma)
 

@@ -329,25 +329,26 @@ object Specifications extends SepLogicUtils {
 
     // If the entire RApp is FULLY existential (fnSpec is existential and unconstrained by phi)
     // Such RApps should not be written to and should be expired eagerly
-    def isRAppExistential(r: RApp, g: Gamma): Boolean = !r.isWriteableRef(existentials) || r.fnSpec.filter(_.getType(g).get != LifetimeType).zipWithIndex.forall(a => {
-      if (a._1.onExpiries.size > 0) return false
-      val v = if (a._1.isInstanceOf[Var]) a._1.asInstanceOf[Var]
-        else if (a._1.isInstanceOf[AlwaysExistsVar]) a._1.asInstanceOf[AlwaysExistsVar].v
+    def isRAppExistential(r: RApp, g: Gamma): Boolean = !r.isWriteableRef(existentials) || r.fnSpec.filter(_.getType(g).get != LifetimeType).forall(a => {
+      if (a.onExpiries.size > 0) return false
+      val v = if (a.isInstanceOf[Var]) a.asInstanceOf[Var]
+        else if (a.isInstanceOf[AlwaysExistsVar]) a.asInstanceOf[AlwaysExistsVar].v
         else return false
       val phiVars = post.phi.vars
       existentials(v) && !phiVars(v) &&
         !post.onExpiries.exists(oe => oe.field == r.field && !oe.futs.head && (oe.post.get || (oe.futs.length > 1 && oe.futs.tail.head)))
     })
-    def hasPotentialReborrows(r: RApp): Boolean = !potentialReborrows(r).isEmpty || r.hasBlocker //post.sigma.owneds.exists(_.fnSpec.exists(_ == r.ref.head.lft.name))
+    // r.hasBlocker is not always complete (e.g. after using take with itermut)
+    def hasPotentialReborrows(r: RApp): Boolean = !potentialReborrows(r).isEmpty || r.hasBlocker || post.sigma.rapps.exists(_.fnSpec.exists(_ == r.ref.head.lft.name))
     def potentialReborrows(r: RApp): List[(RApp, ExprSubst)] = post.sigma.borrows.filter(b =>
       // Mutability matches
       (r.ref.head.mut || !b.ref.head.mut) && r.ref.tail == b.ref.tail &&
       // Optimization? The source should be potentially blocked
-      (!r.ref.head.mut || r.hasBlocker) &&
+      (r.blocked(b.ref.head.lft) ||
+      // Otherwise we can look for outlives rel
+        pre.phi.outlivesRels.contains((b.ref.head.lft, r.ref.head.lft)) || b.ref.head.lft == r.ref.head.lft) &&
       // Target should be getting created
-      existentials(b.field) &&
-      // Outlives relation satisfied
-      r.blocked(b.ref.head.lft)
+      existentials(b.field)
     ).flatMap(tgt => r.unify(tgt, true, this.gamma).map((tgt, _)))
 
     // All variables this goal has ever used
