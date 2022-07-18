@@ -23,4 +23,5 @@ trait HasExpressions[+A] {
   def vars: Set[Var] = collect(_.isInstanceOf[Var])
   def alwaysExistsVars: Set[Var] = collect[Expr](_.getAlwaysExists.isDefined).map(_.getAlwaysExists.get)
   def onExpiries: Set[OnExpiry] = collect(_.isInstanceOf[OnExpiry])
+  def constants: Set[Expr] = collect[Expr](_.isLiteral)
 }
