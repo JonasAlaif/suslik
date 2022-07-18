@@ -59,7 +59,13 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         e -> (if (e.name == "_666") Var("bx_" + rapp.field.name) else Var(e.name + "_" + rapp.field.name))
       ).toMap
       val subst = args_subst ++ existentials_subst ++ fields_subst
-      val newIp = ip.clauses.map(c => InductiveClause(c.name, c.selector.subst(subst), c.asn.subst(subst).setTagAndRef(rapp, cycPreds)))
+      val newIp = ip.clauses.map(c =>
+        InductiveClause(
+          c.name,
+          c.selector.subst(if (rapp.isBorrow && !isPre) existentials_subst else subst),
+          c.asn.subst(subst).setTagAndRef(rapp, cycPreds)
+        )
+      )
       // !isBorrow: any futures will be dealt with by addToPost
       val futures_subst: Subst = if (!rapp.isBorrow) Map.empty
         else if (ip.isPrim || ip.clauses.length == 0) {
@@ -316,13 +322,12 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         if !preBorrows.contains(h.field)
         val (clauses, sbst, _, _, fut_subst, _) = loadPred(h, goal.vars, goal.env.predicates, false, goal.onExpiries, goal.env.predicateCycles)
         InductiveClause(name, selector, asn) <- clauses
-        if selector != BoolConst(false)
         // Hacky way to ensure we can only Expire the correct enum variant:
         if selector == BoolConst(true) || {
           val sel = selector.asInstanceOf[BinaryExpr]
-          val disc = asn.sigma.rapps.find(d => d.fnSpec.length == 1 && d.fnSpec.head == sel.left).get
-          if (goal.pre.sigma.rapps.find(_.field == disc.field).isEmpty)
-            println("Goal " + goal.rulesApplied + " could not find disc " + disc.field.pp + " in " + goal.pre.sigma.pp)
+          val disc = asn.sigma.rapps.find(d => d.field.name.startsWith("disc")).get
+          // if (goal.pre.sigma.rapps.find(_.field == disc.field).isEmpty)
+          //   println("Goal " + goal.rulesApplied + " could not find disc " + disc.field.pp + " in " + goal.pre.sigma.pp)
           val pre_disc = goal.pre.sigma.rapps.find(_.field == disc.field).get
           if (pre_disc.fnSpec.length != 1) println("Found: " + pre_disc.pp)
           assert(pre_disc.fnSpec.length == 1)
@@ -330,9 +335,14 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         }
       } yield {
         val blocked = if (h.isUnblockable) asn.sigma.mkUnblockable else asn.sigma
+        val selectorEQ = if (selector != BoolConst(true)) {
+          val left = selector.asInstanceOf[BinaryExpr].left.asInstanceOf[Var]
+          // ArgSubst contains?
+          if (sbst.contains(left)) sbst(left) |=| left else BoolConst(true)
+        } else BoolConst(true)
         val newPost = Assertion(
           // Assumption: selector will be substituted in (since it's an equality when clauses.length != 1)
-          goal.post.phi && asn.phi && selector,
+          goal.post.phi && asn.phi && selector && selectorEQ,
           goal.post.sigma ** blocked - h
         )
         RuleResult(List(goal.spawnChild(post = newPost, fut_subst = fut_subst,
@@ -369,7 +379,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         src <- goal.post.sigma.borrows
         (tgt, sub) <- goal.potentialReborrows(src)
       } yield {
-        assert(!tgt.ref.head.beenAddedToPost)
+        assert(tgt.ref.head.lft.fa) // Unsupported as of now (how would it happen that we're trying to create a borrow with existential lft - could just kill?)
         val tgtPred = goal.env.predicates(tgt.pred)
         assert(tgtPred.params.length == src.fnSpec.length)
         val fut_subst = goal.onExpiries.flatMap(_.reborrowSub(tgt.field, src.field, tgt.fnSpec)).toMap

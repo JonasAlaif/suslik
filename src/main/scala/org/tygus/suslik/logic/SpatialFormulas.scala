@@ -421,13 +421,15 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
       (this.ref.head.mut || !that.ref.head.mut) &&
       // Have to be equal (could potentially have the situation `'a: 'b, 'b: 'a` but then we should ensure that one is subst fo the other)
       this.ref.tail.map(_.mut) == that.ref.tail.map(_.mut) &&
-      // this.fnSpecLfts == that.fnSpecLfts &&
+        // this.fnSpecLfts == that.fnSpecLfts &&
+      // Lifetimes existenatials or
+      (!this.ref.head.lft.fa || !that.ref.head.lft.fa ||
       // Lifetimes outlive
-      (!this.ref.head.lft.fa || this.ref.head.lft == that.ref.head.lft || outlivesRels.contains((that.ref.head.lft, this.ref.head.lft)))
+        this.ref.head.lft == that.ref.head.lft || outlivesRels.contains((that.ref.head.lft, this.ref.head.lft)))
     ) {
       val sub = (this.field :: this.fnSpec.toList ++ this.ref.tail.map(_.lft))
             .zip(that.field :: that.fnSpec.toList ++ that.ref.tail.map(_.lft)).toMap
-      val subLft = if (!this.ref.head.lft.fa) sub + (this.ref.head.lft -> that.ref.head.lft) else sub
+      val subLft = if (!this.ref.head.lft.fa || !that.ref.head.lft.fa) sub + (this.ref.head.lft -> that.ref.head.lft) else sub
       Some(subLft)
     } else None
   }
@@ -469,10 +471,11 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
     case r@RApp(_, _, _, _, _, bs, _) if bs.isDefined && bs.get.getNamed.get == l => r.copy(blocked = None)
     case h => h
   })
-  def toCallGoal(post: Boolean): SFormula = SFormula(chunks.filter {
-    case RApp(true, _, _, _, _, _, _) => false
-    case r@RApp(_, _, ref, _, _, _, _) if post && r.isBorrow && ref.head.beenAddedToPost => false
-    case _ => true
+  def toCallGoal(post: Boolean): SFormula = SFormula(chunks.flatMap {
+    case RApp(true, _, _, _, _, _, _) => None
+    case r@RApp(_, _, _, _, _, _, _) if r.isBorrow && r.ref.head.beenAddedToPost => if (post) None else
+      Some(r.copy(ref = r.ref.head.copy(beenAddedToPost = false) :: r.ref.tail))
+    case h => Some(h)
   })
   def toFuts(gamma: Gamma): PFormula = PFormula(chunks.flatMap {
     case r@RApp(_, field, ref, _, fnSpec, _, _) if r.isBorrow && ref.head.mut && ref.head.beenAddedToPost =>

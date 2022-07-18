@@ -137,7 +137,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
         val newPost = callGoal.callerPost
         val newGoal = goal.spawnChild(pre = newPre, post = newPost, programVars = goal.programVars ++ call.result, callGoal = None, isCompanionNB = true)
         val postCallTransition = Transition(goal, newGoal)
-        val kont: StmtProducer = SubstMapProducer(callGoal.freshToActual) >> PrependProducer(call) >> ExtractHelper(goal)
+        val kont: StmtProducer = PrependProducer(call) >> ExtractHelper(goal)
 
         ProofTrace.current.add(ProofTrace.DerivationTrail(goal, List(newGoal), this,
           Map("fun" -> call.fun.name, "args" -> call.args.map(_.toString))))
