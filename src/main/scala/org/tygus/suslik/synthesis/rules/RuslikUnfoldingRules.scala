@@ -386,7 +386,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         // `src.fnSpec` are existentials, need to bind them to all of the futures
         val exists_bind = if (tgt.ref.head.mut)
           PFormula(src.fnSpec.zipWithIndex.zip(tgtPred.params.map(_._2)).filter(_._2 != LifetimeType).map(p => {
-            (OnExpiry(None, true :: List.fill(tgt.ref.length-1)(false), tgt.field, p._1._2, p._2) |===| p._1._1)
+            (OnExpiry(Some(true), true :: List.fill(tgt.ref.length-1)(false), src.field, p._1._2, p._2) |===| p._1._1)
           }).toSet).resolveOverloading(goal.gamma)
         else goal.substToFormula(sub)
         val addLftRel = BinaryExpr(OpOutlived, tgt.ref.head.lft, src.ref.head.lft)
