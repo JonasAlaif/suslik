@@ -245,7 +245,7 @@ object Specifications extends SepLogicUtils {
     // Turn this goal into a helper function call
     def toCall: Call = {
       val f = this.toFunSpec
-      Call(Var(f.name), f.result, f.params.map(_._1), None)
+      Call(Var(f.name), f.result(this.env.predicates), f.params.map(_._1), None)
     }
 
     def toFootprint: Footprint = Footprint(pre, post)

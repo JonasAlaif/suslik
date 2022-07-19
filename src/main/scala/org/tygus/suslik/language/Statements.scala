@@ -3,6 +3,7 @@ package org.tygus.suslik.language
 import org.tygus.suslik.logic.Specifications.GoalLabel
 import org.tygus.suslik.logic.{Formals, FunSpec, Gamma}
 import org.tygus.suslik.util.StringUtil._
+import org.tygus.suslik.logic.InductivePredicate
 
 /**
   * @author Ilya Sergey
@@ -109,11 +110,11 @@ object Statements {
             (sub, !isRes)
           case SeqComp(s1,s2) =>
             val (nSub, mustRet) = build(s1, offset, sub, Var("-unretable-") :: rets)
-            if (!mustRet) {
-              println("Trying to return at:\n" + builder.toString())
-              println("While still have:\n" + s2.pp())
-              assert(false)
-            }
+            // if (!mustRet) {
+            //   println("Trying to return at:\n" + builder.toString())
+            //   println("While still have:\n" + s2.pp())
+            //   assert(false)
+            // }
             if (s1.size > 0 && s2.size > 0) builder.append(s"\n")
             build(s2, offset, nSub, rets)
           case If(cond, tb, eb) =>
@@ -403,7 +404,7 @@ object Statements {
   }
 
   // A procedure
-  case class Procedure(f: FunSpec, body: Statement) {
+  case class Procedure(f: FunSpec, body: Statement)(implicit predicates: Map[Ident, InductivePredicate]) {
     
     val (name: String, tp: SSLType, formals: Formals) = (f.name, f.rType, f.params)
 
@@ -420,12 +421,12 @@ object Statements {
       """.stripMargin
     }
 
-    def ppOld: String =
-      s"""
-         |${tp.pp} $name (${formals.map { case (i, t) => s"${t.pp} ${i.pp}" }.mkString(", ")}) {
-         |${body.pp(f.result)}
-         |}
-    """.stripMargin
+    // def ppOld: String =
+    //   s"""
+    //      |${tp.pp} $name (${formals.map { case (i, t) => s"${t.pp} ${i.pp}" }.mkString(", ")}) {
+    //      |${body.pp(f.result)}
+    //      |}
+    // """.stripMargin
 
     // Shorten parameter names
     def simplifyParams: Procedure = {

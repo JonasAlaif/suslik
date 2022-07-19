@@ -233,7 +233,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         if (goal.env.config.maxCalls :: goal.pre.sigma.callTags).min < goal.env.config.maxCalls
       } yield {
         val newGamma = goal.gamma ++ (f.params ++ f.var_decl).toMap // Add f's (fresh) variables to gamma
-        val call = Call(Var(f.name), f.result, f.params.map(_._1), l)
+        val call = Call(Var(f.name), f.result(goal.env.predicates), f.params.map(_._1), l)
         val calleePostSigma = f.post.sigma.setSAppTags(PTag().incrCalls)
         val callePost = Assertion(f.post.phi, calleePostSigma)
         val suspendedCallGoal = Some(SuspendedCallGoal(goal.pre, goal.post, callePost, call, freshSub))

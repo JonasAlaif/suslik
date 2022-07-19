@@ -50,7 +50,7 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
       synthesize(goal)(stats = stats) match {
         case Some((body, helpers)) =>
           log.print(s"Succeeded leaves (${successLeaves.length}): ${successLeaves.map(n => s"${n.pp()}").mkString(" ")}", Console.YELLOW, 2)
-          val main = Procedure(funGoal, body)
+          val main = Procedure(funGoal, body)(goal.env.predicates)
           (main :: helpers, stats)
         case None =>
           log.out.printlnErr(s"Deductive synthesis failed for the goal\n ${goal.pp}")

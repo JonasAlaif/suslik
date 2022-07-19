@@ -162,14 +162,14 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
   }
 
   def indClause: Parser[InductiveClause] =
-    expr ~ ("=>" ~> opt(ident) ~ assertion) ^^ { case p ~ (n ~ a) => InductiveClause(n, desugar(p), a) }
+    expr ~ ("=>" ~> opt(stringLit) ~ assertion) ^^ { case p ~ (n ~ a) => InductiveClause(n, desugar(p), a) }
 
   def indPredicate: Parser[InductivePredicate] =
     opt("priv") ~ ("predicate" ~> ident) ~ ("(" ~> repsep(formal, ",") <~ ")") ~
-      opt("[" ~> ident <~ "]") ~ opt(ident) ~
+      opt("[" ~> ident <~ "]") ~ opt(stringLit) ~
       (("{" ~ opt("|")) ~> repsep(indClause, "|") <~ "}") ^^ {
       case priv ~ name ~ formals ~ card ~ cleanName ~ clauses =>
-        InductivePredicate(priv.isDefined, name, formals, clauses, cleanName.map(_.substring(1)))
+        InductivePredicate(priv.isDefined, name, formals, clauses, cleanName)
     }
 
   type UGoal = (Assertion, Set[Var])
