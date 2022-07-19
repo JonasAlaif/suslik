@@ -862,6 +862,7 @@ object Expressions {
       }
       case OpField => left match {
         case UnaryExpr(OpTakeRef(_), left) => BinaryExpr(OpField, left, right).normalise
+        case UnaryExpr(OpDeRef, left) => BinaryExpr(OpField, left, right).normalise
         case _ => this
       }
       case _ => this
