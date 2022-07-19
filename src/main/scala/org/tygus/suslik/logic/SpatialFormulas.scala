@@ -363,7 +363,8 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
       field = field.subst(sigma).asInstanceOf[Var],
       ref = r.map(_.get),
       fnSpec = fnSpec.map(_.subst(sigma)),
-      blocked = blocked.flatMap(_.subst(sigma).getNamed)
+      blocked = if (this.blocked.isEmpty || this.blocked.get == NilLifetime) blocked
+                else blocked.flatMap(_.subst(sigma).getNamed)
     ))
   }
 

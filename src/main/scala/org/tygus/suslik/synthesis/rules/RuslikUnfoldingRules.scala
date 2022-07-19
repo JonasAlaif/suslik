@@ -385,7 +385,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val exists_bind = if (tgt.ref.head.mut)
           PFormula(src.fnSpec.zipWithIndex.zip(tgtPred.params.map(_._2)).filter(_._2 != LifetimeType).map(p => {
             (OnExpiry(Some(true), true :: List.fill(tgt.ref.length-1)(false), src.field, p._1._2, p._2) |===| p._1._1)
-          }).toSet).resolveOverloading(goal.gamma)
+          }).toSet + (tgt.field |===| src.field)).resolveOverloading(goal.gamma)
         else goal.substToFormula(sub)
         val addLftRel = BinaryExpr(OpOutlived, tgt.ref.head.lft, src.ref.head.lft)
         val newPost = Assertion(
@@ -527,13 +527,15 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     override def toString: Ident = "KillLft"
 
     def apply(goal: Goal): Seq[RuleResult] = {
-      val usedLfts = goal.pre.sigma.rapps.flatMap(r => r.fnSpec.flatMap(_.collect[Named](_.isInstanceOf[Named])) ++ r.ref.map(_.lft)).toSet
-      val tryToKill = goal.pre.sigma.rapps.flatMap(_.getBlocker)
+      // Should not be used anywhere else (otherwise we'd kill off another RApp - may want to do but not InvertibleRule style)
+      val usedLfts = goal.pre.sigma.rapps.flatMap(r => r.fnSpec.flatMap(_.collect[Named](_.isInstanceOf[Named])) ++ r.ref.map(_.lft)).toSet ++
+      // Should not have to outlive some other lft
+        goal.post.phi.outlivesRels.map(_._2)
+      val tryToKill = goal.pre.sigma.rapps.flatMap(_.getBlocker).filter(!_.fa)
       val toKill = tryToKill.find(!usedLfts(_))
       if (toKill.isEmpty) Nil
       else {
-        val newPre = Assertion(goal.pre.phi, goal.pre.sigma.unblockLft(toKill.get))
-        val newGoal = goal.spawnChild(pre = newPre)
+        val newGoal = goal.spawnChild(fut_subst = Map(toKill.get.name -> NilLifetime))
         List(RuleResult(List(newGoal), IdProducer, this, goal))
       }
     }

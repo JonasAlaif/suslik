@@ -750,7 +750,7 @@ object Expressions {
       // If Var then its due to a refresh (e.g. when creating companion), pick will also cause this but that shouldn't matter so late
       case Some(e) => if (e.isInstanceOf[Var]) Named(e.asInstanceOf[Var], false) else {
       // All other times it should be here
-        assert(fa || e != NilLifetime); e.asInstanceOf[Lifetime]
+        assert(!(fa && e == NilLifetime)); e.asInstanceOf[Lifetime]
       }
       case None => this
     }
@@ -803,6 +803,7 @@ object Expressions {
       case OpLftEq | OpOutlived => (left, right) match {
         case (Named(left, _), Named(right, _)) if left == right => BoolConst(true)
         case (left, NilLifetime) if op == OpOutlived => BinaryExpr(OpLftEq, left, right).simplify
+        case (NilLifetime, right) if op == OpOutlived => BoolConst(true)
         case _ => this
       }
       case OpEq => (left, right) match {

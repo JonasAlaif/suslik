@@ -360,6 +360,7 @@ object Statements {
     override def simplify: Statement = {
       (s1, s2) match {
         case (Skip, _) => s2.simplify // Remove compositions with skip
+        case (Error, _) => Error
 //        case (_, Skip) => s1.simplify
         case (SeqComp(s11, s12), _) => SeqComp(s11, SeqComp(s12, s2)).simplify // Left-nested compositions are transformed to right-nested
         case (If(g, t, f), _) => If(g, SeqComp(t, s2).simplify, SeqComp(f, s2).simplify)
