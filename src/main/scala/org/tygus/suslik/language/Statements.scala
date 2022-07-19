@@ -75,7 +75,7 @@ object Statements {
             val Construct(to, pred, variant, args) = c.subst(sub)
             builder.append(mkSpaces(offset))
             val structLike = args.exists(arg => arg.isInstanceOf[BinaryExpr] && arg.asInstanceOf[BinaryExpr].op == OpFieldBind)
-            val cName = pred + variant.map("::" + _).getOrElse("")
+            val cName = variant.getOrElse(pred)
             val bra = if (args.length == 0) "" else if (structLike) " { " else "("
             val ket = if (args.length == 0) "" else if (structLike) " }" else ")"
             val isRes = rets.length == 1 && sub.getOrElse(rets(0), rets(0)) == to
