@@ -45,7 +45,7 @@ case class FunSpec(name: Ident, rType: SSLType, params: Formals,
 
   def rustParams(implicit predicates: PredicateEnv): RustFormals = pre.sigma.sigRapps.map(r => (r.field, r.ref, predicates(r.pred).clean))
   def rustReturns(implicit predicates: PredicateEnv): RustFormals = post.sigma.rapps.filter(r => pre.sigma.rapps.forall(_.field != r.field)).map(r => (r.field, r.ref, predicates(r.pred).clean))
-  def lfts: Set[String] = post.sigma.sigRapps.flatMap(_.ref).map(_.lft.rustLft.get).toSet
+  def lfts: Set[String] = (pre.sigma.sigRapps ++ post.sigma.sigRapps).flatMap(r => r.ref.map(_.lft) ++ r.fnSpecLfts).map(_.rustLft.get).toSet
 
   def result(implicit predicates: PredicateEnv): List[Var] = rustReturns.map(_._1)
 
