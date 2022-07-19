@@ -393,7 +393,8 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           (goal.post.sigma - tgt - src) ** src.copy(fnSpec = tgt.fnSpec).mkUnblockable
         )
         val kont =
-          SubstProducer(tgt.field, src.field) >>
+          // We'll get a (tgt.field |===| src.field) subst anyway
+          // SubstProducer(tgt.field, src.field) >>
           ExtractHelper(goal)
         RuleResult(List(goal.spawnChild(post = newPost, fut_subst = fut_subst,
             // Hasn't progressed since we didn't progress toward termination, but can be companion
