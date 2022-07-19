@@ -201,7 +201,9 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
           val newGoal = goal.spawnChild(pre = newPre, post = Assertion(_p2, _s2), callGoal = newCallGoal)
           // The SubstMapProducer(sigma) here might contain OnExpiries which we don't want, so we filter them out
           val noExistsVars = p2.collect[NoExists](_.isInstanceOf[NoExists]).flatMap(_.vars)
-          val subst = sigma.filter(s => noExistsVars(s._1) || s._1.getType(goal.gamma) == LocType)
+          val subst = sigma.filter(s => 
+            noExistsVars(s._1) || s._1.getType(goal.gamma).get == LocType
+          )
           val kont = (if (subst.size > 0) SubstMapProducer(subst) else IdProducer) >> ExtractHelper(goal)
           ProofTrace.current.add(ProofTrace.DerivationTrail.withSubst(goal, Seq(newGoal), this, sigma))
           List(RuleResult(List(newGoal), kont, this, goal))

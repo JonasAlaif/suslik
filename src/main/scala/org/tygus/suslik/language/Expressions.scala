@@ -587,12 +587,17 @@ object Expressions {
     def varSubst(sigma: Map[Var, Var]): Var = subst(sigma).asInstanceOf[Var]
 
     def getType(gamma: Gamma): Option[SSLType] = gamma.get(this)
+    def isTupleLike: Boolean = name.charAt(0) == '_' && name.substring(1).forall(_.isDigit)
   }
 
   case class NoExists(expr: Expr) extends Expr {
     override def pp: String = "#[" + expr.pp + "]"
-    override def subst(sigma: Subst): Expr = NoExists(expr.subst(sigma))
+    override def subst(sigma: Subst): Expr = NoExists(expr.subst(sigma)).normalise
     override def getType(gamma: Gamma): Option[SSLType] = Some(BoolType)
+    override def normalise: Expr = expr match {
+      case _: Const => BoolConst(true)
+      case _ => this
+    }
   }
   case class AlwaysExistsVar(v: Var) extends Expr {
     override def pp: String = "(" + v.pp + ")"
@@ -791,11 +796,15 @@ object Expressions {
       }).simplify
 
     def simplify: Expr = op match {
-      case OpEq | OpBoolEq | OpLftEq | OpSetEq | OpIntervalEq |
-        OpLeq | OpOutlived | OpSubset | OpSubinterval if left == right => BoolConst(true)
       case OpLftEq if !(left.isInstanceOf[Lifetime] && right.isInstanceOf[Lifetime]) => ???
       case OpOutlived if !(left.isInstanceOf[Lifetime] && right.isInstanceOf[Lifetime]) => ???
-      case OpOutlived if right == NilLifetime => BinaryExpr(OpLftEq, left, right).simplify
+      case OpEq | OpBoolEq | OpLftEq | OpSetEq | OpIntervalEq |
+        OpLeq | OpOutlived | OpSubset | OpSubinterval if left == right => BoolConst(true)
+      case OpLftEq | OpOutlived => (left, right) match {
+        case (Named(left, _), Named(right, _)) if left == right => BoolConst(true)
+        case (left, NilLifetime) if op == OpOutlived => BinaryExpr(OpLftEq, left, right).simplify
+        case _ => this
+      }
       case OpEq => (left, right) match {
         case (IntConst(left), IntConst(right)) if left != right => BoolConst(false)
         case (TupleExpr(left), TupleExpr(right)) if left.length != right.length => BoolConst(false)

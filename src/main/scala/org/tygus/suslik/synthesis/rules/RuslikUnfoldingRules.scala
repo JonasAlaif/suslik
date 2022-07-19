@@ -286,7 +286,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           val argNames = asn.sigma.rapps.filter(!_.priv).map(_.field)
           assert(fieldNames.length == argNames.length)
           fieldNames.zip(argNames).map(arg =>
-            if (arg._1.name.charAt(0) == '_' && arg._1.name.substring(1).forall(_.isDigit)) arg._2
+            if (arg._1.isTupleLike) arg._2
             else BinaryExpr(OpFieldBind, arg._1, arg._2))
         }
         val kont =

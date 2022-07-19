@@ -108,7 +108,7 @@ object Statements {
             builder.append(function_call)
             (sub, !isRes)
           case SeqComp(s1,s2) =>
-            val (nSub, mustRet) = build(s1, offset, sub, rets)
+            val (nSub, mustRet) = build(s1, offset, sub, Var("-unretable-") :: rets)
             if (!mustRet) {
               println("Trying to return at:\n" + builder.toString())
               println("While still have:\n" + s2.pp())

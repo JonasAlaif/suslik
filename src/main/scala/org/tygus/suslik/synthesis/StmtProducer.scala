@@ -146,7 +146,7 @@ case class MatchProducer(tgt: Var, pred: String, freshVars: SubstVar, subst: Sub
     val cond_branches = selectors.map(s => s._1 ->
       (s._2)).zip(stmts)
     val arms = cond_branches.map { case ((variant, fields), stmt) =>
-      (Construct(Var("result"), pred, variant, fields.map(f => Expressions.BinaryExpr(Expressions.OpFieldBind, f, freshVars(f)))), stmt)
+      (Construct(Var("result"), pred, variant, fields.map(f => if (f.isTupleLike) freshVars(f) else Expressions.BinaryExpr(Expressions.OpFieldBind, f, freshVars(f)))), stmt)
     }
     Match(tgt, arms)
   })
