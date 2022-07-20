@@ -73,14 +73,18 @@ object Statements {
             (sub, true)
           case c@Construct(_, _, _, _) =>
             val Construct(to, pred, variant, args) = c.subst(sub)
-            builder.append(mkSpaces(offset))
-            val structLike = args.exists(arg => arg.isInstanceOf[BinaryExpr] && arg.asInstanceOf[BinaryExpr].op == OpFieldBind)
             val cName = variant.getOrElse(pred)
-            val bra = if (args.length == 0) "" else if (structLike) " { " else "("
-            val ket = if (args.length == 0) "" else if (structLike) " }" else ")"
             val isRes = rets.length == 1 && sub.getOrElse(rets(0), rets(0)) == to
-            builder.append(s"${if (isRes) "" else s"let ${to.pp} = "}$cName$bra${args.map(_.pp).mkString(", ")}$ket${if (isRes) "" else ";"}")
-            (sub, !isRes)
+            if (args.length == 0 && !isRes)
+              build(Sub(Map(to -> Var(cName))), offset, sub, rets)
+            else {
+              val structLike = args.exists(arg => arg.isInstanceOf[BinaryExpr] && arg.asInstanceOf[BinaryExpr].op == OpFieldBind)
+              val bra = if (args.length == 0) "" else if (structLike) " { " else "("
+              val ket = if (args.length == 0) "" else if (structLike) " }" else ")"
+              builder.append(mkSpaces(offset))
+              builder.append(s"${if (isRes) "" else s"let ${to.pp} = "}$cName$bra${args.map(_.pp).mkString(", ")}$ket${if (isRes) "" else ";"}")
+              (sub, !isRes)
+            }
           case m@Match(tgt, arms) =>
             val tSub = tgt.subst(sub)
             builder.append(mkSpaces(offset)).append(s"match ${tSub.pp} {\n")
@@ -117,19 +121,32 @@ object Statements {
             }
             if (s1.size > 0 && s2.size > 0) builder.append(s"\n")
             build(s2, offset, nSub, rets)
-          case If(cond, tb, eb) =>
+          case i@If(_, _, _) =>
             builder.append(mkSpaces(offset))
-            builder.append(s"if (${cond.subst(sub).pp}) {")
-            if (tb.size > 0) builder.append(s"\n")
-            val (resT, mustRetT) = build(tb, offset + 2, sub, rets)
-            // Result true:
-            if (mustRetT) doRet(offset+2, resT, rets)
-            builder.append("\n" + mkSpaces(offset)).append(s"} else {")
-            if (eb.size > 0) builder.append(s"\n")
-            val (resF, mustRetF) = build(eb, offset + 2, sub, rets)
-            // Result false:
-            if (mustRetF) doRet(offset+2, resF, rets)
-            builder.append("\n" + mkSpaces(offset)).append(s"}")
+            var ecase: Statement = i
+            while (ecase match {
+              case If(cond, tb, eb) =>
+                builder.append(s"if ${cond.subst(sub).pp} {")
+                if (tb.size > 0) builder.append(s"\n")
+                val (resT, mustRetT) = build(tb, offset + 2, sub, rets)
+                // Result true:
+                if (mustRetT) doRet(offset+2, resT, rets)
+                builder.append("\n" + mkSpaces(offset) + "}")
+                ecase = eb
+                if (eb.size > 0 || rets.length > 0) {
+                  builder.append(" else ")
+                  true
+                } else false
+              case _ => false
+            }) {}
+            if (ecase.size > 0 || rets.length > 0) {
+              builder.append("{")
+              if (ecase.size > 0) builder.append(s"\n")
+              val (resF, mustRetF) = build(ecase, offset + 2, sub, rets)
+              // Result false:
+              if (mustRetF) doRet(offset+2, resF, rets)
+              builder.append("\n" + mkSpaces(offset)).append(s"}")
+            }
             (sub, false)
           case Guarded(cond, b) =>
             builder.append(mkSpaces(offset))
@@ -218,7 +235,7 @@ object Statements {
       case Sub(_) => 0
       case Store(to, off, e) => 1 + to.size + e.size
       case Load(to, _, from, _) => 1 + to.size + from.size
-      case Construct(to, _, _, args) => 1 + to.size + args.map(_.size).sum
+      case Construct(to, _, _, args) => if (args.length == 0) 0 else 1 + to.size + args.map(_.size).sum
       case Match(_, arms) => 1 + arms.map(a => a._1.size + a._2.size).sum
       case Malloc(to, _, _) => 1 + to.size
       case Free(x) => 1 + x.size
@@ -387,8 +404,8 @@ object Statements {
     override def simplify: Statement = {
       (tb, eb) match {
         case (Skip, Skip) => Skip
-        // case (Error, _) => eb
-        // case (_, Error) => tb
+        case (Error, _) => eb
+        case (_, Error) => tb
         case (Guarded(gcond, gb), _) => Guarded(gcond, If(cond, gb, eb).simplify)
         case (_, Guarded(gcond, gb)) => Guarded(gcond, If(cond, tb, gb).simplify)
         case _ => this

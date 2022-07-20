@@ -951,7 +951,7 @@ object Expressions {
     override def substUnknown(sigma: UnknownSubst): Expr = UnaryExpr(op, arg.substUnknown(sigma))
     override def level = op.level
     override def associative: Boolean = op.isInstanceOf[AssociativeOp]
-    override def pp: String = s"${op.pp} ${arg.printInContext(this)}"
+    override def pp: String = s"${op.pp}${arg.printInContext(this)}"
     def getType(gamma: Gamma): Option[SSLType] = Some(op.outputType)
   }
 

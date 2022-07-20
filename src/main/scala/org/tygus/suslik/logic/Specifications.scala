@@ -234,7 +234,7 @@ object Specifications extends SepLogicUtils {
 
     // Turn this goal into a helper function specification
     def toFunSpec: FunSpec = {
-      val name = this.fname + this.rulesApplied.length
+      val name = if (this.isTopLevel) this.fname else this.fname + this.rulesApplied.length
       val varDecl = this.ghosts.toList.map(v => (v, getType(v))) // Also remember types for non-program vars
       FunSpec(name, VoidType, this.formals,
         Assertion(this.pre.phi, this.pre.sigma.toCallGoal(false)),
@@ -312,6 +312,7 @@ object Specifications extends SepLogicUtils {
 
     def isTopLevel: Boolean = label == topLabel || rulesApplied.forall(r =>
       r == RuslikUnfoldingRules.AddToPost ||
+      r == RuslikUnfoldingRules.CopyOut ||
       r == LogicalRules.SubstLeft ||
       r == UnificationRules.SubstRight
     )
