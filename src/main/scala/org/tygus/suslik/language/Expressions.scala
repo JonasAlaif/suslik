@@ -15,7 +15,7 @@ object Expressions {
     def outputType: SSLType
   }
   object OpNot extends UnOp {
-    override def pp: String = "not"
+    override def pp: String = "not "
     override def inputType: SSLType = BoolType
     override def outputType: SSLType = BoolType
   }
@@ -27,19 +27,19 @@ object Expressions {
   }
 
   object OpLower extends UnOp {
-    override def pp: String = "lower"
+    override def pp: String = "lower "
     override def inputType: SSLType = IntervalType
     override def outputType: SSLType = IntType
   }
 
   object OpUpper extends UnOp {
-    override def pp: String = "upper"
+    override def pp: String = "upper "
     override def inputType: SSLType = IntervalType
     override def outputType: SSLType = IntType
   }
 
   case class OpTakeRef(mut: Boolean) extends UnOp {
-    override def pp: String = if (mut) "&mut" else "&"
+    override def pp: String = if (mut) "&mut " else "&"
     override def inputType: SSLType = LocType
     override def outputType: SSLType = LocType
   }
@@ -59,6 +59,7 @@ object Expressions {
     override def default: BinOp = this
 
     def resType: SSLType
+    def ppSpace: String = " "
   }
 
   sealed abstract class OverloadedBinOp extends PrettyPrinting {
@@ -332,13 +333,15 @@ object Expressions {
     def lType: SSLType = LocType
     def rType: SSLType = LocType
     override def resType: SSLType = LocType
+    override def ppSpace: String = ""
   }
   object OpFieldBind extends BinOp {
     override def level: Int = 0
-    override def pp: String = ":"
+    override def pp: String = ": "
     def lType: SSLType = LocType
     def rType: SSLType = LocType
     override def resType: SSLType = LocType
+    override def ppSpace: String = ""
   }
 
 
@@ -872,7 +875,7 @@ object Expressions {
     override def associative: Boolean = op.isInstanceOf[AssociativeOp]
     override def pp: String = op match {
       case OpRange => printInterval(left, right)
-      case _ => s"${left.printInContext(this)} ${op.pp} ${right.printInContext(this)}"
+      case _ => s"${left.printInContext(this)}${op.ppSpace}${op.pp}${op.ppSpace}${right.printInContext(this)}"
     }
     def getType(gamma: Gamma): Option[SSLType] = Some(op.resType)
 
