@@ -290,8 +290,8 @@ case class AbduceCall(
         case _ => fail_with_bad_proof_structure()
       }
       case UnfoldingRules.Open => node.kont match {
-        case BranchProducer(Some(pred), fresh_vars, sbst, selectors) >> ExtractHelper(_) =>
-          SuslikProofStep.Open(pred, fresh_vars, sbst, selectors.toList)
+        case BranchProducer(_, fresh_vars, sbst, selectors) >> ExtractHelper(_) =>
+          SuslikProofStep.Open(???, fresh_vars, sbst, selectors.toList)
         case _ => fail_with_bad_proof_structure()
       }
       case LogicalRules.SubstLeft => node.kont match {

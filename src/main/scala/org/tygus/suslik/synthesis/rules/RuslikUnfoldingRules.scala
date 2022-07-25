@@ -164,7 +164,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           } else BinaryExpr(OpField, h.field, Var(field.name.stripPrefix("_"))))
         }.toMap
         val nameSubs = if (h.isBorrow) subs.map(m => m._1 -> UnaryExpr(OpTakeRef(h.ref.head.mut), m._2)) else subs
-        val kont = MatchProducer(h.field, pred.clean, fieldSubst, nameSubs, pred.clauses.map(c => c.name -> c.asn.sigma.rapps.filter(!_.priv).map(_.field))) >>
+        val kont = MatchProducer(goal.post.results(goal.programVars.toSet), h.field, pred.clean, fieldSubst, nameSubs, pred.clauses.map(c => c.name -> c.asn.sigma.rapps.filter(!_.priv).map(_.field))) >>
           ExtractHelper(goal)
         RuleResult(newGoals, kont, this, goal)
       }
@@ -208,7 +208,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val nameSubs = if (h.isBorrow) subs.map(m => m._1 -> UnaryExpr(OpTakeRef(h.ref.head.mut), m._2)) else subs
         // TODO: Why was the `if (m._2.isInstanceOf[UnaryExpr]) m._2 else ...` here?
         // val nSubsRef = if (h.isBorrow) nameSubs.map(m => m._1 -> (if (m._2.isInstanceOf[UnaryExpr]) m._2 else UnaryExpr(OpTakeRef(h.ref.head.mut), m._2))) else nameSubs
-        val kont = MatchProducer(h.field, pred.clean, fieldSubst, nameSubs, pred.clauses.map(c => c.name -> c.asn.sigma.rapps.filter(!_.priv).map(_.field))) >>
+        val kont = MatchProducer(goal.post.results(goal.programVars.toSet), h.field, pred.clean, fieldSubst, nameSubs, pred.clauses.map(c => c.name -> c.asn.sigma.rapps.filter(!_.priv).map(_.field))) >>
           ExtractHelper(goal)
         return Seq(RuleResult(newGoals, kont, this, goal))
       }}}

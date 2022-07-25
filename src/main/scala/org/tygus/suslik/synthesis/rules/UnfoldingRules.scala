@@ -71,7 +71,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
           case None => None
           case Some((selGoals, heaplet, fresh_subst, sbst)) =>
             val (selectors, subGoals) = selGoals.unzip
-            val kont = BranchProducer(Some (heaplet), fresh_subst, sbst, selectors) >> ExtractHelper(goal)
+            val kont = BranchProducer(Set.empty, fresh_subst, sbst, selectors) >> ExtractHelper(goal)
             Some(RuleResult(subGoals, kont, this, goal))
         }
       } yield s

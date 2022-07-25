@@ -341,7 +341,7 @@ object LogicalRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
       val iteCond = splittableItes.head.cond
       val t = goal.spawnChild(Assertion(goal.pre.phi && iteCond, goal.pre.sigma), childId = Some(0))
       val f = goal.spawnChild(Assertion(goal.pre.phi && iteCond.not, goal.pre.sigma), childId = Some(1))
-      val kont = BranchProducer(None, Map(), Map(), Seq(iteCond, iteCond.not)) >> ExtractHelper(goal)
+      val kont = BranchProducer(goal.post.results(goal.programVars.toSet), Map(), Map(), Seq(iteCond, iteCond.not)) >> ExtractHelper(goal)
       List(RuleResult(List(t, f), kont, this, goal))
     }
   }

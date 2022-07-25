@@ -210,11 +210,11 @@ object SynStatUtil {
       case Statements.Free(_) => 1
       case Statements.Load(_,_,_,_) => 1
       case Statements.Construct(_,_,_,_) => 1
-      case Statements.Match(_,arms) => 1 + arms.map(a => countInner(a._1) + countInner(a._2)).sum
+      case Statements.Match(_,_,arms) => 1 + arms.map(a => countInner(a._1) + countInner(a._2)).sum
       case Statements.Store(_,_,_) => 1
       case Statements.Call(_,_,_,_) => 1
       case Statements.SeqComp(s1, s2) => countInner(s1) + countInner(s2)
-      case Statements.If(_, tb, eb) => 1 + countInner(tb) + countInner(eb)
+      case Statements.If(_, _, tb, eb) => 1 + countInner(tb) + countInner(eb)
       case Statements.Guarded(_, body) => 1 + countInner(body)
       case s => throw SynthesisException(s"countStmts is not supported for ${s.getClass.getName}")
     }

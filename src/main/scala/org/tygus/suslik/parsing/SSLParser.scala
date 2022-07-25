@@ -216,7 +216,7 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
     }
       // if
       ||| ("if" ~> "(" ~> expr <~ ")") ~ ("{" ~> codeWithHoles <~ "}") ~ ("else" ~> "{" ~> codeWithHoles <~ "}") ^^ {
-      case cond ~ tb ~ eb => If(desugar(cond), tb, eb)
+      case cond ~ tb ~ eb => If(List.empty, desugar(cond), tb, eb)
     }
     // Guarded
     //      ||| ("assume" ~> "(" ~> expr <~ ")") ~ ("{" ~> codeWithHoles <~ "}")  ^^ {
@@ -228,7 +228,7 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
 
 
   def goalFunctionV1: Parser[GoalContainer] = nonGoalFunction ~ ("{" ~> codeWithHoles <~ "}") ^^ {
-    case goal ~ body => GoalContainer(goal, body)
+    case goal ~ body => GoalContainer(goal, body.simplify)
   }
 
   def programSUS: Parser[Program] = phrase(rep(indPredicate | (goalFunctionV1 ||| nonGoalFunction))) ^^ { pfs =>

@@ -243,15 +243,15 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
 
 
     def apply(goal: Goal): Seq[RuleResult] = goal.sketch.uncons match {
-      case (If(cond, tb, eb), Skip) => {
+      case (If(res, cond, tb, eb), Skip) => {
         val unknown = cond.vars.filterNot(goal.isProgramVar)
         symExecAssert(unknown.isEmpty, s"Unknown variables in condition: ${unknown.map(_.pp).mkString(",")}")
         val pre = goal.pre
         val thenGoal = goal.spawnChild(Assertion(pre.phi && cond, pre.sigma), sketch = tb)
         val elseGoal = goal.spawnChild(Assertion(pre.phi && cond.not, pre.sigma), sketch = eb)
-        List(RuleResult(List(thenGoal, elseGoal), BranchProducer(None, Map.empty, Map.empty, List(cond, cond.not)), this, goal))
+        List(RuleResult(List(thenGoal, elseGoal), BranchProducer(res.toSet, Map.empty, Map.empty, List(cond, cond.not)), this, goal))
       }
-      case (If(_, _, _), _) => {
+      case (If(_, _, _, _), _) => {
         throw SynthesisException("Found conditional in the middle of the program. Conditionals only allowed at the end.")
       }
       case _ => Nil

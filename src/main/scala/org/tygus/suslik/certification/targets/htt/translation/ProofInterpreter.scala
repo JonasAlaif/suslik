@@ -168,8 +168,8 @@ object ProofInterpreter extends Interpreter[SuslikProofStep, Proof.Step, ProofCo
         val steps = readStep :: renameStep :: renameAppsStep(affectedApps)
         Result(steps, List(withNoDeferred(ctx1)))
       case SuslikProofStep.Write(Store(to, offset, e)) =>
-        val writeStep = Proof.Write(to.translate, offset, e.translate)
-        val writePostStep = Proof.WritePost(to.translate, offset)
+        val writeStep = Proof.Write(to.asInstanceOf[Var].translate, offset, e.translate)
+        val writePostStep = Proof.WritePost(to.asInstanceOf[Var].translate, offset)
         val steps = if (ctx.callGoal.isDefined) List(writeStep) else List(writeStep, writePostStep)
         Result(steps, List(withNoDeferred(ctx)))
       case SuslikProofStep.Malloc(ghostFrom, ghostTo, Malloc(to, tpe, sz)) =>

@@ -127,28 +127,29 @@ case class ExtractHelper(goal: Goal) extends StmtProducer {
 }
 
 // Produces a conditional that branches on the selectors
-case class BranchProducer(pred: Option[SApp], freshVars: SubstVar, sbst: Subst, selectors: Seq[Expr]) extends StmtProducer {
+case class BranchProducer(results: Set[Var], freshVars: SubstVar, sbst: Subst, selectors: Seq[Expr]) extends StmtProducer {
   val arity: Int = selectors.length
   val fn: Kont = liftToSolutions(stmts => {
     if (stmts.length == 1) stmts.head else {
       val cond_branches = selectors.zip(stmts).reverse
       val ctail = cond_branches.tail
       val finalBranch = cond_branches.head._2
-      ctail.foldLeft(finalBranch) { case (eb, (c, tb)) => If(c, tb, eb).simplify }
+      ctail.foldLeft(finalBranch) { case (eb, (c, tb)) => If(results.toList, c, tb, eb).simplify }
     }
   })
 }
 
 // Produces a conditional that branches on the selectors
-case class MatchProducer(tgt: Var, pred: String, freshVars: SubstVar, subst: Subst, selectors: Seq[(Option[String], Seq[Var])]) extends StmtProducer {
+case class MatchProducer(results: Set[Var], tgt: Var, pred: String, freshVars: SubstVar, subst: Subst, selectors: Seq[(Option[String], Seq[Var])]) extends StmtProducer {
   val arity: Int = selectors.length
   val fn: Kont = if (this.arity == 1) SubstMapProducer(subst).fn else liftToSolutions(stmts => {
     val cond_branches = selectors.map(s => s._1 ->
       (s._2)).zip(stmts)
     val arms = cond_branches.map { case ((variant, fields), stmt) =>
-      (Construct(Var("result"), pred, variant, fields.map(f => if (f.isTupleLike) freshVars(f) else Expressions.BinaryExpr(Expressions.OpFieldBind, f, freshVars(f)))), stmt)
+      (Construct(Var(""), pred, variant, fields.map(f => if (f.isTupleLike) freshVars(f) else Expressions.BinaryExpr(Expressions.OpFieldBind, f, freshVars(f)))),
+        stmt)
     }
-    Match(tgt, arms)
+    Match(results.toList, tgt, arms).simplify
   })
 }
 
@@ -159,7 +160,7 @@ case class GuardedBranchProducer(goal: Goal, unknown: Unknown) extends StmtProdu
   val fn: Kont = liftToSolutions(stmts => {
     stmts.head match {
       case Guarded(cond, body) if Branch.isBranchingPoint(goal, cond)
-      => If(cond, body, stmts.last).simplify // Current goal is the branching point: create conditional
+      => If(???, cond, body, stmts.last).simplify // Current goal is the branching point: create conditional
       case stmt => stmt // Current goal is not the branching point: second child is always vacuous, so ignore it
     }
   })

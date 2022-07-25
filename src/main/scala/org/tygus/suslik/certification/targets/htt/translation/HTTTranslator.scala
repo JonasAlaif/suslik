@@ -77,7 +77,7 @@ object HTTTranslator {
   }
   implicit val storeTranslator: HTTTranslator[Statements.Store, CStore] = new HTTTranslator[Statements.Store, CStore] {
     override def translate(stmt: Statements.Store)(implicit env: Environment): CStore =
-      CStore(stmt.to.translate, stmt.offset, stmt.e.translate)
+      CStore(stmt.to.asInstanceOf[Var].translate, stmt.offset, stmt.e.translate)
   }
   implicit val callTranslator: HTTTranslator[Statements.Call, CCall] = new HTTTranslator[Statements.Call, CCall] {
     override def translate(stmt: Statements.Call)(implicit env: Environment): CCall =
