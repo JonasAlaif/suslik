@@ -70,6 +70,7 @@ object Specifications extends SepLogicUtils {
 
     def cost: Int = sigma.cost
     def postCost(preBrrws: List[RApp]): Int = sigma.postCost(preBrrws)
+    def wrapInAE: Assertion = Assertion(this.phi, this.sigma.wrapInAE)
   }
 
   /**

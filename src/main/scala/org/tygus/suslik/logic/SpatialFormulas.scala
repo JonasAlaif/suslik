@@ -471,6 +471,10 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
     case r@RApp(_, _, _, _, _, bs, _) if bs.isDefined && bs.get.getNamed.get == l => r.copy(blocked = None)
     case h => h
   })
+  def wrapInAE: SFormula = SFormula(chunks.map {
+    case r@RApp(_, _, _, _, fnSpec, _, _) => r.copy(fnSpec = fnSpec.map(arg => AlwaysExistsVar(arg.asInstanceOf[Var])))
+    case h => h
+  })
   def toCallGoal(post: Boolean): SFormula = SFormula(chunks.flatMap {
     case RApp(true, _, _, _, _, _, _) => None
     case r@RApp(_, _, _, _, _, _, _) if r.isBorrow && r.ref.head.beenAddedToPost => if (post) None else

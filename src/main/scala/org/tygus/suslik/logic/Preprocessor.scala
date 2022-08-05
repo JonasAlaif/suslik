@@ -15,7 +15,8 @@ object Preprocessor extends SepLogicUtils {
     * TODO: type checking
     */
   def preprocessProgram(prog: Program, params: SynConfig): (Seq[FunSpec], PredicateEnv, PredicateCycles, FunctionEnv, Statement) = {
-    val Program(preds, funs, goal) = prog
+    val Program(preds, funs, goalRaw) = prog
+    val goal = goalRaw.copy(spec = goalRaw.spec.copy(post = goalRaw.spec.post.wrapInAE))
     for (ip <- preds) {
       assert(!ip.priv, "Private predicates not currently supported: " + ip.pp)
     }
