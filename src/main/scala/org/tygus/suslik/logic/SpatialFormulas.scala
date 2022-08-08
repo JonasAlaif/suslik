@@ -464,20 +464,23 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   def owneds: List[RApp] = rapps.filter(!_.isBorrow)
   def prims(predicates: PredicateEnv): List[RApp] = rapps.filter(_.isPrim(predicates))
   def enableAddBrrwsToPost: SFormula = SFormula(chunks.map {
-    case b@RApp(_, _, r, _, _, _, _) if r.length > 0 && r.head.beenAddedToPost => b.copy(ref = r.head.copy(beenAddedToPost = false) :: r.tail)
+    case b:RApp if b.ref.length > 0 && b.ref.head.beenAddedToPost => b.copy(ref = b.ref.head.copy(beenAddedToPost = false) :: b.ref.tail)
     case h => h
   })
   def unblockLft(l: Named): SFormula = SFormula(chunks.map {
-    case r@RApp(_, _, _, _, _, bs, _) if bs.isDefined && bs.get.getNamed.get == l => r.copy(blocked = None)
+    case r:RApp if r.blocked.isDefined && r.blocked.get.getNamed.get == l => r.copy(blocked = None)
     case h => h
   })
   def wrapInAE: SFormula = SFormula(chunks.map {
-    case r@RApp(_, _, _, _, fnSpec, _, _) => r.copy(fnSpec = fnSpec.map(arg => AlwaysExistsVar(arg.asInstanceOf[Var])))
+    case r:RApp => r.copy(fnSpec = r.fnSpec.map {
+      case v: Var => AlwaysExistsVar(v)
+      case x => x
+    })
     case h => h
   })
   def toCallGoal(post: Boolean): SFormula = SFormula(chunks.flatMap {
     case RApp(true, _, _, _, _, _, _) => None
-    case r@RApp(_, _, _, _, _, _, _) if r.isBorrow && r.ref.head.beenAddedToPost => if (post) None else
+    case r:RApp if r.isBorrow && r.ref.head.beenAddedToPost => if (post) None else
       Some(r.copy(ref = r.ref.head.copy(beenAddedToPost = false) :: r.ref.tail))
     case h => Some(h)
   })
@@ -489,12 +492,12 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   }.toSet).resolveOverloading(gamma)
 
   def mkUnblockable: SFormula = SFormula(chunks.map {
-    case b@RApp(_, _, _, _, _, _, _) => b.mkUnblockable
+    case b:RApp => b.mkUnblockable
     case h => h
   })
 
   def subst(sigma: Map[Var, Expr]): SFormula = SFormula(chunks.flatMap {
-    case b@RApp(_, _, _, _, _, _, _) => b.substKill(sigma)
+    case b:RApp => b.substKill(sigma)
     case h => Some(h.subst(sigma))
   })
 
