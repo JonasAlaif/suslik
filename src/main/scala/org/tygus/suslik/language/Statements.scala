@@ -171,7 +171,7 @@ object Statements {
         assert(!sigma.keySet.contains(from) || sigma(from).isInstanceOf[Var])
         Load(to.subst(sigma).asInstanceOf[Var], tpe, from.subst(sigma).asInstanceOf[Var], offset)
       }
-      case Sub(subst) => ???
+      case Sub(subst) => Sub(subst.mapValues(_.subst(sigma)))
       case Construct(to, pred, variant, args) =>
         assert(!sigma.keySet.contains(to) || sigma(to).isInstanceOf[Var])
         Construct(to.subst(sigma).asInstanceOf[Var], pred, variant, args.map(_.subst(sigma)))
@@ -376,23 +376,25 @@ object Statements {
       case _ => this
     }
 
-    override def toPP: Statement = (s1.toPP, s2.toPP) match {
-      // Subst:
-      case (Sub(subst), s2) => s2.subst(subst)
-      // Returns:
-      case (Construct(to, pred, variant, args), Call(Var("return "), _, Seq(ret), _)) if to == ret =>
-        Construct(Var(""), pred, variant, args)
-      case (Call(fun, res, args, comp), Call(Var("return "), _, rets, _)) if res == rets =>
-        Call(fun, List(Var("")), args, comp)
-      case (If(res, cond, tb, fb), Call(Var("return "), _, rets, _)) if res.toSet == rets.toSet =>
-        If(Var("") :: rets.map(_.asInstanceOf[Var]).toList, cond, tb, fb)
-      case (Match(res, tgt, arms), Call(Var("return "), _, rets, _)) if res.toSet == rets.toSet =>
-        Match(Var("") :: rets.map(_.asInstanceOf[Var]).toList, tgt, arms)
-      case (Store(to, offset, e), Call(Var("return "), _, rets, _)) if rets.length == 0 =>
-        Store(to, 666, e)
-      // Any other Stmt should return the Unit with `;`
-      case (s1, Call(Var("return "), _, rets, _)) if rets.length == 0 => s1
-      case (s1, s2) => SeqComp(s1, s2)
+    override def toPP: Statement = (s1.toPP) match {
+        // Subst:
+      case Sub(subst) => s2.subst(subst).toPP
+      case s1 => (s1, s2.toPP) match {
+        // Returns:
+        case (Construct(to, pred, variant, args), Call(Var("return "), _, Seq(ret), _)) if to == ret =>
+          Construct(Var(""), pred, variant, args)
+        case (Call(fun, res, args, comp), Call(Var("return "), _, rets, _)) if res == rets =>
+          Call(fun, List(Var("")), args, comp)
+        case (If(res, cond, tb, fb), Call(Var("return "), _, rets, _)) if res.toSet == rets.toSet =>
+          If(Var("") :: rets.map(_.asInstanceOf[Var]).toList, cond, tb, fb)
+        case (Match(res, tgt, arms), Call(Var("return "), _, rets, _)) if res.toSet == rets.toSet =>
+          Match(Var("") :: rets.map(_.asInstanceOf[Var]).toList, tgt, arms)
+        case (Store(to, offset, e), Call(Var("return "), _, rets, _)) if rets.length == 0 =>
+          Store(to, 666, e)
+        // Any other Stmt should return the Unit with `;`
+        case (s1, Call(Var("return "), _, rets, _)) if rets.length == 0 => s1
+        case (s1, s2) => SeqComp(s1, s2)
+      }
     }
 
     // Eliminate or shorten newly bound variable newvar
