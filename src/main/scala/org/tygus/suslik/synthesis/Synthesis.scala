@@ -25,7 +25,7 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
   def synthesizeProc(funGoal: FunSpec, env: Environment, sketch: Statement): (List[Procedure], SynStats) = {
     implicit val config: SynConfig = env.config
     implicit val stats: SynStats = env.stats
-    val FunSpec(name, tp, formals, pre, post, var_decl) = funGoal
+    val FunSpec(_, _, tp, formals, rets, pre, post, var_decl) = funGoal
 
     if (!CyclicProofChecker.isConfigured()) {
       log.print("Cyclic proof checker is not configured! All termination check will be considered TRUE (this not sound).\n",
@@ -40,7 +40,7 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
         Console.RED, 2)
     }
 
-    val goal = topLevelGoal(pre, post, formals, name, env, sketch, var_decl)
+    val goal = topLevelGoal(pre, post, formals, funGoal.clean, env, sketch, var_decl)
     log.print("Initial specification:", Console.RESET)
     log.print(s"${goal.pp}\n", Console.BLUE)
     SMTSolving.init()
@@ -51,7 +51,7 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
         case Some((body, helpers)) =>
           log.print(s"Succeeded leaves (${successLeaves.length}): ${successLeaves.map(n => s"${n.pp()}").mkString(" ")}", Console.YELLOW, 2)
           val main = Procedure(funGoal, body)(goal.env.predicates)
-          (main :: helpers, stats)
+          (main._1 :: helpers, stats)
         case None =>
           log.out.printlnErr(s"Deductive synthesis failed for the goal\n ${goal.pp}")
           (Nil, stats)
@@ -103,7 +103,7 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
         }
         case Some(Succeeded(sol, id)) =>
         { // Same goal has succeeded before: return the same solution
-          log.print(s"Recalled solution ${sol._1.pp()}", Console.RED)
+          log.print(s"Recalled solution ${sol._1.pp}", Console.RED)
           // This seems to always hold in practice because we always get to the companion
           // before we get to any of its children;
           // if this ever fails, we can either:

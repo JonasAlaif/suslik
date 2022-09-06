@@ -180,12 +180,12 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
 
   def varsDeclaration: Parser[Formals] = "[" ~> repsep(formal, ",") <~ "]"
 
-  def goalFunctionSYN: Parser[FunSpec] = assertion ~ typeParser ~ ident ~ ("(" ~> repsep(formal, ",") <~ ")") ~ varsDeclaration.? ~ assertion ^^ {
-    case pre ~ tpe ~ name ~ formals ~ vars_decl ~ post => FunSpec(name, tpe, formals, pre, post,  vars_decl.getOrElse(Nil))
+  def goalFunctionSYN: Parser[FunSpec] = assertion ~ typeParser ~ ident ~ ("(" ~> repsep(formal, ",") <~ ")") ~ varsDeclaration.? ~ opt(stringLit) ~ assertion ^^ {
+    case pre ~ tpe ~ name ~ formals ~ vars_decl ~ cleanName ~ post => FunSpec(name, cleanName, tpe, formals, Results(post.resOrd(Nil)), pre, post, vars_decl.getOrElse(Nil))
   }
 
-  def nonGoalFunction: Parser[FunSpec] = typeParser ~ ident ~ ("(" ~> repsep(formal, ",") <~ ")") ~ varsDeclaration.? ~ assertion ~ assertion ^^ {
-    case tpe ~ name ~ formals ~ vars_decl ~ pre ~ post => FunSpec(name, tpe, formals, pre, post, vars_decl.getOrElse(Nil))
+  def nonGoalFunction: Parser[FunSpec] = typeParser ~ ident ~ ("(" ~> repsep(formal, ",") <~ ")") ~ varsDeclaration.? ~ opt(stringLit) ~ assertion ~ assertion ^^ {
+    case tpe ~ name ~ formals ~ vars_decl ~ cleanName ~ pre ~ post => FunSpec(name, cleanName, tpe, formals, Results(post.resOrd(Nil)), pre, post, vars_decl.getOrElse(Nil))
   }
 
   def statementParser: Parser[Statement] = (
@@ -212,11 +212,11 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
     }
       // Call
       ||| opt("let" ~> ("(" ~> repsep(varParser, ",") <~ ")") <~ "=") ~ varParser ~ ("(" ~> repsep(expr, ",") <~ ")" <~ ";") ^^ {
-      case result ~ fun ~ args => Call(fun, result.getOrElse(List.empty), args.map(desugar), None)
+      case result ~ fun ~ args => Call(fun, Results(FnResList(result.getOrElse(Nil))), args.map(desugar), None, false)
     }
       // if
       ||| ("if" ~> "(" ~> expr <~ ")") ~ ("{" ~> codeWithHoles <~ "}") ~ ("else" ~> "{" ~> codeWithHoles <~ "}") ^^ {
-      case cond ~ tb ~ eb => If(List.empty, desugar(cond), tb, eb)
+      case cond ~ tb ~ eb => If(Results(FnResList(Nil)), desugar(cond), tb, eb)
     }
     // Guarded
     //      ||| ("assume" ~> "(" ~> expr <~ ")") ~ ("{" ~> codeWithHoles <~ "}")  ^^ {
@@ -233,7 +233,7 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
 
   def programSUS: Parser[Program] = phrase(rep(indPredicate | (goalFunctionV1 ||| nonGoalFunction))) ^^ { pfs =>
     val ps = for (p@InductivePredicate(_, _, _, _, _) <- pfs) yield p
-    val fs = for (f@FunSpec(_, _, _, _, _, _) <- pfs) yield f
+    val fs = for (f@FunSpec(_, _, _, _, _, _, _, _) <- pfs) yield f
     val goals = for (gc@GoalContainer(_, _) <- pfs) yield gc
     if (goals.isEmpty) {
       throw SynthesisException("Parsing failed: no single goal spec is provided.")
@@ -247,7 +247,7 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
 
   def programSYN: Parser[Program] = phrase(rep(indPredicate | goalFunctionSYN)) ^^ { pfs =>
     val ps = for (p@InductivePredicate(_, _, _, _, _) <- pfs) yield p
-    val fs = for (f@FunSpec(_, _, _, _, _, _) <- pfs) yield f
+    val fs = for (f@FunSpec(_, _, _, _, _, _, _, _) <- pfs) yield f
     if (fs.isEmpty) {
       throw SynthesisException("Parsing failed. No single function spec is provided.")
     }

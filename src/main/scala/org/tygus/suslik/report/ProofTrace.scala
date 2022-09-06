@@ -140,7 +140,7 @@ object ProofTraceJson {
 
     def apply(goal: Goal): GoalEntry = apply(goal.label.pp + s" (${goal.cost})", goal.uid,
       AssertionEntry(goal.pre, goal.constraints.preNoncyc, goal.constraints.preCyc),
-      AssertionEntry(goal.post, goal.constraints.postNoncyc, goal.constraints.postCyc), goal.sketch.pp(),
+      AssertionEntry(goal.post, goal.constraints.postNoncyc, goal.constraints.postCyc), goal.sketch.pp,
       vars(goal, goal.programVars), vars(goal, goal.existentials),
       vars(goal, goal.universalGhosts), goal.callGoal.flatMap(callInfo(goal, _)))
 
@@ -154,7 +154,7 @@ object ProofTraceJson {
       val toActual = compose(callGoal.companionToFresh, callGoal.freshToActual)
       Some(apply(callGoal.call.companion.get.pp + s" (${goal.cost})", companion.uid,
         AssertionEntry(funSpec.pre.subst(toActual), goal.constraints.preNoncyc, goal.constraints.preCyc),
-        AssertionEntry(funSpec.post.subst(toActual), goal.constraints.postNoncyc, goal.constraints.postCyc), callGoal.actualCall.pp(),
+        AssertionEntry(funSpec.post.subst(toActual), goal.constraints.postNoncyc, goal.constraints.postCyc), callGoal.actualCall.pp,
         Seq(), Seq(), Seq()))
     }
 

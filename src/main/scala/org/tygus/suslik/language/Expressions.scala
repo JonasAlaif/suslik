@@ -373,10 +373,10 @@ object Expressions {
         case c@IntConst(_) if p(c) => acc + c.asInstanceOf[R]
         case c@LocConst(_) if p(c) => acc + c.asInstanceOf[R]
         case c@BoolConst(_) if p(c) => acc + c.asInstanceOf[R]
-        case b@BinaryExpr(_, l, r) =>
+        case b@BinaryExpr(op, l, r) =>
           val acc1 = if (p(b)) acc + b.asInstanceOf[R] else acc
           val acc2 = collector(acc1)(l)
-          collector(acc2)(r)
+          if (op == OpField) acc2 else collector(acc2)(r)
         case b@OverloadedBinaryExpr(_, l, r) =>
           val acc1 = if (p(b)) acc + b.asInstanceOf[R] else acc
           val acc2 = collector(acc1)(l)
@@ -868,6 +868,7 @@ object Expressions {
         case UnaryExpr(OpDeRef, left) => BinaryExpr(OpField, left, right).normalise
         case _ => this
       }
+      case OpFieldBind if left == right => left
       case _ => this
     }
     override def substUnknown(sigma: UnknownSubst): Expr = BinaryExpr(op, left.substUnknown(sigma), right.substUnknown(sigma))

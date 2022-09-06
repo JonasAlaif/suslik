@@ -122,7 +122,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       )
       assert(newVars.length == 1)
       val field = prim.ref.foldLeft[Expr](prim.field)((acc, _) => UnaryExpr(OpDeRef, acc))
-      val kont = SubstProducer(newVars.head, field)
+      val kont = CrossFnSubstProducer(newVars.head, field)
       Seq(RuleResult(List(newGoal), kont, this, goal))
     }
   }
@@ -164,7 +164,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           } else BinaryExpr(OpField, h.field, Var(field.name.stripPrefix("_"))))
         }.toMap
         val nameSubs = if (h.isBorrow) subs.map(m => m._1 -> UnaryExpr(OpTakeRef(h.ref.head.mut), m._2)) else subs
-        val kont = MatchProducer(goal.post.results(goal.programVars.toSet), h.field, pred.clean, fieldSubst, nameSubs, pred.clauses.map(c => c.name -> c.asn.sigma.rapps.filter(!_.priv).map(_.field))) >>
+        val kont = MatchProducer(Results(goal.post.resUnord(goal.programVars)), h.field, pred.clean, fieldSubst, nameSubs, pred.clauses.map(c => c.name -> c.asn.sigma.rapps.filter(!_.priv).map(_.field))) >>
           ExtractHelper(goal)
         RuleResult(newGoals, kont, this, goal)
       }
@@ -208,7 +208,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val nameSubs = if (h.isBorrow) subs.map(m => m._1 -> UnaryExpr(OpTakeRef(h.ref.head.mut), m._2)) else subs
         // TODO: Why was the `if (m._2.isInstanceOf[UnaryExpr]) m._2 else ...` here?
         // val nSubsRef = if (h.isBorrow) nameSubs.map(m => m._1 -> (if (m._2.isInstanceOf[UnaryExpr]) m._2 else UnaryExpr(OpTakeRef(h.ref.head.mut), m._2))) else nameSubs
-        val kont = MatchProducer(goal.post.results(goal.programVars.toSet), h.field, pred.clean, fieldSubst, nameSubs, pred.clauses.map(c => c.name -> c.asn.sigma.rapps.filter(!_.priv).map(_.field))) >>
+        val kont = MatchProducer(Results(goal.post.resUnord(goal.programVars)), h.field, pred.clean, fieldSubst, nameSubs, pred.clauses.map(c => c.name -> c.asn.sigma.rapps.filter(!_.priv).map(_.field))) >>
           ExtractHelper(goal)
         return Seq(RuleResult(newGoals, kont, this, goal))
       }}}
@@ -233,7 +233,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         if (goal.env.config.maxCalls :: goal.pre.sigma.callTags).min < goal.env.config.maxCalls
       } yield {
         val newGamma = goal.gamma ++ (f.params ++ f.var_decl).toMap // Add f's (fresh) variables to gamma
-        val call = Call(Var(f.name), f.result(goal.env.predicates), f.params.map(_._1), l)
+        val call = Call(Var(f.clean), f.returns, f.params.map(_._1), l, _f.params.headOption.map(_._1.name == "self").getOrElse(false))
         val calleePostSigma = f.post.sigma.setSAppTags(PTag().incrCalls)
         val callePost = Assertion(f.post.phi, calleePostSigma)
         val suspendedCallGoal = Some(SuspendedCallGoal(goal.pre, goal.post, callePost, call, freshSub))
@@ -280,19 +280,18 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         )
         val construct_args = if (ip.isPrim) {
           assert(h.fnSpec.length == 1)
-          h.fnSpec
+          var deAE = h.fnSpec(0).collect[AlwaysExistsVar](_.isInstanceOf[AlwaysExistsVar]).map(ae => ae.v -> ae.v).toMap
+          Seq(h.field -> h.fnSpec(0).subst(deAE))
         } else {
           val fieldNames = ip.clauses(idx).asn.sigma.rapps.filter(!_.priv).map(_.field)
           val argNames = asn.sigma.rapps.filter(!_.priv).map(_.field)
           assert(fieldNames.length == argNames.length)
-          fieldNames.zip(argNames).map(arg =>
-            if (arg._1.isTupleLike) arg._2
-            else BinaryExpr(OpFieldBind, arg._1, arg._2))
+          fieldNames.zip(argNames)
         }
         val kont =
           UnfoldProducer(h.toSApp, selector, Assertion(asn.phi, asn.sigma), fresh_subst ++ fieldSubst) >>
-          (if (ip.isPrim) SubstProducer(h.field, construct_args(0))
-          else AppendProducer(Construct(h.field, ip.clean, name, construct_args))) >>
+          (if (ip.isPrim) SubstProducer(construct_args(0)._1, construct_args(0)._2)
+          else AppendProducer(Construct(Some(h.field), ip.clean, name, construct_args))) >>
           ExtractHelper(goal)
         RuleResult(List(goal.spawnChild(post = newPost, fut_subst = fut_subst, constraints = c,
             // Hasn't progressed since we didn't progress toward termination

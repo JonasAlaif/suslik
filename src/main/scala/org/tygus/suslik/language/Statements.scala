@@ -4,6 +4,7 @@ import org.tygus.suslik.logic.Specifications.GoalLabel
 import org.tygus.suslik.logic.{Formals, FunSpec, Gamma}
 import org.tygus.suslik.util.StringUtil._
 import org.tygus.suslik.logic.InductivePredicate
+import org.tygus.suslik.logic.Ref
 
 /**
   * @author Ilya Sergey
@@ -15,23 +16,21 @@ object Statements {
   sealed abstract class Statement extends HasExpressions[Statement] {
 
     // Pretty-printer
-    def pp(rets: List[Var] = Nil): String = {
+    def pp: String = {
 
       val builder = new StringBuilder
 
-      def doRet(rets: List[Expr]): String = {
+      def doRet(rets: Seq[Expr]): String = {
         if (rets.length > 0)
           if (rets.length == 1) rets(0).pp
           else rets.map(_.pp).mkString("(", ", ", ")")
         else "()"
       }
-      def toRet(s: Statement, rets: List[Var]): Statement =
-        SeqComp(s, Call(Var("return "), List.empty, rets, None)).simplify.toPP
 
       def build(s: Statement, offset: Int = 2): Unit = {
         assert(s.simplify == s, "Simp: " + s.simplify + " vs " + s)
         s match {
-          case Skip => ()
+          case Skip => builder.append("()")
           case Hole =>
             builder.append("??")
           case Error =>
@@ -61,49 +60,47 @@ object Statements {
             // Do not print the type annotation
             builder.append(s"let ${to.pp} = *$f;")
           case c@Construct(to, pred, variant, args) =>
-            val structLike = args.exists(arg => arg.isInstanceOf[BinaryExpr] && arg.asInstanceOf[BinaryExpr].op == OpFieldBind)
+            val structLike = c.structLike
             val bra = if (args.length == 0) "" else if (structLike) " { " else "("
             val ket = if (args.length == 0) "" else if (structLike) " }" else ")"
-            builder.append(s"${if (c.isRes) "" else s"let ${to.pp} = "}${c.cName}$bra${args.map(_.pp).mkString(", ")}$ket${if (c.isRes) "" else ";"}")
+            builder.append(s"${if (c.isRes) "" else s"let ${to.get.pp} = "}${c.cName}$bra${c.argsPrint.map(_.pp).mkString(", ")}$ket${if (c.isRes) "" else ";"}")
           case m@Match(res, tgt, arms) =>
-            val trueRes = if (m.isRes) res.tail else res
-            val resStr = if (m.isRes || trueRes.length == 0) "" else s"let ${doRet(trueRes)} = "
+            val resStr = if (m.isRes) "" else s"let ${doRet(res.getRes)} = "
             builder.append(resStr).append(s"match ${tgt.pp} {\n")
             arms.map { case (constr, stmt) =>
               builder.append(mkSpaces(offset+2))
               build(constr, 0)
               builder.append(" => ")
-              val fullStmt = toRet(stmt, trueRes)
-              if (!fullStmt.isRes) builder.append("{\n" + mkSpaces(offset+4))
-              build(fullStmt, offset + 4)
-              if (!fullStmt.isRes) builder.append("\n" + mkSpaces(offset+2) + "}\n")
+              if (!stmt.isRes) builder.append("{\n" + mkSpaces(offset+4))
+              build(stmt, offset + 4)
+              if (!stmt.isRes) builder.append("\n" + mkSpaces(offset+2) + "}\n")
               else builder.append(",\n")
             }
             builder.append(mkSpaces(offset)).append(if (m.isRes) "}" else "};")
-          case Call(fun, _, args, _) if fun.name == "return " =>
-            builder.append(doRet(args.toList))
-          case c@Call(fun, result, args, _) =>
-            val res = if (c.isRes || result.length == 0) ""
-              else s"let ${doRet(result)} = "
-            val function_call = s"$res${fun.pp}(${args.map(_.pp).mkString(", ")})${if (c.isRes) "" else ";"}"
+          case Return(ret) =>
+            builder.append(doRet(ret.getRes))
+          case c@Call(fun, result, args, _, rec) =>
+            val res = if (c.isRes || result.getRes.isEmpty) ""
+              else s"let ${doRet(result.getRes)} = "
+            val (receiver, cargs) = if (!rec) ("", args)
+              else (BinaryExpr(OpField, UnaryExpr(OpDeRef, args.head).normalise, Var("")).normalise.pp, args.tail)
+            val function_call = s"$res$receiver${fun.pp}(${cargs.map(_.pp).mkString(", ")})${if (c.isRes) "" else ";"}"
             builder.append(function_call)
           case SeqComp(s1,s2) =>
             build(s1, offset)
             builder.append("\n" + mkSpaces(offset))
             build(s2, offset)
           case i@If(rets, _, _, _) =>
-            val trueRets = if (i.isRes) rets.tail else rets
-            if (trueRets.length > 0 && !i.isRes) builder.append(s"let ${doRet(trueRets)} = ")
+            if (!i.isRes) builder.append(s"let ${doRet(rets.getRes)} = ")
             var ecase: Statement = i
             while (ecase match {
-              case If(orets, cond, tb, eb) if orets.toSet == rets.toSet =>
-                val tbRet = toRet(tb, trueRets)
+              case If(orets, cond, tb, eb) if rets.compareTo(orets) =>
                 builder.append(s"if ${cond.pp} {")
-                builder.append(if (!tbRet.isRes) "\n" + mkSpaces(offset+2) else " ")
-                build(tbRet, offset + 2)
-                builder.append(if (!tbRet.isRes) "\n" + mkSpaces(offset) else " ")
+                builder.append(if (!tb.isRes) "\n" + mkSpaces(offset+2) else " ")
+                build(tb, offset + 2)
+                builder.append(if (!tb.isRes) "\n" + mkSpaces(offset) else " ")
                 builder.append("}")
-                ecase = toRet(eb, trueRets)
+                ecase = eb
                 if (ecase.size > 0) {
                   builder.append(" else ")
                   true
@@ -123,7 +120,7 @@ object Statements {
             builder.append("\n" + mkSpaces(offset)).append(s"}")
         }
       }
-      build(toRet(this, rets))
+      build(this)
       builder.toString()
     }
 
@@ -134,26 +131,28 @@ object Statements {
         case Skip => acc
         case Hole => acc
         case Error => acc
-        case Sub(s) => acc ++ s.values.flatMap(_.collect(p))
+        case Sub(s) => acc
         case Store(to, off, e) =>
           acc ++ to.collect(p) ++ e.collect(p)
         case Load(_, _, from, off) =>
           acc ++ from.collect(p)
-        case Construct(to, _, _, args) =>
-          acc ++ to.collect(p) ++ args.flatMap(_.collect(p)).toSet
+        case c@Construct(to, _, _, args) =>
+          acc ++ to.map(_.collect(p)).getOrElse(Set.empty) ++ c.matchVars.flatMap(_.collect(p)).toSet
         case Match(r, tgt, arms) =>
-          acc ++ r.flatMap(_.collect(p)) ++ tgt.collect(p) ++ arms.flatMap(a => a._1.collect(p) ++ a._2.collect(p))
+          acc ++ r.getResSet.flatMap(_.collect(p)) ++ tgt.collect(p) ++
+            arms.flatMap(a => a._1.matchVars.flatMap(_.collect(p)) ++ a._2.collect(p))
         case Malloc(_, _, _) =>
           acc
         case Free(x) =>
           acc ++ x.collect(p)
-        case Call(fun, res, args, _) =>
-          acc ++ fun.collect(p) ++ res.flatMap(_.collect(p)).toSet ++ args.flatMap(_.collect(p)).toSet
+        case Call(fun, res, args, _, _) =>
+          acc ++ fun.collect(p) ++ res.getResSet.flatMap(_.collect(p)).toSet ++ args.flatMap(_.collect(p)).toSet
+        case Return(res) => acc ++ res.getExprSet.flatMap(_.collect(p)).toSet
         case SeqComp(s1,s2) =>
           val acc1 = collector(acc)(s1)
           collector(acc1)(s2)
         case If(r, cond, tb, eb) =>
-          val acc1 = collector(acc  ++ r.flatMap(_.collect(p)) ++ cond.collect(p))(tb)
+          val acc1 = collector(acc  ++ r.getResSet.flatMap(_.collect(p)) ++ cond.collect(p))(tb)
           collector(acc1)(eb)
         case Guarded(cond, b) =>
           collector(acc ++ cond.collect(p))(b)
@@ -163,6 +162,8 @@ object Statements {
     }
 
     override def subst(sigma: Subst): Statement = this match {
+      case Construct(_, _, _, _) | SeqComp(_, _) => ???
+      case Error | Hole | Skip => this
       case Store(to, off, e) => {
         Store(to.subst(sigma), off, e.subst(sigma))
       }
@@ -172,11 +173,8 @@ object Statements {
         Load(to.subst(sigma).asInstanceOf[Var], tpe, from.subst(sigma).asInstanceOf[Var], offset)
       }
       case Sub(subst) => Sub(subst.mapValues(_.subst(sigma)))
-      case Construct(to, pred, variant, args) =>
-        assert(!sigma.keySet.contains(to) || sigma(to).isInstanceOf[Var])
-        Construct(to.subst(sigma).asInstanceOf[Var], pred, variant, args.map(_.subst(sigma)))
       case Match(r, tgt, arms) =>
-        Match(r, tgt.subst(sigma), arms.map(a => (a._1, SeqComp(Sub(sigma), a._2))))
+        Match(r, tgt.subst(sigma), arms.map(a => (a._1, a._2.subst(sigma))))
       case Malloc(to, tpe, sz) => {
         assert(!sigma.keySet.contains(to) || sigma(to).isInstanceOf[Var])
         Malloc(to.subst(sigma).asInstanceOf[Var], tpe, sz)
@@ -185,10 +183,20 @@ object Statements {
         assert(!sigma.keySet.contains(x) || sigma(x).isInstanceOf[Var])
         Free(x.subst(sigma).asInstanceOf[Var])
       }
-      case Call(fun, res, args, companion) => Call(fun, res.map(_.subst(sigma).asInstanceOf[Var]), args.map(_.subst(sigma)), companion)
-      case SeqComp(s1, s2) => SeqComp(s1.subst(sigma), s2.subst(sigma))
-      case If(r, cond, tb, eb) => If(r, cond.subst(sigma), SeqComp(Sub(sigma), tb), SeqComp(Sub(sigma), eb))
+      case Return(ret) => Return(ret.subst(sigma))
+      case Call(fun, res, args, companion, rec) => Call(fun, res, args.map(_.subst(sigma)), companion, rec)
+      case If(r, cond, tb, eb) => If(r, cond.subst(sigma), tb.subst(sigma), eb.subst(sigma))
       case Guarded(cond, b) => Guarded(cond.subst(sigma), b.subst(sigma))
+    }
+    def substRes(sigma: SubstVar): Statement = this match {
+      case Construct(to, pred, variant, args) => {
+        if (to.isDefined) assert(!sigma.keySet.contains(to.get) || sigma(to.get).isInstanceOf[Var])
+        Construct(to.map(_.varSubst(sigma).asInstanceOf[Var]), pred, variant, args)
+      }
+      case Match(results, tgt, arms) => Match(results.varSubst(sigma), tgt, arms)
+      case Call(fun, result, args, companion, rec) => Call(fun, result.varSubst(sigma), args, companion, rec)
+      // case SeqComp(s1, s2) => SeqComp(s1.substRes(sigma), s2.substRes(sigma))
+      case If(results, cond, tb, eb) => If(results.varSubst(sigma), cond, tb, eb)
       case _ => this
     }
 
@@ -200,11 +208,12 @@ object Statements {
       case Sub(_) => 0
       case Store(to, off, e) => 1 + to.size + e.size
       case Load(to, _, from, _) => 1 + to.size + from.size
-      case Construct(to, _, _, args) => 1 + to.size + args.map(_.size).sum
+      case Construct(to, _, _, args) => 1 + to.size + args.map(_._2.size).sum
       case Match(_, _, arms) => 1 + arms.map(a => a._1.size + a._2.size).sum
       case Malloc(to, _, _) => 1 + to.size
       case Free(x) => 1 + x.size
-      case Call(_, res, args, _) => 1 + res.size + args.map(_.size).sum
+      case Call(_, res, args, _, _) => 1 + res.getResSet.size + args.map(_.size).sum
+      case Return(res) => res.size
       case SeqComp(s1,s2) => s1.size + s2.size
       case If(_, cond, tb, eb) => 1 + cond.size + tb.size + eb.size
       case Guarded(cond, b) => 1 + cond.size + b.size
@@ -212,7 +221,56 @@ object Statements {
 
     // Simplified statement: by default do nothing
     def simplify: Statement = this
-    def toPP: Statement = this
+    def doSubsts: Statement = this
+
+    def simplifyVars(cmap: ClashMap, fname: String): (Statement, ClashMap) = this match {
+      case Skip | Hole | Error | Malloc(_,_,_) | Free(_) | Load(_,_,_,_) => (this, cmap)
+      case Sub(sub) => (this, cmap.subst(sub))
+      case c:Construct => {
+        val sub = doVarSimp(c.to.toSet, cmap)
+        val argVars = c.matchVars.flatMap(_.vars)
+        (c.doResSimplify(sub), cmap.dead(c.to.toSet).live(argVars.toSet))
+      }
+      case Match(results, tgt, arms) => {
+        val resSet = results.getExprSet.flatMap(_.vars)
+        val sub = doVarSimp(resSet, cmap)
+        val (newArms, cmaps) = arms.map(a => {
+          val (newStmt, cmap) = a._2.simplifyVars(ClashMap(Map.empty, Sub()), fname)
+          val mVars = a._1.matchVars.map(_.asInstanceOf[Var]).toSet
+          val sub = doVarSimp(mVars, cmap)
+          ((a._1.subst(sub), SeqComp(Sub(sub).simplify, newStmt).simplify), cmap.dead(mVars))
+        }).unzip
+        val newCmap = cmaps.foldLeft(cmap.dead(resSet))(_ ++ _)
+        (Match(results, tgt, newArms).doResSimplify(sub), newCmap.live(tgt.vars))
+      }
+      case If(results, cond, tb, eb) => {
+        val resSet = results.getExprSet.flatMap(_.vars)
+        val sub = doVarSimp(resSet, cmap)
+        val (newEb, cmapEb) = eb.simplifyVars(ClashMap(Map.empty, Sub()), fname)
+        val (newTb, cmapTb) = tb.simplifyVars(ClashMap(Map.empty, Sub()), fname)
+
+        val newCmap = cmap.dead(resSet) ++ cmapEb ++ cmapTb
+        (If(results, cond, newTb, newEb).doResSimplify(sub), newCmap.live(cond.vars))
+      }
+      case Store(to, offset, e) => (this, cmap.live(e.vars ++ to.vars))
+      case Call(fun, results, args, _, _) => {
+        val resSet = results.getExprSet.flatMap(_.vars)
+        val sub = doVarSimp(resSet, cmap)
+        val newCmap = if (fun.name == fname) cmap.dead(resSet).live(args.map(_.vars))
+          else cmap.dead(resSet).live(args.flatMap(_.vars).toSet)
+        if (results.r.isEmpty && !sub.isEmpty) println("What " + resSet)
+        (this.doResSimplify(sub), newCmap)
+      }
+      case Return(ret) => (this, cmap.live(ret.getExprSet.flatMap(_.vars)))
+      case SeqComp(s1, s2) => {
+        val (newS2, cmapS2) = s2.simplifyVars(cmap, fname)
+        val (newS1, cmapS1) = s1.simplifyVars(cmapS2, fname)
+        (SeqComp(newS1, newS2).simplify, cmapS1)
+      }
+      case Guarded(cond, body) => ???
+    }
+    def doResSimplify(sub: SubstVar): Statement = if (sub.isEmpty) this
+      else SeqComp(this.substRes(sub), Sub(sub).simplify).simplify
 
     // Is this an atomic statement?
     def isAtomic: Boolean = this match {
@@ -254,7 +312,7 @@ object Statements {
 
     // Companions of all calls inside this statement
     def companions: List[GoalLabel] = atomicStatements.flatMap {
-      case Call(_, _, _, Some(comp)) => List(comp)
+      case Call(_, _, _, Some(comp), _) => List(comp)
       case _ => Nil
     }
 
@@ -294,24 +352,23 @@ object Statements {
 
     // Shorten a variable v to its minimal prefix unused in the current statement.
     def simplifyVariable(v: Var): (Var, Statement) = (v, this)
-    // {
-    //   val used = this.vars
-    //   val prefixes = Range(1, v.name.length).map(n => v.name.take(n))
-    //   prefixes.find(p => !used.contains(Var(p))) match {
-    //     case None => (v, this) // All shorter names are taken
-    //     case Some(name) => (Var(name), this.subst(v, Var(name)))
-    //   }
-    // }
     def isRes: Boolean = this match {
       case Error => true
-      case Construct(Var(""), _, _, _) => true
-      case Call(Var("return "), _, _, _) => true
-      case Call(_, List(Var("")), _, _) => true
-      case Match(Var("") :: _, _, _) => true
-      case If(Var("") :: _, _, _, _) => true
+      case Skip => true
+      case Construct(None, _, _, _) => true
+      case Call(_, res, _, _, _) => res.r.isEmpty
+      case Match(res, _, _) => res.r.isEmpty
+      case If(res, _, _, _) => res.r.isEmpty
       case Store(_, 666, _) => true
+      case Return(_) => true
       case _ => false
     }
+    def hasRes: Boolean = this match {
+      case SeqComp(_, s2) => s2.hasRes
+      case _ => this.isRes
+    }
+    def withRes(rets: Results): Statement = SeqComp(this, Return(rets)).simplify.pushResIn
+    def pushResIn: Statement = this
   }
 
   // skip
@@ -324,7 +381,26 @@ object Statements {
   case object Error extends Statement
 
   // substitute in future stmts
-  case class Sub(sub: Subst) extends Statement
+  case class Sub(sub: Subst) extends Statement {
+    override def simplify: Statement = if (sub.isEmpty) Skip else this
+    override def doSubsts: Statement = Skip
+  }
+  object Sub {
+    def apply(sub1: Subst, sub2: Subst): Sub = {
+      var sub =  sub1 ++ sub2.mapValues(_.subst(sub1)).filter(m => m._1 != m._2)
+      var oldSub: Subst = Map.empty
+      var newSub = sub
+      var i = 0
+      while (newSub != oldSub && i < 5) {
+        i += 1
+        oldSub = newSub
+        newSub = newSub.mapValues(_.subst(sub))
+      }
+      if (i >= 5) assert(false, "No fp with sub1 " + sub1 + " sub2 " + sub2)
+      new Sub(newSub)
+    }
+    def apply(): Sub = new Sub(Map.empty)
+  }
 
   // let to = malloc(n)
   case class Malloc(to: Var, tpe: SSLType, sz: Int = 1) extends Statement
@@ -332,33 +408,64 @@ object Statements {
   // free(v)
   case class Free(v: Var) extends Statement
 
+  // return
+  case class Return(res: Results) extends Statement
+
   // let to = *from.offset
   case class Load(to: Var, tpe: SSLType, from: Var,
                   offset: Int = 0) extends Statement
 
   // let to = pred(args)
-  case class Construct(to: Var, pred: Ident, variant: Option[String], args: Seq[Expr]) extends Statement {
+  case class Construct(to: Option[Var], pred: Ident, variant: Option[String], args: Seq[(Var, Expr)]) extends Statement {
     def cName: String = variant.getOrElse(pred)
-    override def toPP: Statement = if (args.length == 0) Sub(Map(to -> Var(cName))) else this
+    override def simplify: Statement =
+      if (args.isEmpty && to.isDefined) Sub(Map(to.get -> Var(cName))) else this
+    def matchVars: Seq[Expr] =
+      args.flatMap(a => {
+        if (a._2.isInstanceOf[Var] && a._2.asInstanceOf[Var].name == "_") None
+        else Some(a._2)
+      })
+    def structLike: Boolean = args.exists(!_._1.isTupleLike)
+    def argsPrint: Seq[Expr] = {
+      val ap = args.flatMap(a => {
+        if (a._1.isTupleLike) Some(a._2)
+        else if (a._2.isInstanceOf[Var] && a._2.asInstanceOf[Var].name == "_") None
+        else Some(BinaryExpr(OpFieldBind, a._1, a._2).simplify)
+      })
+      if (ap.length != args.length) ap :+ Var("..") else ap
+    }
+    override def subst(sigma: Subst): Construct = {
+      if (to.isDefined) assert(!sigma.keySet.contains(to.get) || sigma(to.get).isInstanceOf[Var])
+      Construct(to.map(_.subst(sigma).asInstanceOf[Var]), pred, variant, args.map(a => (a._1, a._2.subst(sigma))))
+    }
   }
 
   // let results = match tgt { arms }
-  case class Match(results: List[Var], tgt: Expr, arms: Seq[(Construct, Statement)]) extends Statement {
+  case class Match(results: Results, tgt: Expr, arms: Seq[(Construct, Statement)]) extends Statement {
     override def simplify: Statement = {
       var armStmt: Option[Statement] = None
       for (arm <- arms if arm._2 != Error) {
-        if (arm._1.args.size > 0 || armStmt.isDefined && armStmt.get != arm._2) return this
+        if (arm._1.args.length > 0 || (armStmt.isDefined && armStmt.get != arm._2)) return this
         armStmt = Some(arm._2)
       }
       if (armStmt.isEmpty) Error else armStmt.get
     }
+    def addResToArms(res: Results): Match = {
+      if (res.r.isEmpty) this
+      else this.copy(arms = this.arms.map(a => (a._1, a._2.withRes(res))))
+    }
+    override def doSubsts: Match = {
+      this.copy(arms = this.arms.map(a => (a._1, a._2.doSubsts)))
+    }
+    
+    override def pushResIn: Statement = this.addResToArms(results)
   }
 
   // *to.offset = e
   case class Store(to: Expr, offset: Int, e: Expr) extends Statement
 
   // f(args)
-  case class Call(fun: Var, result: List[Var], args: Seq[Expr], companion: Option[GoalLabel]) extends Statement
+  case class Call(fun: Var, result: Results, args: Seq[Expr], companion: Option[GoalLabel], hasReceiver: Boolean) extends Statement
 
   // s1; s2
   case class SeqComp(s1: Statement, s2: Statement) extends Statement {
@@ -367,35 +474,37 @@ object Statements {
       case (_, Skip) => s1
       case (Error, _) => Error
       case (_, Error) => Error
-      case (SeqComp(s11, s12), s2) => SeqComp(s11, SeqComp(s12, s2).simplify) // Left-nested compositions are transformed to right-nested
+      case (Sub(subst1), Sub(subst2)) => Sub(subst1, subst2)
+      case (Sub(subst1), SeqComp(Sub(subst2), s2)) =>
+        SeqComp(Sub(subst1, subst2), s2)
+      // case (s1, s2:Sub) if !s1.isInstanceOf[Sub] => SeqComp(s2, s1)
+      // Left-nested compositions are transformed to right-nested
+      case (SeqComp(s11, s12), s2) => SeqComp(s11, SeqComp(s12, s2).simplify).simplify
       // Unused in Ruslik
       // case (_, Guarded(cond, b)) // Guards are propagated to the top but not beyond the definition of any var in their cond
       //     if cond.vars.intersect(s1.definedVars).isEmpty => Guarded(cond, SeqComp(s1, b).simplify)
       // case (Load(y, tpe, from, offset), _) => simplifyBinding(y, newY => Load(newY, tpe, from, offset))
       // case (Malloc(to, tpe, sz), _) => simplifyBinding(to, newTo => Malloc(newTo, tpe, sz))
+      // Returns:
+      case (Construct(to, pred, variant, args), Return(ret)) if to.toSet == ret.getExprSet =>
+        Construct(None, pred, variant, args)
+      case (Call(fun, res, args, comp, rec), Return(ret)) if res.compareTo(ret) =>
+        Call(fun, Results(), args, comp, rec)
+      case (If(res, cond, tb, fb), Return(ret)) if res.compareTo(ret) =>
+        If(Results(), cond, tb, fb).addResToArms(ret)
+      case (Match(res, tgt, arms), Return(ret)) if res.compareTo(ret) =>
+        Match(Results(), tgt, arms).addResToArms(ret)
+      case (Store(to, offset, e), Return(ret)) if ret.isEmpty =>
+        Store(to, 666, e)
+      // Any other Stmt should return the Unit with `;`
+      case (s1, Return(ret)) if ret.isEmpty => s1
       case _ => this
     }
-
-    override def toPP: Statement = (s1.toPP) match {
-        // Subst:
-      case Sub(subst) => s2.subst(subst).toPP
-      case s1 => (s1, s2.toPP) match {
-        // Returns:
-        case (Construct(to, pred, variant, args), Call(Var("return "), _, Seq(ret), _)) if to == ret =>
-          Construct(Var(""), pred, variant, args)
-        case (Call(fun, res, args, comp), Call(Var("return "), _, rets, _)) if res == rets =>
-          Call(fun, List(Var("")), args, comp)
-        case (If(res, cond, tb, fb), Call(Var("return "), _, rets, _)) if res.toSet == rets.toSet =>
-          If(Var("") :: rets.map(_.asInstanceOf[Var]).toList, cond, tb, fb)
-        case (Match(res, tgt, arms), Call(Var("return "), _, rets, _)) if res.toSet == rets.toSet =>
-          Match(Var("") :: rets.map(_.asInstanceOf[Var]).toList, tgt, arms)
-        case (Store(to, offset, e), Call(Var("return "), _, rets, _)) if rets.length == 0 =>
-          Store(to, 666, e)
-        // Any other Stmt should return the Unit with `;`
-        case (s1, Call(Var("return "), _, rets, _)) if rets.length == 0 => s1
-        case (s1, s2) => SeqComp(s1, s2)
-      }
+    override def doSubsts: Statement = s1 match {
+      case Sub(subst) => s2.subst(subst).doSubsts
+      case _ => SeqComp(s1.doSubsts, s2.doSubsts).simplify
     }
+    override def subst(sigma: Subst): SeqComp = SeqComp(s1.subst(sigma), s2.subst(sigma))
 
     // Eliminate or shorten newly bound variable newvar
     // depending on the rest of the program (s2)
@@ -404,22 +513,30 @@ object Statements {
         val (v, s) = s2.simplifyVariable(newvar)
         SeqComp(mkBinding(v), s)
       } else s2  // Do not generate bindings for unused variables
+
+    override def pushResIn: Statement = SeqComp(s1, s2.pushResIn)
   }
 
   // let results = if (cond) { tb } else { eb }
-  case class If(results: List[Var], cond: Expr, tb: Statement, eb: Statement) extends Statement {
+  case class If(results: Results, cond: Expr, tb: Statement, eb: Statement) extends Statement {
     override def simplify: Statement = {
       (tb, eb) match {
         case (Skip, Skip) =>
           assert(results.isEmpty)
           Skip
-        case (Error, _) => eb.simplify
-        case (_, Error) => tb.simplify
+        case (Error, _) => eb
+        case (_, Error) => tb
         case (Guarded(gcond, gb), eb) => Guarded(gcond, If(results, cond, gb, eb).simplify)
         case (tb, Guarded(gcond, gb)) => Guarded(gcond, If(results, cond, tb, gb).simplify)
         case _ => this
       }
     }
+    def addResToArms(res: Results): If = {
+      if (res.r.isEmpty) this
+      else If(results, cond, tb.withRes(res), eb.withRes(res))
+    }
+    override def doSubsts: If = this.copy(tb = tb.doSubsts, eb = eb.doSubsts)
+    override def pushResIn: Statement = this.addResToArms(results)
   }
 
   // assume cond { body } else { els }
@@ -430,10 +547,29 @@ object Statements {
     }
   }
 
+  def doVarSimp(vars: Set[Var], cmap: ClashMap): SubstVar = if (vars.isEmpty) Map.empty
+    else {
+      val live = cmap.cmap
+      vars.map(v => v -> {
+        if (!live.contains(v)) Var("_")
+        else {
+          val blocking = live(v)._2 - v
+          val parts = v.name.split('_')
+          var i = if (parts(0) == "") 2 else 1
+          while (i < parts.length && blocking.exists(b => 
+            b.name.startsWith(parts.take(i).mkString("_")) && b.name.split('_').length <= parts.length
+          )) {
+            i += 1
+          }
+          Var(parts.take(i).mkString("_"))
+        }
+      }).toMap
+    }
+
+
   // A procedure
   case class Procedure(f: FunSpec, body: Statement)(implicit predicates: Map[Ident, InductivePredicate]) {
-    // val tmp = assert(body.vars.forall(_.name != ""))
-    val (name: String, tp: SSLType, formals: Formals) = (f.name, f.rType, f.params)
+    val (name: String, tp: SSLType, formals: Formals) = (f.clean, f.rType, f.params)
 
     def pp: String = {
       val generics = if (f.lfts.size == 0) "" else s"<${f.lfts.mkString(", ")}>"
@@ -442,11 +578,14 @@ object Statements {
         else if (f.rustReturns.length == 1) s"-> ${f.rustReturns.head._2.map(_.sig).mkString("")}${f.rustReturns.head._3} "
         else s"-> (${f.rustReturns.map(r => r._2.map(_.sig).mkString("") + r._3).mkString(", ")}) "
       s"""
-          |fn $name$generics(${f.rustParams.map { case (f, r, t) => s"${f.pp}: ${r.map(_.sig).mkString("")}$t" }.mkString(", ")}) $returns{
-          |  ${body.pp(f.result)}
+          |fn $name$generics(${f.rustParams.map { case (f, r, t) => formalPp(f,r,t) }.mkString(", ")}) $returns{
+          |  ${body.pp}
           |}
       """.stripMargin
     }
+    def formalPp(f: Var, r: List[Ref], t: Ident): String =
+      if (f.name == "self") s"${r.map(_.sig).mkString("")}${f.pp}"
+      else s"${f.pp}: ${r.map(_.sig).mkString("")}$t"
 
     // def ppOld: String =
     //   s"""
@@ -455,58 +594,149 @@ object Statements {
     //      |}
     // """.stripMargin
 
-    // Shorten parameter names
-    def simplifyParams: Procedure = {
-      // TODO: enable simplification
-      return this
-      type Acc = (FunSpec, Statement)
-      def updateParam(formal: (Var, SSLType), acc: Acc): Acc = {
-        val (newParam, newBody) = acc._2.simplifyVariable(formal._1)
-        val newSpec = acc._1.varSubst(Map(formal._1 -> newParam))
-        (newSpec, newBody)
+    def subst(sub: Sub) = this.copy(body = body.subst(sub.sub))
+  }
+  object Procedure {
+    def apply(f: FunSpec, body: Statement)(implicit predicates: Map[Ident, InductivePredicate]): (Procedure, Map[Int,Boolean]) = {
+      val procBody = body.withRes(f.returns).doSubsts
+      val (newBody, cmap) = procBody.simplifyVars(ClashMap(Map.empty, Sub()), f.name)
+      val argNames = f.params.map(_._1)
+      val sub = doVarSimp(argNames.toSet, cmap)
+      var oldUsedArgs = Map.empty[Int, Boolean]
+      var usedArgs = f.params.indices.map(_ -> false).toMap
+      while (oldUsedArgs != usedArgs) {
+        oldUsedArgs = usedArgs
+        usedArgs = usedArgs.map(a => a._1 -> {
+          val param = f.params(a._1)._1
+          cmap.cmap.contains(param) &&
+            (cmap.cmap(param)._1.isEmpty || cmap.cmap(param)._1.exists(!usedArgs(_)))
+        })
       }
-      val (newSpec, newBody) = f.params.foldRight((f, body))(updateParam)
-      this.copy(f = newSpec, body = newBody)
+      val newF = f.copy(params =
+        f.params.zipWithIndex.filter(p => usedArgs(p._2)).map(p => (p._1._1.varSubst(sub), p._1._2))
+      )
+      (new Procedure(newF, SeqComp(Sub(sub), newBody).simplify.doSubsts), usedArgs)
     }
-
-    // Removed unused formals from this procedure
-    // and corresponding actuals in all recursive calls;
-    // a parameter is considered unused if it is only mentioned in a recursive call
-    // at the same (or other unused) position
-    def removeUnusedParams(outerCall: Call): (Procedure, Call) = {
-
-      def isRecCall(s: Statement) = s.isInstanceOf[Call] && s.asInstanceOf[Call].fun.name == f.name
-      val recCalls = body.atomicStatements.filter(isRecCall).map(_.asInstanceOf[Call])
-      val rest = body.mapAtomic(s => if (isRecCall(s)) Skip else s)
-
-      def rmAtIndex(args: Seq[Expr], i: Int): Seq[Expr] = args.take(i) ++ args.drop(i + 1)
-
-      val unusedParams = for {
-        param <- f.params
-        if !rest.vars.contains(param._1)
-        ind = f.params.indexOf(param)
-        if recCalls.forall(c => !rmAtIndex(c.args, ind).flatMap(_.vars).contains(param._1))
-      } yield (ind, param)
-
-      val unusedArgs = unusedParams.map(_._1)
-      def removeUnusedArgs(c:Call): Call = {
-        val newArgs = c.args.indices.filterNot(unusedArgs.contains(_)).map(i => c.args(i))
-        c.copy(args = newArgs)
-      }
-      def removeCallArgs(s: Statement): Statement = if (isRecCall(s)) {
-        removeUnusedArgs(s.asInstanceOf[Call])
-      } else s
-
-      val usedParams = f.params.filterNot(p => unusedParams.map(_._2).contains(p))
-      val newProc = this.copy(f = this.f.copy(params = usedParams), body = this.body.mapAtomic(removeCallArgs))
-      val newCall = removeUnusedArgs(outerCall)
-      (newProc, newCall)
+    def apply(f: FunSpec, body: Statement, outerCall: Call)(implicit predicates: Map[Ident, InductivePredicate]): (Procedure, Call) = {
+      val (proc, usedArgs) = Procedure(f, body)
+      val newArgs = outerCall.args.indices.filter(usedArgs).map(i => outerCall.args(i))
+      (proc, outerCall.copy(args = newArgs))
     }
-
   }
 
   // Solution for a synthesis goal:
   // a statement and a possibly empty list of recursive helpers
   type Solution = (Statement, List[Procedure])
 
+  case class Results(r: Option[(FnResList, Sub, SubstVar)] = None) {
+    def res: ResList = r.get._1.res.res
+    def sub: Subst = r.get._2.sub
+    def subVar: SubstVar = r.get._3
+    // var res: ResList = OrderedRes(Nil)
+    // var subst: Subst = Map.empty
+    def isEmpty: Boolean = res.getResSet.isEmpty
+    def compareTo(other: Results): Boolean = {
+      (this.res, other.res) match {
+        case (OrderedRes(res1), OrderedRes(res2)) => res1.map(_.subst(this.sub)) == res2.map(_.subst(other.sub))
+        case (res1, res2) =>
+          if (res1.getResSet.map(_.subst(this.sub)) == res2.getResSet.map(_.subst(other.sub))) {
+            if (res2.isInstanceOf[OrderedRes]) this.r.get._1.res = other.r.get._1.res
+            else other.r.get._1.res = this.r.get._1.res
+            true
+          } else false
+      }
+    }
+    def size: Int = res.getResSet.size
+    def getResSet: Set[Var] = {
+      if (this.r.isEmpty) Set.empty else {
+        assert(this.sub.isEmpty)
+        res.getResSet.map(_.varSubst(subVar))
+      }
+    }
+    def getExprSet: Set[Expr] = {
+      if (this.r.isEmpty) Set.empty else {
+        res.getResSet.map(_.subst(sub))
+      }
+    }
+    def getRes: Seq[Expr] = {
+      val newRes = res.getRes
+      this.r.get._1.res.res = newRes
+      newRes.res.map(_.varSubst(subVar).subst(sub))
+    }
+    def varSubst(subst: SubstVar): Results = {
+      assert(sub.isEmpty && subVar.isEmpty)
+      Results(Some(this.r.get.copy(_3 = subst)))
+    }
+    def subst(sigma: Subst): Results = {
+      assert(r.isEmpty || subVar.isEmpty)
+      Results(Some(this.r.get.copy(_2 = Sub(sub.mapValues(_.subst(sigma)) ++ sigma))))
+    }
+  }
+  object Results {
+    def apply(res: FnResList): Results = new Results(Some(res, Sub(), Map.empty))
+  }
+
+  // All results that should be initially equal will point to the same this object
+  class FnResList {
+    var res: EqualityResList = new EqualityResList()
+  }
+  // All `FnResList`s that should be equal will point to the same this object
+  class EqualityResList {
+    var res: ResList = OrderedRes(Nil)
+  }
+  object FnResList {
+    def apply(): FnResList = new FnResList()
+    def apply(res: Seq[Var]): FnResList = {
+      val nr = new FnResList()
+      nr.res.res = OrderedRes(res)
+      nr
+    }
+    def apply(res: Set[Var]): FnResList = {
+      val nr = new FnResList()
+      nr.res.res = UnorderedRes(res)
+      nr
+    }
+  }
+  sealed abstract class ResList {
+    def getResSet: Set[Var]
+    def getRes: OrderedRes
+    def varSubst(subst: SubstVar): ResList
+  }
+  case class OrderedRes(res: Seq[Var]) extends ResList {
+    override def getResSet: Set[Var] = this.res.toSet
+    override def getRes: OrderedRes = this
+    override def varSubst(subst: SubstVar): OrderedRes = OrderedRes(res.map(_.varSubst(subst)))
+  }
+  case class UnorderedRes(res: Set[Var]) extends ResList {
+    override def getResSet: Set[Var] = this.res
+    override def getRes: OrderedRes = OrderedRes(res.toSeq)
+    override def varSubst(subst: SubstVar): UnorderedRes = UnorderedRes(res.map(_.varSubst(subst)))
+  }
+
+  type CMap = Map[Var, (Set[Int], Set[Var])]
+  case class ClashMap(live: CMap, subst: Sub) {
+    def live(vs: Set[Var]): ClashMap =
+      ClashMap(merge(live.mapValues(v => (v._1, v._2 ++ vs)), vs.map(_ -> (Set.empty[Int], live.keySet ++ vs)).toMap), subst)
+    def live(vs: Seq[Set[Var]]): ClashMap =
+      ClashMap(merge(live.mapValues(v => (v._1, v._2 ++ vs.flatten)),
+        merge(vs.zipWithIndex.map(v => v._1.map(_ -> (Set(v._2), live.keySet ++ vs.flatten)).toMap))), subst)
+    def dead(vs: Set[Var]): ClashMap = ClashMap(live -- vs, subst)
+    def subst(sub: Subst): ClashMap = {
+      val newSub = Sub(subst.sub ++ sub)
+      ClashMap(ClashMap(live, newSub).cmap, newSub)
+    }
+    def cmap: CMap = merge(live.map{case (v, bs) =>
+      subst.sub.getOrElse(v,v).vars.map(_ -> (bs._1, bs._2.flatMap(b => subst.sub.getOrElse(b,b).vars))).toMap
+    })
+    def ++(other: ClashMap) = ClashMap(merge(this.cmap, other.cmap), Sub())
+
+    def merge(m1: CMap, m2: CMap): CMap = merge(Seq(m1, m2))
+    def merge(ms: Iterable[CMap]): CMap =
+      ms.foldLeft(Map.empty[Var, (Set[Int], Set[Var])])((l, r) => r.foldLeft(l)((l, r) =>
+        l + (if (l.contains(r._1)) r._1 -> (
+          if (l(r._1)._1.isEmpty || r._2._1.isEmpty) Set.empty
+          else l(r._1)._1 ++ r._2._1
+        , l(r._1)._2 ++ r._2._2) else r)
+      ))
+  }
 }

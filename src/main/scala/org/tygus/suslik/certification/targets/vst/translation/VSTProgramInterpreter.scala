@@ -136,7 +136,7 @@ class VSTProgramInterpreter extends Interpreter[SuslikProofStep, StatementStep, 
         }
         val new_context = ctx with_new_variable(to, variable_type)
         single_child_result_of(List(op), (Nil, no_deferreds, new_context))
-      case SuslikProofStep.Call(subst, Call(Var(fname), _, args, _)) =>
+      case SuslikProofStep.Call(subst, Call(Var(fname), _, args, _, _)) =>
         val exprs = args.map(ProofSpecTranslation.translate_expression(ctx.typing_context)(_).asInstanceOf[CLangExpr])
         val op = CCall(fname, exprs)
         single_child_result_of(List(op), (Nil, no_deferreds, ctx))

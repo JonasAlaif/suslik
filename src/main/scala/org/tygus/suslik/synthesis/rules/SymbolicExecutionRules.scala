@@ -48,7 +48,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
         }
 
         findHeaplet(matchingHeaplet, pre.sigma) match {
-          case None => throw SynthesisException("Write into unknown location: " + cmd.pp())
+          case None => throw SynthesisException("Write into unknown location: " + cmd.pp)
           case Some(h: PointsTo) =>
             val newPre = Assertion(pre.phi, (pre.sigma - h) ** PointsTo(to, offset, new_val))
             val subGoal = goal.spawnChild(newPre, sketch = rest)
@@ -81,7 +81,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
         val pre = goal.pre
         val post = goal.post
 
-        synAssert(!goal.vars.contains(to), cmd.pp() + s"name ${
+        synAssert(!goal.vars.contains(to), cmd.pp + s"name ${
           to.name
         } is already used.")
 
@@ -93,7 +93,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
 
         findHeaplet(isMatchingHeaplet, goal.pre.sigma) match {
           case None => {
-            throw SynthesisException("Read from unknown location: " + cmd.pp())
+            throw SynthesisException("Read from unknown location: " + cmd.pp)
           }
           case Some(h@PointsTo(_, _, a)) =>
             val tpy = a.getType(goal.gamma).get // the precondition knows better than the statement
@@ -106,7 +106,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
             val kont: StmtProducer = PrependFromSketchProducer(cmd)
             List(RuleResult(List(subGoal), kont, this, goal))
           case Some(h) =>
-            throw SymbolicExecutionError(cmd.pp() + s" Read rule matched unexpected heaplet ${
+            throw SymbolicExecutionError(cmd.pp + s" Read rule matched unexpected heaplet ${
               h.pp
             }")
         }
@@ -127,7 +127,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
     def apply(goal: Goal): Seq[RuleResult] = goal.sketch.uncons match {
       case (cmd@Malloc(y, tpy, sz), rest) => {
         val pre = goal.pre
-        synAssert(!goal.vars.contains(y), cmd.pp() + s"name ${
+        synAssert(!goal.vars.contains(y), cmd.pp + s"name ${
           y.name
         } is already used.")
 
@@ -172,13 +172,13 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
 //        symExecAssert(goal.programVars.contains(x), cmd.pp + s"value `${x.name}` is not defined.")
         // todo: make findNamedHeaplets find parts with different name but equal values wrt pure part
         findNamedHeaplets(goal, x) match {
-          case None => throw SynthesisException("No block at this location or some record fields are unknown: " + cmd.pp())
+          case None => throw SynthesisException("No block at this location or some record fields are unknown: " + cmd.pp)
           case Some((h@Block(_, _), pts)) =>
             val newPre = Assertion(pre.phi, pre.sigma - h - mkSFormula(pts.toList))
             val subGoal = goal.spawnChild(newPre, sketch = rest)
             val kont: StmtProducer = PrependFromSketchProducer(cmd)
             List(RuleResult(List(subGoal), kont, this, goal))
-          case Some(what) => throw SymbolicExecutionError("Unexpected heaplet " + what + " found while executing " + cmd.pp())
+          case Some(what) => throw SymbolicExecutionError("Unexpected heaplet " + what + " found while executing " + cmd.pp)
         }
       }
       case _ => Nil
@@ -249,7 +249,7 @@ object SymbolicExecutionRules extends SepLogicUtils with RuleUtils {
         val pre = goal.pre
         val thenGoal = goal.spawnChild(Assertion(pre.phi && cond, pre.sigma), sketch = tb)
         val elseGoal = goal.spawnChild(Assertion(pre.phi && cond.not, pre.sigma), sketch = eb)
-        List(RuleResult(List(thenGoal, elseGoal), BranchProducer(res.toSet, Map.empty, Map.empty, List(cond, cond.not)), this, goal))
+        List(RuleResult(List(thenGoal, elseGoal), BranchProducer(res, Map.empty, Map.empty, List(cond, cond.not)), this, goal))
       }
       case (If(_, _, _, _), _) => {
         throw SynthesisException("Found conditional in the middle of the program. Conditionals only allowed at the end.")

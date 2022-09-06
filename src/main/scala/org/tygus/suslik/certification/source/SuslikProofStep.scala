@@ -53,7 +53,7 @@ object SuslikProofStep {
 
   /** write a value */
   case class Write(stmt: Store) extends SuslikProofStep {
-    override def pp: String = s"Write(${sanitize(stmt.pp())});"
+    override def pp: String = s"Write(${sanitize(stmt.pp)});"
   }
 
   /** weaken the precondition by removing unused formulae */
@@ -90,7 +90,7 @@ object SuslikProofStep {
 
   /** read rule */
   case class Read(ghostFrom: Var, ghostTo: Var, operation: Load) extends SuslikProofStep {
-    override def pp: String = s"Read(${ghostFrom.pp} -> ${ghostTo.pp}, ${sanitize(operation.pp())});"
+    override def pp: String = s"Read(${ghostFrom.pp} -> ${ghostTo.pp}, ${sanitize(operation.pp)});"
   }
 
 //  /** abduce a call */
@@ -115,7 +115,7 @@ case class AbduceCall(
       s"freshToActual: {${fresh_to_actual_sub}}, " +
       s"pre: ${sanitize(f_pre.pp)}, " +
       s"post: ${sanitize(callePost.pp)}, " +
-      s"call: ${sanitize(call.pp())}" +
+      s"call: ${sanitize(call.pp)}" +
       s");"
   }
 }
@@ -143,17 +143,17 @@ case class AbduceCall(
   /** call operation */
   case class Call(subst: Map[Var, Expr], call: Statements.Call) extends SuslikProofStep {
     override def deferredsAction: DeferredsAction = DeferredsAction.PopLayer
-    override def pp: String = s"Call({${subst.mkString(",")}}, ${sanitize(call.pp())});"
+    override def pp: String = s"Call({${subst.mkString(",")}}, ${sanitize(call.pp)});"
   }
 
   /** free operation */
   case class Free(stmt: Statements.Free, size: Int) extends SuslikProofStep {
-    override def pp: String = s"Free(${sanitize(stmt.pp())});"
+    override def pp: String = s"Free(${sanitize(stmt.pp)});"
   }
 
   /** malloc rule */
   case class Malloc(ghostFrom: Var, ghostTo: Var, stmt: Statements.Malloc) extends SuslikProofStep {
-    override def pp: String = s"Malloc(${ghostFrom.pp} -> ${ghostTo.pp}, ${sanitize(stmt.pp())});"
+    override def pp: String = s"Malloc(${ghostFrom.pp} -> ${ghostTo.pp}, ${sanitize(stmt.pp)});"
   }
 
   /** close rule */

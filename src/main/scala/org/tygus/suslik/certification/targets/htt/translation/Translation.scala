@@ -34,7 +34,7 @@ object Translation {
     })
 
     val auxSpecs = env.functions.values.toSeq.map { spec0 =>
-      val FunSpec(name, _, params, pre, post, var_decl) = spec0.resolveOverloading(env)
+      val FunSpec(name, _, _, params, _, pre, post, var_decl) = spec0.resolveOverloading(env)
       val goal = Specifications.topLevelGoal(pre, post, params, name, env, Hole, var_decl)
       goal.translate.toFunspec
     }

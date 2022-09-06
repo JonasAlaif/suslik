@@ -27,9 +27,10 @@ sealed abstract class TopLevelDeclaration extends PrettyPrinting with PureLogicU
   * @param post post-condition
   * @param var_decl local variable of function?
   */
-case class FunSpec(name: Ident, rType: SSLType, params: Formals,
+case class FunSpec(name: Ident, cleanName: Option[Ident], rType: SSLType, params: Formals, returns: Statements.Results,
                    pre: Assertion, post: Assertion,
                    var_decl: Formals = Nil) extends TopLevelDeclaration {
+  val clean: String = cleanName.getOrElse(name)
 
   def resolveOverloading(env: Environment): FunSpec = {
     val gamma0 = params.toMap // initial environment: derived from the formals
@@ -82,18 +83,21 @@ case class FunSpec(name: Ident, rType: SSLType, params: Formals,
     val newVarDecl = var_decl.map({case (v, t) => (v.varSubst(sub), t)})
     val newPre = pre.subst(sub)
     val newPost = post.subst(sub)
-    (sub, this.copy(params = newParams, pre = newPre, post = newPost, var_decl = newVarDecl))
+    val newRets = Statements.Results(Statements.FnResList(this.returns.getResSet.map(sub)))
+    (sub, FunSpec(this.name, this.cleanName, this.rType, newParams, newRets, newPre, newPost, newVarDecl))
   }
 
-  def varSubst(sigma: SubstVar): FunSpec = this.copy(
-    params = this.params.map({ case (v, t) => (v.varSubst(sigma), t)}),
-    pre = this.pre.subst(sigma),
-    post = this.post.subst(sigma))
+  def varSubst(sigma: SubstVar): FunSpec = ??? //this.copy(
+    // params = this.params.map({ case (v, t) => (v.varSubst(sigma), t)}),
+    // pre = this.pre.subst(sigma),
+    // post = this.post.subst(sigma))
 
   def substUnknown(sigma: UnknownSubst): FunSpec = this.copy(
     pre = this.pre.copy(this.pre.phi.substUnknown(sigma), this.pre.sigma),
     post = this.post.copy(this.post.phi.substUnknown(sigma), this.post.sigma)
   )
+
+  def toCall: Statements.Call = Statements.Call(Var(this.clean), this.returns, this.params.map(_._1), None, params.headOption.map(_._1.name == "self").getOrElse(false))
 }
 
 /**

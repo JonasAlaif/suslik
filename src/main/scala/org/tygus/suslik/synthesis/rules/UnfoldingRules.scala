@@ -71,7 +71,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
           case None => None
           case Some((selGoals, heaplet, fresh_subst, sbst)) =>
             val (selectors, subGoals) = selGoals.unzip
-            val kont = BranchProducer(Set.empty, fresh_subst, sbst, selectors) >> ExtractHelper(goal)
+            val kont = BranchProducer(???, fresh_subst, sbst, selectors) >> ExtractHelper(goal)
             Some(RuleResult(subGoals, kont, this, goal))
         }
       } yield s
@@ -95,7 +95,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
         if (goal.env.config.maxCalls :: goal.pre.sigma.callTags).min < goal.env.config.maxCalls
 
         newGamma = goal.gamma ++ (f.params ++ f.var_decl).toMap // Add f's (fresh) variables to gamma
-        call = Call(Var(f.name), List.empty, f.params.map(_._1), l)
+        call = Call(Var(f.clean), f.returns, f.params.map(_._1), l, _f.params.headOption.map(_._1.name == "self").getOrElse(false))
         calleePostSigma = f.post.sigma.setSAppTags(PTag().incrCalls)
         callePost = Assertion(f.post.phi, calleePostSigma)
         suspendedCallGoal = Some(SuspendedCallGoal(goal.pre, goal.post, callePost, call, freshSub))
@@ -104,7 +104,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
         val kont: StmtProducer = AbduceCallProducer(f) >> IdProducer >> ExtractHelper(goal)
 
         ProofTrace.current.add(ProofTrace.DerivationTrail(goal, Seq(newGoal), this,
-          Map("fun" -> f.name, "args" -> f.params.map(_._1.pp))))
+          Map("fun" -> f.clean, "args" -> f.params.map(_._1.pp))))
 
         RuleResult(List(newGoal), kont, this, goal)
       }
@@ -135,7 +135,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
         val calleePostSigma = callGoal.calleePost.sigma.setSAppTags(PTag(callTag))
         val newPre = Assertion(pre.phi && callGoal.calleePost.phi, pre.sigma ** calleePostSigma)
         val newPost = callGoal.callerPost
-        val newGoal = goal.spawnChild(pre = newPre, post = newPost, programVars = goal.programVars ++ call.result, callGoal = None, isCompanionNB = true)
+        val newGoal = goal.spawnChild(pre = newPre, post = newPost, programVars = goal.programVars ++ call.result.getResSet, callGoal = None, isCompanionNB = true)
         val postCallTransition = Transition(goal, newGoal)
         val kont: StmtProducer = PrependProducer(call) >> ExtractHelper(goal)
 

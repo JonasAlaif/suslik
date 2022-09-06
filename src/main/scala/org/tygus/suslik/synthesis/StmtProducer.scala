@@ -63,7 +63,7 @@ case object IdProducer extends StmtProducer {
   */
 case class ConstProducer(s: Statement) extends StmtProducer {
   val arity: Int = 0
-  val fn: Kont = liftToSolutions(_ => s)
+  val fn: Kont = liftToSolutions(_ => s.simplify)
 }
 
 /**
@@ -72,7 +72,7 @@ case class ConstProducer(s: Statement) extends StmtProducer {
 case class PrependProducer(s: Statement) extends StmtProducer {
   val arity: Int = 1
   val fn: Kont = liftToSolutions(stmts => {
-    SeqComp(s, stmts.head).simplify
+    SeqComp(s.simplify, stmts.head).simplify
   })
 }
 
@@ -82,7 +82,7 @@ case class PrependProducer(s: Statement) extends StmtProducer {
 case class PrependFromSketchProducer(s: Statement) extends StmtProducer {
   val arity: Int = 1
   val fn: Kont = liftToSolutions(stmts => {
-    SeqComp(s, stmts.head)
+    SeqComp(s.simplify, stmts.head).simplify
   })
 }
 
@@ -92,7 +92,7 @@ case class PrependFromSketchProducer(s: Statement) extends StmtProducer {
 case class AppendProducer(s: Statement) extends StmtProducer {
   val arity: Int = 1
   val fn: Kont = liftToSolutions(stmts => {
-    SeqComp(stmts.head, s).simplify
+    SeqComp(stmts.head, s.simplify).simplify
   })
 }
 
@@ -118,38 +118,40 @@ case class ExtractHelper(goal: Goal) extends StmtProducer {
       val f = goal.toFunSpec
       // Substitute all unknowns with true
       val finalized = (f.pre.phi.unknowns ++ f.post.phi.unknowns).foldLeft(f)({case (spec, u) => spec.substUnknown(Map(u -> Expressions.eTrue))})
-      val (newHelper, newCall) = Procedure(finalized, stmt)(goal.env.predicates).removeUnusedParams(goal.toCall)
+      val (newHelper, newCall) = Procedure(finalized, stmt, finalized.toCall)(goal.env.predicates)
       // TODO: CopyOut substitution will not be copied across a call boundary!
-      (newCall, newHelper.simplifyParams :: helpers)
+      (newCall, newHelper :: helpers)
     } else
       (stmt, helpers)
   }
 }
 
 // Produces a conditional that branches on the selectors
-case class BranchProducer(results: Set[Var], freshVars: SubstVar, sbst: Subst, selectors: Seq[Expr]) extends StmtProducer {
+case class BranchProducer(results: Results, freshVars: SubstVar, sbst: Subst, selectors: Seq[Expr]) extends StmtProducer {
   val arity: Int = selectors.length
   val fn: Kont = liftToSolutions(stmts => {
     if (stmts.length == 1) stmts.head else {
       val cond_branches = selectors.zip(stmts).reverse
       val ctail = cond_branches.tail
       val finalBranch = cond_branches.head._2
-      ctail.foldLeft(finalBranch) { case (eb, (c, tb)) => If(results.toList, c, tb, eb).simplify }
+      ctail.foldLeft(finalBranch) { case (eb, (c, tb)) =>
+        If(results, c, tb, eb).simplify
+      }
     }
   })
 }
 
 // Produces a conditional that branches on the selectors
-case class MatchProducer(results: Set[Var], tgt: Var, pred: String, freshVars: SubstVar, subst: Subst, selectors: Seq[(Option[String], Seq[Var])]) extends StmtProducer {
+case class MatchProducer(results: Results, tgt: Var, pred: String, freshVars: SubstVar, subst: Subst, selectors: Seq[(Option[String], Seq[Var])]) extends StmtProducer {
   val arity: Int = selectors.length
   val fn: Kont = if (this.arity == 1) SubstMapProducer(subst).fn else liftToSolutions(stmts => {
     val cond_branches = selectors.map(s => s._1 ->
       (s._2)).zip(stmts)
     val arms = cond_branches.map { case ((variant, fields), stmt) =>
-      (Construct(Var(""), pred, variant, fields.map(f => if (f.isTupleLike) freshVars(f) else Expressions.BinaryExpr(Expressions.OpFieldBind, f, freshVars(f)))),
+      (Construct(None, pred, variant, fields.map(f => f -> freshVars(f))),
         stmt)
     }
-    Match(results.toList, tgt, arms).simplify
+    Match(results, tgt, arms).simplify
   })
 }
 
@@ -177,6 +179,16 @@ trait Noop {
   val fn: Kont = _.head
 }
 
+case class CrossFnSubstProducer(from: Var, to: Expr) extends StmtProducer {
+  val arity: Int = 1
+  val fn: Kont = sols => {
+    val (stmt, helpers) = sols.head
+    val vars = stmt.vars
+    val (to_sub, other) = helpers.partition(h => vars(Var(h.name)))
+    val sub = Sub(Map(from -> to))
+    (SeqComp(sub, stmt).simplify, to_sub.map(_.subst(sub)) ++ other)
+  }
+}
 // Captures variable to expression substitutions
 case class SubstProducer(from: Var, to: Expr) extends StmtProducer {
   val arity: Int = 1

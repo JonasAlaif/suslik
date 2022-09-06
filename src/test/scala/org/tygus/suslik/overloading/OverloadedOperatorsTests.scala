@@ -28,9 +28,9 @@ class OverloadedOperatorsTests extends FunSpec with Matchers with SynthesisRunne
       throw SynthesisException("Expected a single synthesis goal")
     }
     val spec = specs.head
-    val FunSpec(name, _, formals, pre, post, var_types) = spec
+    val FunSpec(_, _, _, formals, _, pre, post, var_types) = spec
     val env = Environment(predEnv, predCycles, funcEnv, params, new SynStats(params.timeOut))
-    val goal = topLevelGoal(pre, post, formals, name, env, body, var_types)
+    val goal = topLevelGoal(pre, post, formals, spec.clean, env, body, var_types)
     goal
   }
 

@@ -188,7 +188,7 @@ trait PureLogicUtils {
     var count = 1
     var tmpName = safePrefix
     while (taken.exists(_.name == tmpName)) {
-      tmpName = safePrefix + count
+      tmpName = safePrefix + "_" + count
       count = count + 1
     }
     Var(tmpName)

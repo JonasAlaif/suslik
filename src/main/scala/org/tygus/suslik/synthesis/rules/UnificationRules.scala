@@ -166,13 +166,14 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
       val s2 = goal.post.sigma
 
       // Can e be substituted with d?
-      def canSubst(e: Var, d: Expr) =
+      def canSubst(e: Var, d: Expr) = {
         // e must be an existential var:
         goal.isExistential(e) &&
         // e must not occur in d:
         !d.vars.contains(e) &&
         // if it's a program-level existential, then all vars in d must be program-level
         (!goal.isProgramLevelExistential(e) || d.vars.subsetOf(goal.programVars.toSet))
+      }
 
       def extractSides(l: Expr, r: Expr): Option[(Var, Expr)] = (l, r) match {
         case (l@Var(_), r) if canSubst(l, r) => Some(l, r)
@@ -232,7 +233,7 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
 //        goal.allUniversals.intersect(goal.pre.vars ++ goal.post.vars)
       }
       if (!exCandidates.forall(ex => goal.getType(ex) != LocType))
-        println(s"Have exCandidates (${exCandidates}) with ty LocType (gamma: ${goal.gamma}")
+        println(s"At goal ${goal.rulesApplied} have exCandidates (${exCandidates}) with ty LocType (gamma:\n${goal.gamma}")
       assert(exCandidates.forall(ex => goal.getType(ex) != LocType))
       for {
         ex <- least(exCandidates) // since all existentials must go, no point trying them in different order

@@ -35,7 +35,10 @@ object Specifications extends SepLogicUtils {
     def subst(s: Map[Var, Expr]): Assertion = if (s.isEmpty) this else Assertion(phi.subst(s), sigma.subst(s))
     def setTagAndRef(h: RApp, cycPreds: PredicateCycles): Assertion = Assertion(phi, sigma.setTagAndRef(h, cycPreds))
     def results(progVars: Set[Var]): Set[Var] = phi.collect[NoExists](_.isInstanceOf[NoExists]).flatMap(_.vars).filter(!progVars(_)) ++
-      sigma.rapps.filter(r => !r.isBorrow || !r.ref.head.beenAddedToPost).map(_.field)
+      sigma.sigRapps.filter(r => !r.isBorrow || !r.ref.head.beenAddedToPost).map(_.field)
+
+    def resUnord(progVars: Seq[Var]): FnResList = FnResList(this.results(progVars.toSet))
+    def resOrd(progVars: Seq[Var]): FnResList = FnResList(this.results(progVars.toSet).toSeq)
 
     /**
       * @param takenNames  -- names that are already taken
@@ -190,14 +193,14 @@ object Specifications extends SepLogicUtils {
     override def pp: String = {
       def postWithCall: String = {
         val actualCG = callGoal.get.applySubstitution
-        s"${post.pp.init} ** ...}\n${actualCG.call.pp()}${actualCG.calleePost.pp.init} ** ...}\n...\n${actualCG.callerPost.pp}"
+        s"${post.pp.init} ** ...}\n${actualCG.call.pp}${actualCG.calleePost.pp.init} ** ...}\n...\n${actualCG.callerPost.pp}"
       }
 
 //      s"${label.pp}\n" +
       s"${programVars.map { v => s"${getType(v).pp} ${v.pp}" }.mkString(", ")} " +
         s"[${universalGhosts.map { v => s"${getType(v).pp} ${v.pp}" }.mkString(", ")}]" +
         s"[${existentials.map { v => s"${getType(v).pp} ${v.pp}" }.mkString(", ")}] |-\n" +
-        s"${pre.pp}\n${sketch.pp()}" +
+        s"${pre.pp}\n${sketch.pp}" +
         (if (callGoal.isEmpty) post.pp else postWithCall)
     }
 
@@ -237,18 +240,12 @@ object Specifications extends SepLogicUtils {
 
     // Turn this goal into a helper function specification
     def toFunSpec: FunSpec = {
-      val name = if (this.isTopLevel) this.fname else this.fname + this.rulesApplied.length
+      val name = if (this.isTopLevel) this.fname else this.fname + "_" + this.rulesApplied.length
       val varDecl = this.ghosts.toList.map(v => (v, getType(v))) // Also remember types for non-program vars
-      FunSpec(name, VoidType, this.formals,
+      FunSpec(name, None, VoidType, this.formals, Results(this.rets),
         Assertion(this.pre.phi, this.pre.sigma.toCallGoal(false)),
         Assertion(this.post.phi && this.post.sigma.toFuts(this.gamma)
           , this.post.sigma.toCallGoal(true)), varDecl)
-    }
-
-    // Turn this goal into a helper function call
-    def toCall: Call = {
-      val f = this.toFunSpec
-      Call(Var(f.name), f.result(this.env.predicates), f.params.map(_._1), None)
     }
 
     def toFootprint: Footprint = Footprint(pre, post)
@@ -404,6 +401,9 @@ object Specifications extends SepLogicUtils {
     }
 
     def formals: Formals = pre.sigma.sigRapps.map(_.field).map(v => (v, getType(v)))
+    def rets: FnResList = {
+      if (this.isTopLevel) post.resOrd(this.programVars) else post.resUnord(this.programVars)
+    }
 
     def depth: Int = ancestors.length
 
@@ -435,8 +435,8 @@ object Specifications extends SepLogicUtils {
   def topLabel: GoalLabel = GoalLabel(List(0), List())
 
   def topLevelGoal(funSpec: FunSpec, env: Environment, sketch: Statement): Goal = {
-    val FunSpec(name, _, formals, pre, post, var_decl) = funSpec
-    topLevelGoal(pre, post, formals, name, env, sketch, var_decl)
+    val FunSpec(_, _, _, formals, _, pre, post, var_decl) = funSpec
+    topLevelGoal(pre, post, formals, funSpec.clean, env, sketch, var_decl)
   }
 
   def topLevelGoal(pre: Assertion, post: Assertion, formals: Formals, fname: String, env: Environment, sketch: Statement, vars_decl: Formals): Goal = {
