@@ -264,14 +264,14 @@ case class SApp(pred_with_info: Ident, args: Seq[Expr], tag: PTag, card: Expr) e
 
 }
 
-case class Ref(lft: Named, mut: Boolean, beenAddedToPost: Boolean) extends PrettyPrinting {
-  override def pp: String = if (mut) { s"${lft.pp} mut " } else { s"${lft.pp} " }
+case class Ref(lft: NamedLifetime, mut: Boolean, beenAddedToPost: Boolean) extends PrettyPrinting {
+  override def pp: String = s"${lft.pp} " + (if (mut) "mut " else "")
   def subst(sigma: Map[Var, Expr]): Option[Ref] = {
     for {
       lft <- lft.subst(sigma).getNamed
     } yield this.copy(lft = lft)    
   }
-  def sig: String = if (mut) { s"&${lft.rustLft.get} mut " } else { s"&${lft.rustLft.get} " }
+  def sig: String = s"&${lft.sig}" + (if (mut) "mut " else "")
 }
 
 /**
@@ -287,13 +287,13 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
     assert(lfts.size == 0 || (lfts.size == 1 && lfts.head == f))
     lfts.headOption
   })
-  def potentialTgtLfts: List[Named] = this.ref.flatMap(ref => if (ref.beenAddedToPost) None else Some(ref.lft)) ++ this.fnSpecLfts.flatMap(_.getNamed)
+  def potentialTgtLfts: List[NamedLifetime] = this.ref.flatMap(ref => if (ref.beenAddedToPost) None else Some(ref.lft)) ++ this.fnSpecLfts.flatMap(_.getNamed)
   def popRef: RApp = this.copy(field = Var("de_" + field.name),
     ref = (if (ref.tail.head.mut) ref.head else ref.tail.head.copy(beenAddedToPost = ref.head.beenAddedToPost))
       :: ref.tail.tail,
     tag = this.tag.incrUnrolls("", true)
   )
-  def getBlocker: Option[Named] = blocked.map(_.getNamed.get)
+  def getBlocker: Option[NamedLifetime] = blocked.map(_.getNamed.get)
   val hasBlocker: Boolean = blocked.isDefined && blocked.get.getNamed.isDefined
   val canBeBlocked: Boolean = isBorrow && blocked.isEmpty && ref.head.beenAddedToPost
   val isUnblockable: Boolean = !canBeBlocked
@@ -315,7 +315,7 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
     assert(!hasBlocker)
     if (this.isBorrow && this.ref.head.mut) this.copy(blocked = Some(NilLifetime)) else this
   }
-  def block(lft: Named): RApp = {
+  def block(lft: NamedLifetime): RApp = {
     assert(!hasBlocker)
     this.copy(blocked = Some(lft))
   }
@@ -376,7 +376,8 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
       throw SynthesisException(s"predicate $pred is undefined")
     }
 
-    val newGamma = gamma ++ ref.map(_.lft.getNamed.get.name -> LifetimeType).toMap + (field -> LocType)
+    val refGamma = ref.flatMap(_.lft.getName).map(_ -> LifetimeType).toMap
+    val newGamma = gamma ++ refGamma + (field -> LocType)
     val formals = env.predicates(pred).params
     assert(formals.length == fnSpec.length)
     if (formals.length == fnSpec.length) {
@@ -415,7 +416,7 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
   }
 
   // this is the RApp in pre (source), that is in post (target)
-  def reborrow(that: RApp, outlivesRels: Set[(Named, Named)]): Option[ExprSubst] = {
+  def reborrow(that: RApp, outlivesRels: Set[(NamedLifetime, NamedLifetime)]): Option[ExprSubst] = {
     assert(that.ref.head.beenAddedToPost || that.blocked.isEmpty)
     if (
       this.canBeBlocked && !this.priv &&
@@ -427,7 +428,7 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
       this.ref.tail.map(_.mut) == that.ref.tail.map(_.mut) &&
         // this.fnSpecLfts == that.fnSpecLfts &&
       // Lifetimes existenatials or
-      (!this.ref.head.lft.fa || !that.ref.head.lft.fa ||
+      (this.ref.head.lft.isExistential || that.ref.head.lft.isExistential || this.ref.head.lft == StaticLifetime ||
       // Lifetimes outlive
         this.ref.head.lft == that.ref.head.lft || outlivesRels.contains((that.ref.head.lft, this.ref.head.lft)))
     ) {
@@ -462,7 +463,7 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   // RApps for the function signature
   def sigRapps: List[RApp] = for (b@RApp(false, _, _, _, _, _, _) <- chunks) yield b
 
-  def potentialTgtLfts: Set[Named] = rapps.flatMap(_.potentialTgtLfts).toSet
+  def potentialTgtLfts: Set[NamedLifetime] = rapps.flatMap(_.potentialTgtLfts).toSet
   def borrows: List[RApp] = rapps.filter(_.isBorrow)
   def owneds: List[RApp] = rapps.filter(!_.isBorrow)
   def prims(predicates: PredicateEnv): List[RApp] = rapps.filter(_.isPrim(predicates))

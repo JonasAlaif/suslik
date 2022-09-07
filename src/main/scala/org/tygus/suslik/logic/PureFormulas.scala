@@ -34,9 +34,9 @@ case class PFormula(conjuncts: SortedSet[Expr]) extends PrettyPrinting with HasE
 
   def unknowns: Set[Unknown] = collect[Unknown](_.isInstanceOf[Unknown])
   // TODO separate outlives rels and blocked rels
-  def outlivesRels: Set[(Named, Named)] = {
+  def outlivesRels: Set[(NamedLifetime, NamedLifetime)] = {
     var rels = this.collect[BinaryExpr](p => p.isInstanceOf[BinaryExpr] && p.asInstanceOf[BinaryExpr].op == OpOutlived)
-      .map(p => p.left.asInstanceOf[Named] -> p.right.asInstanceOf[Named])
+      .map(p => p.left.asInstanceOf[NamedLifetime] -> p.right.asInstanceOf[NamedLifetime])
     var changed = true
     while (changed) {
       changed = false

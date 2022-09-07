@@ -210,7 +210,16 @@ case class SubstVarProducer(from: Var, to: Var) extends StmtProducer with Noop
 case class UnfoldProducer(app: SApp, selector: Expr, asn: Assertion, substEx: SubstVar) extends StmtProducer with Noop
 
 // Abduce Call
-case class AbduceCallProducer(f: FunSpec) extends StmtProducer with Noop
+case class AbduceCallProducer(f: FunSpec) extends StmtProducer {
+  val arity: Int = 1
+  val fn: Kont = liftToSolutions(stmts => {
+    stmts.head match {
+      case c: Call => SeqComp(c.callGoal, c.copy(callGoal = Hole)).simplify
+      case SeqComp(c: Call, s2) =>
+        SeqComp(SeqComp(c.callGoal, c.copy(callGoal = Hole)).simplify, s2).simplify
+    }
+  })
+}
 
 // Captures entailments emitted by SMT
 case class PureEntailmentProducer(prePhi: PFormula, postPhi: PFormula, gamma: Gamma) extends StmtProducer with Noop

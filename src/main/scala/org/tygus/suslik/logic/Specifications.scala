@@ -183,7 +183,9 @@ object Specifications extends SepLogicUtils {
                   callGoal: Option[SuspendedCallGoal],
                   rulesApplied: List[Rules.SynthesisRule],
                   hasProgressed: Boolean,
-                  isCompanionNB: Boolean
+                  isCompanionNB: Boolean,
+                  maxPrevCost: Int = 0,
+                  extraCost: Int = 0
                  )
 
     extends PrettyPrinting with PureLogicUtils {
@@ -261,7 +263,8 @@ object Specifications extends SepLogicUtils {
                    sketch: Statement = this.sketch,
                    callGoal: Option[SuspendedCallGoal] = this.callGoal,
                    hasProgressed: Boolean = false,
-                   isCompanionNB: Boolean = false)(implicit rule: Rules.SynthesisRule): Goal = {
+                   isCompanionNB: Boolean = false,
+                   extraCost: Int = 0)(implicit rule: Rules.SynthesisRule): Goal = {
 
       // Resolve types
       val gammaFinal = resolvePrePost(gamma, env, pre, post)
@@ -279,7 +282,8 @@ object Specifications extends SepLogicUtils {
       Goal(preSimple, postSimple, constraints,
         gammaFinal, programVars, newUniversalGhosts,
         this.fname, this.label.bumpUp(childId), Some(this), env, sketch,
-        newCallGoal, rule :: rulesApplied, hasProgressed, isCompanionNB)
+        newCallGoal, rule :: rulesApplied, hasProgressed, isCompanionNB,
+        this.cost max this.maxPrevCost, extraCost)
     }
 
     // Goal that is eagerly recognized by the search as unsolvable
@@ -415,7 +419,10 @@ object Specifications extends SepLogicUtils {
       * for now just the number of heaplets in pre and post
       */
     //    lazy val cost: Int = pre.cost.max(post.cost)
-    lazy val cost: Int = callGoal match {
+    def cost: Int =
+      if (this.extraCost > 0) this.extraCost + (this.maxPrevCost max this.actualCost)
+      else this.actualCost
+    lazy val actualCost: Int = callGoal match {
         case None => pre.cost + post.postCost(pre.sigma.borrows)  // + existentials.size //
         case Some(cg) => 10 + cg.callerPre.cost + cg.callerPost.postCost(pre.sigma.borrows) // + (cg.callerPost.vars -- allUniversals).size //
       }
@@ -449,7 +456,7 @@ object Specifications extends SepLogicUtils {
     Goal(pre1, post1, UnfoldConstraints(),
       gamma, formalNames, ghostUniversals,
       fname, topLabel, None, env.resolveOverloading(), sketch.resolveOverloading(gamma),
-      None, List.empty, hasProgressed = false, isCompanionNB = true)
+      None, List.empty, hasProgressed = false, isCompanionNB = true, 0, 0)
   }
 
   /**

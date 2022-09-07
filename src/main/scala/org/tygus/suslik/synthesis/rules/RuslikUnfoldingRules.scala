@@ -233,7 +233,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         if (goal.env.config.maxCalls :: goal.pre.sigma.callTags).min < goal.env.config.maxCalls
       } yield {
         val newGamma = goal.gamma ++ (f.params ++ f.var_decl).toMap // Add f's (fresh) variables to gamma
-        val call = Call(Var(f.clean), f.returns, f.params.map(_._1), l, _f.params.headOption.map(_._1.name == "self").getOrElse(false))
+        val call = Call(Var(f.clean), f.returns, f.params.map(_._1), l, _f.params.headOption.map(_._1.name == "self").getOrElse(false), Skip)
         val calleePostSigma = f.post.sigma.setSAppTags(PTag().incrCalls)
         val callePost = Assertion(f.post.phi, calleePostSigma)
         val suspendedCallGoal = Some(SuspendedCallGoal(goal.pre, goal.post, callePost, call, freshSub))
@@ -288,12 +288,13 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           assert(fieldNames.length == argNames.length)
           fieldNames.zip(argNames)
         }
+        val stmt = if (ip.isPrim) SubstProducer(construct_args(0)._1, construct_args(0)._2)
+          else AppendProducer(Construct(Some(h.field), ip.clean, name, construct_args))
         val kont =
           UnfoldProducer(h.toSApp, selector, Assertion(asn.phi, asn.sigma), fresh_subst ++ fieldSubst) >>
-          (if (ip.isPrim) SubstProducer(construct_args(0)._1, construct_args(0)._2)
-          else AppendProducer(Construct(Some(h.field), ip.clean, name, construct_args))) >>
-          ExtractHelper(goal)
-        RuleResult(List(goal.spawnChild(post = newPost, fut_subst = fut_subst, constraints = c,
+          stmt >> ExtractHelper(goal)
+        val constants = if (goal.callGoal.isEmpty) c else goal.constraints
+        RuleResult(List(goal.spawnChild(post = newPost, fut_subst = fut_subst, constraints = constants,
             // Hasn't progressed since we didn't progress toward termination
             // Could be used as a companion, but currently won't since it isn't possible to make progess after closing (no more open)
             hasProgressed = false, isCompanionNB = true)), kont, this, goal)
@@ -376,7 +377,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         src <- goal.post.sigma.borrows
         (tgt, sub) <- goal.potentialReborrows(src)
       } yield {
-        assert(tgt.ref.head.lft.fa) // Unsupported as of now (how would it happen that we're trying to create a borrow with existential lft - could just kill?)
+        assert(!tgt.ref.head.lft.isExistential) // Unsupported as of now (how would it happen that we're trying to create a borrow with existential lft - could just kill?)
         val tgtPred = goal.env.predicates(tgt.pred)
         assert(tgtPred.params.length == src.fnSpec.length)
         val fut_subst = goal.onExpiries.flatMap(_.reborrowSub(tgt.field, src.field, tgt.fnSpec)).toMap
@@ -500,8 +501,8 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           val newPre = Assertion(goal.pre.phi,
             (goal.pre.sigma - src) ** src.setTag(src.tag.incrCalls)
           )
-          val fut_subst = if (tgt.ref.head.lft.name == src.ref.head.lft.name) Map.empty[Var, Expr]
-                          else Map(tgt.ref.head.lft.name -> src.ref.head.lft.name)
+          val fut_subst = if (tgt.ref.head.lft == src.ref.head.lft) Map.empty[Var, Expr]
+                          else Map(tgt.ref.head.lft.asInstanceOf[Named].name -> src.ref.head.lft.asInstanceOf[Named].name)
           (newPre, fut_subst, goal.callGoal)
         }
         // TODO: use?
@@ -531,11 +532,11 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       val usedLfts = goal.pre.sigma.rapps.flatMap(r => r.fnSpec.flatMap(_.collect[Named](_.isInstanceOf[Named])) ++ r.ref.map(_.lft)).toSet ++
       // Should not have to outlive some other lft
         goal.post.phi.outlivesRels.map(_._2)
-      val tryToKill = goal.pre.sigma.rapps.flatMap(_.getBlocker).filter(!_.fa)
+      val tryToKill = goal.pre.sigma.rapps.flatMap(_.getBlocker).filter(_.isExistential)
       val toKill = tryToKill.find(!usedLfts(_))
       if (toKill.isEmpty) Nil
       else {
-        val newGoal = goal.spawnChild(fut_subst = Map(toKill.get.name -> NilLifetime))
+        val newGoal = goal.spawnChild(fut_subst = Map(toKill.get.asInstanceOf[Named].name -> NilLifetime))
         List(RuleResult(List(newGoal), IdProducer, this, goal))
       }
     }
@@ -555,6 +556,25 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       )
       if (existsSat) return Nil
       List(RuleResult(List(goal.unsolvableChild), IdProducer, this, goal))
+    }
+  }
+
+  /*
+  Drop: drop owned object in pre
+   */
+  object Drop extends SynthesisRule with InvertibleRule {
+
+    override def toString: Ident = "Drop"
+
+    def apply(goal: Goal): Seq[RuleResult] = {
+      if (goal.callGoal.isDefined || !goal.post.sigma.chunks.isEmpty) return Nil
+      val owneds = goal.pre.sigma.owneds
+      if (owneds.isEmpty) return Nil
+      val ownedToDrop = goal.pre.sigma.owneds.head
+      val newPre = Assertion(goal.pre.phi, goal.pre.sigma - ownedToDrop)
+      val cost = if (ownedToDrop.isPrim(goal.env.predicates)) 0 else 20
+      val newGoal = goal.spawnChild(pre = newPre, extraCost = cost)
+      List(RuleResult(List(newGoal), IdProducer, this, goal))
     }
   }
 }

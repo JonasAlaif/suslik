@@ -369,6 +369,7 @@ object Expressions {
         case t@TupleExpr(exprs) =>
           val acc1 = if (p(t)) acc + t.asInstanceOf[R] else acc
           exprs.foldLeft(acc1)((a,e) => collector(a)(e._1))
+        case StaticLifetime if p(StaticLifetime) => acc + StaticLifetime.asInstanceOf[R]
         case NilLifetime if p(NilLifetime) => acc + NilLifetime.asInstanceOf[R]
         case c@IntConst(_) if p(c) => acc + c.asInstanceOf[R]
         case c@LocConst(_) if p(c) => acc + c.asInstanceOf[R]
@@ -454,6 +455,7 @@ object Expressions {
       case NoExists(_) => if (BoolType.conformsTo(target)) Some(gamma) else None
       case OnExpiry(_, _, _, _, ty) => if (ty.conformsTo(target)) Some(gamma) else None
       case Named(lft, _) => if (LifetimeType.conformsTo(target)) lft.resolve(gamma, target) else None
+      case StaticLifetime => if (LifetimeType.conformsTo(target)) Some(gamma) else None
       case NilLifetime => if (LifetimeType.conformsTo(target)) Some(gamma) else None
       case BoolConst(_) => if (BoolType.conformsTo(target)) Some(gamma) else None
       case LocConst(_) => if (LocType.conformsTo(target)) Some(gamma) else None
@@ -546,6 +548,7 @@ object Expressions {
       | AlwaysExistsVar(_)
       | Named(_, _)
       | OnExpiry(_, _, _, _, _)
+      | StaticLifetime
       | NilLifetime
       | BoolConst(_)
       | LocConst(_)
@@ -738,17 +741,23 @@ object Expressions {
 
   // Program-level lifetime
   sealed abstract class Lifetime extends Expr {
-    def getNamed: Option[Named]
+    def getNamed: Option[NamedLifetime]
     def isNil: Boolean = getNamed.isEmpty
     def subst(sigma: Subst): Lifetime
     override def getType(gamma: Gamma): Option[SSLType] = Some(LifetimeType)
     def rustLft: Option[String] = None
   }
+  // Program-level lifetime
+  sealed abstract class NamedLifetime extends Lifetime {
+    def sig: String
+    def isExistential: Boolean = this.getAlwaysExists.isDefined
+    override def getNamed: Option[NamedLifetime] = Some(this)
+    def getName: Option[Var]
+  }
   // Named lifetime, universally quant or exists
-  case class Named(name: Var, fa: Boolean) extends Lifetime {
+  case class Named(name: Var, fa: Boolean) extends NamedLifetime {
     override def pp: String = (if (!fa) "(" else "") + name.pp + (if (!fa) ")" else "")
-
-    override def getNamed: Option[Named] = Some(this)
+    override def sig: String = if (this.rustLft.get.startsWith("'anon")) "" else this.rustLft.get + " "
     override def subst(sigma: Subst): Lifetime = sigma.get(this.name) match {
       // If Var then its due to a refresh (e.g. when creating companion), pick will also cause this but that shouldn't matter so late
       case Some(e) => if (e.isInstanceOf[Var]) Named(e.asInstanceOf[Var], false) else {
@@ -757,13 +766,19 @@ object Expressions {
       }
       case None => this
     }
-      
+
     override def rustLft: Option[String] = Some("'" + pp.dropRight(2))
-    override def getAlwaysExists: Option[Var] = if (!fa) Some(name) else None
-    
+    override def getAlwaysExists: Option[Var] = if (!this.fa) Some(name) else None
+    override def getName: Option[Var] = Some(this.name)
+  }
+  case object StaticLifetime extends NamedLifetime {
+    override def sig: String = if (this.rustLft.get.startsWith("'anon")) "" else this.rustLft.get + " "
+    override def subst(sigma: Subst): Lifetime = this
+    override def rustLft: Option[String] = Some("'static")
+    override def getName: Option[Var] = None
   }
   case object NilLifetime extends Lifetime {
-    override def getNamed: Option[Named] = None
+    override def getNamed: Option[NamedLifetime] = None
     override def subst(sigma: Subst): Lifetime = this
   }
 
@@ -803,12 +818,16 @@ object Expressions {
       case OpOutlived if !(left.isInstanceOf[Lifetime] && right.isInstanceOf[Lifetime]) => ???
       case OpEq | OpBoolEq | OpLftEq | OpSetEq | OpIntervalEq |
         OpLeq | OpOutlived | OpSubset | OpSubinterval if left == right => BoolConst(true)
-      case OpLftEq | OpOutlived => (left, right) match {
-        case (Named(left, _), Named(right, _)) if left == right => BoolConst(true)
-        case (left, NilLifetime) if op == OpOutlived => BinaryExpr(OpLftEq, left, right).simplify
-        case (NilLifetime, right) if op == OpOutlived => BoolConst(true)
+      case OpOutlived => (left, right) match {
+        case _ if left == right => BoolConst(true)
+        case (StaticLifetime, _) => BinaryExpr(OpLftEq, left, right).simplify
+        case (_, StaticLifetime) => BoolConst(true)
+        case (NilLifetime, _) => BoolConst(true)
+        case (_, NilLifetime) => BinaryExpr(OpLftEq, left, right).simplify
         case _ => this
       }
+      case OpLftEq if left == right => BoolConst(true)
+      case OpLftEq => this
       case OpEq => (left, right) match {
         case (IntConst(left), IntConst(right)) if left != right => BoolConst(false)
         case (TupleExpr(left), TupleExpr(right)) if left.length != right.length => BoolConst(false)

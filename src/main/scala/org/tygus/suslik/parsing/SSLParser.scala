@@ -124,7 +124,7 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
   def noExists: Parser[NoExists] = "#" ~> "[" ~> expr <~ "]" ^^ { case e => NoExists(e) }
   def onExpiry: Parser[OnExpiry] = rep1("^" ^^^ true | "*" ^^^ false) ~ ("(" ~> typeParser ~ varParser <~ ")") ~ ("[" ~> numericLit <~ "]") ^^ { case futs ~ (ty ~ f) ~ i => OnExpiry(None, futs.reverse, f, Integer.parseInt(i), ty) }
 
-  def lft: Parser[Named] = "&" ~> ident ^^ (l => Named(Var(l + "-L"), true))
+  def lft: Parser[NamedLifetime] = "&" ~> ident ^^ (l => if (l == "static") StaticLifetime else Named(Var(l + "-L"), true))
 
   def ref: Parser[Ref] =
     lft ~ opt("mut") ^^ { case l ~ mut => Ref(l, mut.isDefined, false) }
@@ -212,7 +212,7 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
     }
       // Call
       ||| opt("let" ~> ("(" ~> repsep(varParser, ",") <~ ")") <~ "=") ~ varParser ~ ("(" ~> repsep(expr, ",") <~ ")" <~ ";") ^^ {
-      case result ~ fun ~ args => Call(fun, Results(FnResList(result.getOrElse(Nil))), args.map(desugar), None, false)
+      case result ~ fun ~ args => Call(fun, Results(FnResList(result.getOrElse(Nil))), args.map(desugar), None, false, Skip)
     }
       // if
       ||| ("if" ~> "(" ~> expr <~ ")") ~ ("{" ~> codeWithHoles <~ "}") ~ ("else" ~> "{" ~> codeWithHoles <~ "}") ^^ {

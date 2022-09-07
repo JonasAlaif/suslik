@@ -79,7 +79,7 @@ object Statements {
             builder.append(mkSpaces(offset)).append(if (m.isRes) "}" else "};")
           case Return(ret) =>
             builder.append(doRet(ret.getRes))
-          case c@Call(fun, result, args, _, rec) =>
+          case c@Call(fun, result, args, _, rec, _) =>
             val res = if (c.isRes || result.getRes.isEmpty) ""
               else s"let ${doRet(result.getRes)} = "
             val (receiver, cargs) = if (!rec) ("", args)
@@ -145,7 +145,7 @@ object Statements {
           acc
         case Free(x) =>
           acc ++ x.collect(p)
-        case Call(fun, res, args, _, _) =>
+        case Call(fun, res, args, _, _, _) =>
           acc ++ fun.collect(p) ++ res.getResSet.flatMap(_.collect(p)).toSet ++ args.flatMap(_.collect(p)).toSet
         case Return(res) => acc ++ res.getExprSet.flatMap(_.collect(p)).toSet
         case SeqComp(s1,s2) =>
@@ -184,7 +184,7 @@ object Statements {
         Free(x.subst(sigma).asInstanceOf[Var])
       }
       case Return(ret) => Return(ret.subst(sigma))
-      case Call(fun, res, args, companion, rec) => Call(fun, res, args.map(_.subst(sigma)), companion, rec)
+      case c:Call => c.copy(args = c.args.map(_.subst(sigma)))
       case If(r, cond, tb, eb) => If(r, cond.subst(sigma), tb.subst(sigma), eb.subst(sigma))
       case Guarded(cond, b) => Guarded(cond.subst(sigma), b.subst(sigma))
     }
@@ -194,7 +194,7 @@ object Statements {
         Construct(to.map(_.varSubst(sigma).asInstanceOf[Var]), pred, variant, args)
       }
       case Match(results, tgt, arms) => Match(results.varSubst(sigma), tgt, arms)
-      case Call(fun, result, args, companion, rec) => Call(fun, result.varSubst(sigma), args, companion, rec)
+      case c:Call => c.copy(result = c.result.varSubst(sigma))
       // case SeqComp(s1, s2) => SeqComp(s1.substRes(sigma), s2.substRes(sigma))
       case If(results, cond, tb, eb) => If(results.varSubst(sigma), cond, tb, eb)
       case _ => this
@@ -212,7 +212,7 @@ object Statements {
       case Match(_, _, arms) => 1 + arms.map(a => a._1.size + a._2.size).sum
       case Malloc(to, _, _) => 1 + to.size
       case Free(x) => 1 + x.size
-      case Call(_, res, args, _, _) => 1 + res.getResSet.size + args.map(_.size).sum
+      case Call(_, res, args, _, _, _) => 1 + res.getResSet.size + args.map(_.size).sum
       case Return(res) => res.size
       case SeqComp(s1,s2) => s1.size + s2.size
       case If(_, cond, tb, eb) => 1 + cond.size + tb.size + eb.size
@@ -253,7 +253,7 @@ object Statements {
         (If(results, cond, newTb, newEb).doResSimplify(sub), newCmap.live(cond.vars))
       }
       case Store(to, offset, e) => (this, cmap.live(e.vars ++ to.vars))
-      case Call(fun, results, args, _, _) => {
+      case Call(fun, results, args, _, _, _) => {
         val resSet = results.getExprSet.flatMap(_.vars)
         val sub = doVarSimp(resSet, cmap)
         val newCmap = if (fun.name == fname) cmap.dead(resSet).live(args.map(_.vars))
@@ -312,7 +312,7 @@ object Statements {
 
     // Companions of all calls inside this statement
     def companions: List[GoalLabel] = atomicStatements.flatMap {
-      case Call(_, _, _, Some(comp), _) => List(comp)
+      case Call(_, _, _, Some(comp), _, _) => List(comp)
       case _ => Nil
     }
 
@@ -356,7 +356,7 @@ object Statements {
       case Error => true
       case Skip => true
       case Construct(None, _, _, _) => true
-      case Call(_, res, _, _, _) => res.r.isEmpty
+      case Call(_, res, _, _, _, _) => res.r.isEmpty
       case Match(res, _, _) => res.r.isEmpty
       case If(res, _, _, _) => res.r.isEmpty
       case Store(_, 666, _) => true
@@ -465,11 +465,20 @@ object Statements {
   case class Store(to: Expr, offset: Int, e: Expr) extends Statement
 
   // f(args)
-  case class Call(fun: Var, result: Results, args: Seq[Expr], companion: Option[GoalLabel], hasReceiver: Boolean) extends Statement
+  case class Call(fun: Var, result: Results, args: Seq[Expr], companion: Option[GoalLabel], hasReceiver: Boolean, callGoal: Statement) extends Statement
 
   // s1; s2
   case class SeqComp(s1: Statement, s2: Statement) extends Statement {
     override def simplify: Statement = (s1, s2) match {
+      // Move compositions into callGoal
+      case (s1, c:Call) if c.callGoal != Hole => c.copy(callGoal = SeqComp(s1, c.callGoal).simplify)
+      case (s1, SeqComp(c:Call, s2)) if c.callGoal != Hole =>
+        SeqComp(c.copy(callGoal = SeqComp(s1, c.callGoal).simplify), s2)
+      case (SeqComp(c:Call, s1), s2) if c.callGoal != Hole =>
+        SeqComp(c.copy(callGoal = SeqComp(c.callGoal, s2).simplify), s1)
+      // Preserve skip after unfinished call
+      case (c:Call, Skip) if c.callGoal != Hole => this
+      // Normal:
       case (Skip, _) => s2 // Remove compositions with skip
       case (_, Skip) => s1
       case (Error, _) => Error
@@ -488,8 +497,8 @@ object Statements {
       // Returns:
       case (Construct(to, pred, variant, args), Return(ret)) if to.toSet == ret.getExprSet =>
         Construct(None, pred, variant, args)
-      case (Call(fun, res, args, comp, rec), Return(ret)) if res.compareTo(ret) =>
-        Call(fun, Results(), args, comp, rec)
+      case (c:Call, Return(ret)) if c.result.compareTo(ret) =>
+        c.copy(result = Results())
       case (If(res, cond, tb, fb), Return(ret)) if res.compareTo(ret) =>
         If(Results(), cond, tb, fb).addResToArms(ret)
       case (Match(res, tgt, arms), Return(ret)) if res.compareTo(ret) =>
@@ -572,7 +581,8 @@ object Statements {
     val (name: String, tp: SSLType, formals: Formals) = (f.clean, f.rType, f.params)
 
     def pp: String = {
-      val generics = if (f.lfts.size == 0) "" else s"<${f.lfts.mkString(", ")}>"
+      val lfts = f.lfts.filter(lft => !lft.startsWith("'anon") && lft != "'static")
+      val generics = if (lfts.size == 0) "" else s"<${lfts.mkString(", ")}>"
       val returns =
         if (f.rustReturns.length == 0) ""
         else if (f.rustReturns.length == 1) s"-> ${f.rustReturns.head._2.map(_.sig).mkString("")}${f.rustReturns.head._3} "

@@ -97,7 +97,7 @@ case class FunSpec(name: Ident, cleanName: Option[Ident], rType: SSLType, params
     post = this.post.copy(this.post.phi.substUnknown(sigma), this.post.sigma)
   )
 
-  def toCall: Statements.Call = Statements.Call(Var(this.clean), this.returns, this.params.map(_._1), None, params.headOption.map(_._1.name == "self").getOrElse(false))
+  def toCall: Statements.Call = Statements.Call(Var(this.clean), this.returns, this.params.map(_._1), None, params.headOption.map(_._1.name == "self").getOrElse(false), Statements.Skip)
 }
 
 /**

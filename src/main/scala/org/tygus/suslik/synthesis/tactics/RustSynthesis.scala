@@ -26,7 +26,7 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
       (if (goal.post.sigma.rapps.nonEmpty)
         List(LogicalRules.FrameBorrowsFinal,
           UnificationRules.HeapUnifyBorrows,
-          // RuslikUnfoldingRules.Close,
+          RuslikUnfoldingRules.Close,
           RuslikUnfoldingRules.ReborrowCall)
       else
         List(UnfoldingRules.CallRule,
@@ -85,6 +85,7 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
     } else {
       List(
         RuslikUnfoldingRules.CannotConstruct,
+        RuslikUnfoldingRules.Drop,
         LogicalRules.EmpRule,
         UnificationRules.Pick,
       )
