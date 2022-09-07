@@ -74,7 +74,10 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
   def postCost(preBrrws: List[RApp]): Int = this match {
     case SApp(_, _, t@PTag(c, u, _), _) => 2 + 4*(c + u + t.recursions)
     case r@RApp(_, _, _, _, _, _, _) if r.isBorrow && r.ref.head.beenAddedToPost => {
-      2*preBrrws.filter(_.field.name.endsWith(r.field.name)).map(_.tag.unrolls - r.tag.unrolls).max
+      // Punish not expiring early
+      2*preBrrws.filter(_.field.name.endsWith(r.field.name)).map(_.tag.unrolls - r.tag.unrolls)
+      // TODO: There may be no fields in a ref that was unfolded in the pre, handle this inelegantly by defaulting to 1
+        .reduceOption(_ max _).getOrElse(1)
     }
     case r@RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) => {
       assert(c == 0)

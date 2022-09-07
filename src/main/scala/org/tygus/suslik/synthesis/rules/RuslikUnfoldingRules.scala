@@ -266,7 +266,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val (clauses, _, fresh_subst, fieldSubst, fut_subst, ip) = loadPred(h, goal.vars, goal.env.predicates, false, goal.onExpiries, goal.env.predicateCycles)
         (InductiveClause(name, selector, asn), idx) <- clauses.zipWithIndex
         if selector != BoolConst(false)
-        if asn.sigma.rapps.filter(_.priv).length == (if (clauses.length > 1) 1 else 0)
+        if asn.sigma.rapps.filter(r => r.priv && !r.field.name.startsWith("disc")).length == 0
       } yield {
         assert(!h.hasBlocker)
         // TODO: hacky way to remove discriminant
@@ -471,7 +471,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     def apply(goal: Goal): Seq[RuleResult] = {
       if (goal.callGoal.isEmpty) return Nil
       for {
-        (src, c, isCyc) <- goal.constraints.canUnfoldPre(goal)
+        src <- goal.pre.sigma.borrows
         if src.isBorrow
         tgt <- goal.post.sigma.borrows
         sub <- src.reborrow(tgt, goal.pre.phi.outlivesRels)
@@ -513,7 +513,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         // println("Post: " + goal.post.pp)
         // println("Calee Post: " + goal.callGoal.get.calleePost.pp)
         RuleResult(List(goal.spawnChild(
-          pre = newPre, post = newPost, fut_subst = fut_subst, constraints = c, callGoal = newCG
+          pre = newPre, post = newPost, fut_subst = fut_subst, callGoal = newCG
         )), IdProducer, this, goal)
       }
     }

@@ -360,7 +360,7 @@ object Specifications extends SepLogicUtils {
     def ghosts: Set[Var] = pre.vars ++ post.vars -- programVars
 
     // Variables used in the suspended call (if it exists)
-    private def callVars: Set[Var] = callGoal.map(_.actualCall.args.flatMap(_.vars).toSet).getOrElse(Set())
+    private def callVars: Set[Var] = Set()//callGoal.map(_.actualCall.args.flatMap(_.vars).toSet).getOrElse(Set())
 
     // Currently used ghosts that appear only in the postcondition (or suspened call)
     def existentials: Set[Var] = post.vars ++ callVars -- allUniversals
