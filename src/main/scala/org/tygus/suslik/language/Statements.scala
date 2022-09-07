@@ -646,6 +646,8 @@ object Statements {
     // var subst: Subst = Map.empty
     def isEmpty: Boolean = res.getResSet.isEmpty
     def compareTo(other: Results): Boolean = {
+      if (this.r.isDefined != other.r.isDefined) return false
+      if (this.r.isEmpty && other.r.isEmpty) return true
       (this.res, other.res) match {
         case (OrderedRes(res1), OrderedRes(res2)) => res1.map(_.subst(this.sub)) == res2.map(_.subst(other.sub))
         case (res1, res2) =>
