@@ -462,6 +462,7 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
 
   // RApps for the function signature
   def sigRapps: List[RApp] = for (b@RApp(false, _, _, _, _, _, _) <- chunks) yield b
+  def toFormals: RustFormals = this.sigRapps.map(r => (r.field, r.ref, r.pred))
 
   def potentialTgtLfts: Set[NamedLifetime] = rapps.flatMap(_.potentialTgtLfts).toSet
   def borrows: List[RApp] = rapps.filter(_.isBorrow)

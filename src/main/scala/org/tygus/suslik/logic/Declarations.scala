@@ -27,7 +27,7 @@ sealed abstract class TopLevelDeclaration extends PrettyPrinting with PureLogicU
   * @param post post-condition
   * @param var_decl local variable of function?
   */
-case class FunSpec(name: Ident, cleanName: Option[Ident], rType: SSLType, params: Formals, returns: Statements.Results,
+case class FunSpec(name: Ident, cleanName: Option[Ident], rustParams: RustFormals, returns: Statements.Results,
                    pre: Assertion, post: Assertion,
                    var_decl: Formals = Nil) extends TopLevelDeclaration {
   val clean: String = cleanName.getOrElse(name)
@@ -44,8 +44,12 @@ case class FunSpec(name: Ident, cleanName: Option[Ident], rType: SSLType, params
     gamma
   }
 
-  def rustParams(implicit predicates: PredicateEnv): RustFormals = pre.sigma.sigRapps.map(r => (r.field, r.ref, predicates(r.pred).clean))
-  def rustReturns(implicit predicates: PredicateEnv): RustFormals = post.sigma.rapps.filter(r => pre.sigma.rapps.forall(_.field != r.field)).map(r => (r.field, r.ref, predicates(r.pred).clean))
+  def params: Formals = rustParams.map(_._1 -> LocType)
+  def rustReturns(implicit predicates: PredicateEnv): RustFormals =
+    returns.getResNoSub.map(r => {
+      val rapp = post.sigma.rapps.find(rapp => rapp.field == r).get
+      (rapp.field, rapp.ref, predicates(rapp.pred).clean)
+    }).toList
   def lfts: Set[String] = (pre.sigma.sigRapps ++ post.sigma.sigRapps).flatMap(r => r.ref.map(_.lft) ++ r.fnSpecLfts).map(_.rustLft.get).toSet
 
   def result(implicit predicates: PredicateEnv): List[Var] = rustReturns.map(_._1)
@@ -62,7 +66,6 @@ case class FunSpec(name: Ident, cleanName: Option[Ident], rType: SSLType, params
 
   override def pp: String = {
     (""
-      + s"${rType.pp} "
       + s"$name(${params.map { case (t, i) => s"${t.pp} ${i.pp}" }.mkString(", ")}) "
       + s"[${var_decl.map { case (t, i) => s"${t.pp} ${i.pp}" }.mkString(", ")}]\n"
       + s"${pre.pp}\n"
@@ -72,19 +75,18 @@ case class FunSpec(name: Ident, cleanName: Option[Ident], rType: SSLType, params
 
 
   def ppInline: String = {
-    s"${rType.pp} " +
         s"$name(${params.map { case (t, i) => s"${t.pp} ${i.pp}" }.mkString(", ")})" +
         s" ${pre.pp} ${post.pp}"
   }
 
   def refreshAll(taken: Set[Var], suffix: String = ""): (SubstVar, FunSpec) = {
     val sub = refreshVars((post.vars ++ pre.vars ++ params.map(_._1).toSet).toList, taken, suffix)
-    val newParams = params.map({case (v, t) => (v.varSubst(sub), t)})
+    val newParams = rustParams.map({case (v, r, t) => (v.varSubst(sub), r, t)})
     val newVarDecl = var_decl.map({case (v, t) => (v.varSubst(sub), t)})
     val newPre = pre.subst(sub)
     val newPost = post.subst(sub)
     val newRets = Statements.Results(Statements.FnResList(this.returns.getResSet.map(sub)))
-    (sub, FunSpec(this.name, this.cleanName, this.rType, newParams, newRets, newPre, newPost, newVarDecl))
+    (sub, FunSpec(this.name, this.cleanName, newParams, newRets, newPre, newPost, newVarDecl))
   }
 
   def varSubst(sigma: SubstVar): FunSpec = ??? //this.copy(

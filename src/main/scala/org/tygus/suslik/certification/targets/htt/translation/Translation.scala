@@ -34,7 +34,7 @@ object Translation {
     })
 
     val auxSpecs = env.functions.values.toSeq.map { spec0 =>
-      val FunSpec(name, _, _, params, _, pre, post, var_decl) = spec0.resolveOverloading(env)
+      val FunSpec(name, _, params, _, pre, post, var_decl) = spec0.resolveOverloading(env)
       val goal = Specifications.topLevelGoal(pre, post, params, name, env, Hole, var_decl)
       goal.translate.toFunspec
     }
@@ -46,7 +46,7 @@ object Translation {
     val proof = Proof(proofBody)
     val hints = ctx.hints.filter(_.numHypotheses > 0)
     val progBody = ProgramEvaluator.run(suslikTree, ProgramContext(env))
-    val cproc = Program(proc.name, proc.tp.translate, proc.formals.map(_.translate), progBody)
+    val cproc = Program(proc.name, CUnitType, proc.formals.map(_.translate), progBody)
 
     HTTCertificate(testName, cproc.name, cpreds.values.toList, spec, auxSpecs, proof, cproc, hints)
   }

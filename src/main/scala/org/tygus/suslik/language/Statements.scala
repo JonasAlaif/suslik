@@ -578,7 +578,7 @@ object Statements {
 
   // A procedure
   case class Procedure(f: FunSpec, body: Statement)(implicit predicates: Map[Ident, InductivePredicate]) {
-    val (name: String, tp: SSLType, formals: Formals) = (f.clean, f.rType, f.params)
+    val (name: String, formals: Formals) = (f.clean, f.params)
 
     def pp: String = {
       val lfts = f.lfts.filter(lft => !lft.startsWith("'anon") && lft != "'static")
@@ -622,15 +622,17 @@ object Statements {
             (cmap.cmap(param)._1.isEmpty || cmap.cmap(param)._1.exists(!usedArgs(_)))
         })
       }
-      val newF = f.copy(params =
-        f.params.zipWithIndex.filter(p => usedArgs(p._2)).map(p => (p._1._1.varSubst(sub), p._1._2))
+      val newF = f.copy(rustParams =
+        f.rustParams.zipWithIndex.filter(p => usedArgs(p._2)).map(
+          p => (p._1._1.varSubst(sub), p._1._2, predicates(p._1._3).clean)
+        )
       )
       (new Procedure(newF, SeqComp(Sub(sub), newBody).simplify.doSubsts), usedArgs)
     }
     def apply(f: FunSpec, body: Statement, outerCall: Call)(implicit predicates: Map[Ident, InductivePredicate]): (Procedure, Call) = {
       val (proc, usedArgs) = Procedure(f, body)
       val newArgs = outerCall.args.indices.filter(usedArgs).map(i => outerCall.args(i))
-      (proc, outerCall.copy(args = newArgs))
+      (proc, outerCall.copy(args = newArgs, callGoal = Hole))
     }
   }
 
@@ -674,6 +676,11 @@ object Statements {
       val newRes = res.getRes
       this.r.get._1.res.res = newRes
       newRes.res.map(_.varSubst(subVar).subst(sub))
+    }
+    def getResNoSub: Seq[Var] = {
+      val newRes = res.getRes
+      this.r.get._1.res.res = newRes
+      newRes.res
     }
     def varSubst(subst: SubstVar): Results = {
       assert(sub.isEmpty && subVar.isEmpty)

@@ -25,7 +25,7 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
   def synthesizeProc(funGoal: FunSpec, env: Environment, sketch: Statement): (List[Procedure], SynStats) = {
     implicit val config: SynConfig = env.config
     implicit val stats: SynStats = env.stats
-    val FunSpec(_, _, tp, formals, rets, pre, post, var_decl) = funGoal
+    val FunSpec(_, _, formals, rets, pre, post, var_decl) = funGoal
 
     if (!CyclicProofChecker.isConfigured()) {
       log.print("Cyclic proof checker is not configured! All termination check will be considered TRUE (this not sound).\n",

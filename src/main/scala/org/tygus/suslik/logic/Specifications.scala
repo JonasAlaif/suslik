@@ -244,7 +244,8 @@ object Specifications extends SepLogicUtils {
     def toFunSpec: FunSpec = {
       val name = if (this.isTopLevel) this.fname else this.fname + "_" + this.rulesApplied.length
       val varDecl = this.ghosts.toList.map(v => (v, getType(v))) // Also remember types for non-program vars
-      FunSpec(name, None, VoidType, this.formals, Results(this.rets),
+      val rustParams = this.pre.sigma.toFormals
+      FunSpec(name, None, rustParams, Results(this.rets),
         Assertion(this.pre.phi, this.pre.sigma.toCallGoal(false)),
         Assertion(this.post.phi && this.post.sigma.toFuts(this.gamma)
           , this.post.sigma.toCallGoal(true)), varDecl)
@@ -442,12 +443,12 @@ object Specifications extends SepLogicUtils {
   def topLabel: GoalLabel = GoalLabel(List(0), List())
 
   def topLevelGoal(funSpec: FunSpec, env: Environment, sketch: Statement): Goal = {
-    val FunSpec(_, _, _, formals, _, pre, post, var_decl) = funSpec
+    val FunSpec(_, _, formals, _, pre, post, var_decl) = funSpec
     topLevelGoal(pre, post, formals, funSpec.clean, env, sketch, var_decl)
   }
 
-  def topLevelGoal(pre: Assertion, post: Assertion, formals: Formals, fname: String, env: Environment, sketch: Statement, vars_decl: Formals): Goal = {
-    val gamma0 = (formals ++ vars_decl).toMap // initial environemnt: derived from the formals
+  def topLevelGoal(pre: Assertion, post: Assertion, formals: RustFormals, fname: String, env: Environment, sketch: Statement, vars_decl: Formals): Goal = {
+    val gamma0 = (formals.map(_._1 -> LocType) ++ vars_decl).toMap // initial environemnt: derived from the formals
     val gamma = resolvePrePost(gamma0, env, pre, post)
     val pre1 = pre.resolveOverloading(gamma)
     val post1 = post.resolveOverloading(gamma)
