@@ -523,7 +523,7 @@ object Statements {
         SeqComp(mkBinding(v), s)
       } else s2  // Do not generate bindings for unused variables
 
-    override def pushResIn: Statement = SeqComp(s1, s2.pushResIn)
+    override def pushResIn: Statement = SeqComp(s1.pushResIn, s2.pushResIn)
   }
 
   // let results = if (cond) { tb } else { eb }
@@ -611,6 +611,9 @@ object Statements {
       val procBody = body.withRes(f.returns).doSubsts
       val (newBody, cmap) = procBody.simplifyVars(ClashMap(Map.empty, Sub()), f.name)
       val argNames = f.params.map(_._1)
+      // To skip simplification use the following cmap
+      // val newBody = procBody
+      // val cmap = ClashMap(argNames.map(a => a -> (Set.empty[Int], argNames.toSet)).toMap, Sub())
       val sub = doVarSimp(argNames.toSet, cmap)
       var oldUsedArgs = Map.empty[Int, Boolean]
       var usedArgs = f.params.indices.map(_ -> false).toMap
