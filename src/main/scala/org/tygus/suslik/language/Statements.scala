@@ -1,7 +1,7 @@
 package org.tygus.suslik.language
 
 import org.tygus.suslik.logic.Specifications.GoalLabel
-import org.tygus.suslik.logic.{Formals, FunSpec, Gamma}
+import org.tygus.suslik.logic.{Formals, RustFormals, FunSpec, Gamma}
 import org.tygus.suslik.util.StringUtil._
 import org.tygus.suslik.logic.InductivePredicate
 import org.tygus.suslik.logic.Ref
@@ -578,17 +578,17 @@ object Statements {
 
   // A procedure
   case class Procedure(f: FunSpec, body: Statement)(implicit predicates: Map[Ident, InductivePredicate]) {
-    val (name: String, formals: Formals) = (f.clean, f.params)
+    val (name: String, formals: Formals, returns: RustFormals) = (f.clean, f.params, f.rustReturns)
 
     def pp: String = {
       val lfts = f.lfts.filter(lft => !lft.startsWith("'anon") && lft != "'static")
       val generics = if (lfts.size == 0) "" else s"<${lfts.mkString(", ")}>"
-      val returns =
-        if (f.rustReturns.length == 0) ""
-        else if (f.rustReturns.length == 1) s"-> ${f.rustReturns.head._2.map(_.sig).mkString("")}${f.rustReturns.head._3} "
-        else s"-> (${f.rustReturns.map(r => r._2.map(_.sig).mkString("") + r._3).mkString(", ")}) "
+      val returnStr =
+        if (returns.length == 0) ""
+        else if (returns.length == 1) s"-> ${returns.head._2.map(_.sig).mkString("")}${returns.head._3} "
+        else s"-> (${returns.map(r => r._2.map(_.sig).mkString("") + r._3).mkString(", ")}) "
       s"""
-          |fn $name$generics(${f.rustParams.map { case (f, r, t) => formalPp(f,r,t) }.mkString(", ")}) $returns{
+          |fn $name$generics(${f.rustParams.map { case (f, r, t) => formalPp(f,r,t) }.mkString(", ")}) $returnStr{
           |  ${body.pp}
           |}
       """.stripMargin
@@ -618,8 +618,8 @@ object Statements {
         oldUsedArgs = usedArgs
         usedArgs = usedArgs.map(a => a._1 -> {
           val param = f.params(a._1)._1
-          cmap.cmap.contains(param) &&
-            (cmap.cmap(param)._1.isEmpty || cmap.cmap(param)._1.exists(!usedArgs(_)))
+          a._2 || (cmap.cmap.contains(param) &&
+            (cmap.cmap(param)._1.isEmpty || cmap.cmap(param)._1.exists(!usedArgs(_))))
         })
       }
       val newF = f.copy(rustParams =
@@ -654,8 +654,15 @@ object Statements {
         case (OrderedRes(res1), OrderedRes(res2)) => res1.map(_.subst(this.sub)) == res2.map(_.subst(other.sub))
         case (res1, res2) =>
           if (res1.getResSet.map(_.subst(this.sub)) == res2.getResSet.map(_.subst(other.sub))) {
-            if (res2.isInstanceOf[OrderedRes]) this.r.get._1.res = other.r.get._1.res
-            else other.r.get._1.res = this.r.get._1.res
+            val (unord, unordSub, ordList) = if (res2.isInstanceOf[OrderedRes])
+              (this.r.get._1, this.sub, res2.asInstanceOf[OrderedRes].res.map(_.subst(other.sub)))
+            else {
+              val newRes = res.getRes
+              this.r.get._1.res.res = newRes
+              (other.r.get._1, other.sub, newRes.res.map(_.subst(this.sub)))
+            }
+            val unordMap = unord.res.res.getResSet.map(r => r.subst(unordSub) -> r).toMap
+            unord.res.res = OrderedRes(ordList.map(unordMap))
             true
           } else false
       }
