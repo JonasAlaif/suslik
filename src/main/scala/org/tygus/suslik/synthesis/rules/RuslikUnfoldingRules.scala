@@ -418,7 +418,8 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         brrw <- goal.post.sigma.borrows
         if !goal.isRAppExistential(brrw)
       } yield {
-        val newOwned = brrw.copy(field = Var(brrw.field.name + "_NV"), ref = brrw.ref.tail, blocked = None, tag = brrw.tag.copy(calls = 0))
+        val newTag = PTag(0, brrw.tag.unrolls, (brrw.tag.pastTypes._1, brrw.tag.pastTypes._2 + 1))
+        val newOwned = brrw.copy(field = Var(brrw.field.name + "_NV"), ref = brrw.ref.tail, blocked = None, tag = newTag)
         val newBrrw = brrw.refreshFnSpec(goal.gamma, goal.vars).mkUnblockable
         val newPost = Assertion(post.phi, (post.sigma ** newOwned - brrw) ** newBrrw)
 
