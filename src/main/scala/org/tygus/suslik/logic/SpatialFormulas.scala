@@ -66,8 +66,8 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
   }
 
   def cost: Int = this match {
-    case SApp(_, _, t@PTag(c, u, _), _) => 0 + 4*c*c+ 8*t.recursions + u
-    case RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) => if (priv) 0 else 0 + 4*c*c + 8*t.recursions + u
+    case SApp(_, _, t@PTag(c, u, _), _) => 0 + 2*c*c+ 3*t.recursions + u
+    case r@RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) => if (priv && r.isBorrow) 0 else 0 + 2*c*c + 3*t.recursions + u
     case _ => 1
   }
 
@@ -75,13 +75,13 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
     case SApp(_, _, t@PTag(c, u, _), _) => 0 + 4*(c + u + t.recursions)
     case r@RApp(_, _, _, _, _, _, _) if r.isBorrow && r.ref.head.beenAddedToPost => {
       // Punish not expiring early
-      2*preBrrws.filter(_.field.name.endsWith(r.field.name)).map(_.tag.unrolls - r.tag.unrolls)
+      preBrrws.filter(_.field.name.endsWith(r.field.name)).map(_.tag.unrolls - r.tag.unrolls)
       // TODO: There may be no fields in a ref that was unfolded in the pre, handle this inelegantly by defaulting to 1
         .reduceOption(_ max _).getOrElse(1)
     }
     case r@RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) => {
       assert(c == 0)
-      if (priv) 0 else 0 + 8*t.recursions + u
+      if (priv) 0 else 0 + 3*t.recursions + u
     }
     case _ => 1
   }
