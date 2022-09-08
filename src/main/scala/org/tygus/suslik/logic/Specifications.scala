@@ -426,7 +426,7 @@ object Specifications extends SepLogicUtils {
     lazy val actualCost: Int = callGoal match {
         case None => pre.cost + post.postCost(pre.sigma.borrows)  // + existentials.size //
         // Add `post.cost` to prevent infinite Closes when abducing call (we allow constructing objects while trying to fn call)
-        case Some(cg) => 8 + cg.callerPre.cost + cg.callerPost.postCost(pre.sigma.borrows) + post.cost // + (cg.callerPost.vars -- allUniversals).size //
+        case Some(cg) => 3 + cg.callerPre.cost + cg.callerPost.postCost(pre.sigma.borrows) + post.cost // + (cg.callerPost.vars -- allUniversals).size //
       }
   }
 

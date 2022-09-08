@@ -66,13 +66,13 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
   }
 
   def cost: Int = this match {
-    case SApp(_, _, t@PTag(c, u, _), _) => 2 + 4*c*c+ 8*t.recursions + u
-    case RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) => if (priv) 0 else 2 + 4*c*c + 8*t.recursions + u
+    case SApp(_, _, t@PTag(c, u, _), _) => 0 + 4*c*c+ 8*t.recursions + u
+    case RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) => if (priv) 0 else 0 + 4*c*c + 8*t.recursions + u
     case _ => 1
   }
 
   def postCost(preBrrws: List[RApp]): Int = this match {
-    case SApp(_, _, t@PTag(c, u, _), _) => 2 + 4*(c + u + t.recursions)
+    case SApp(_, _, t@PTag(c, u, _), _) => 0 + 4*(c + u + t.recursions)
     case r@RApp(_, _, _, _, _, _, _) if r.isBorrow && r.ref.head.beenAddedToPost => {
       // Punish not expiring early
       2*preBrrws.filter(_.field.name.endsWith(r.field.name)).map(_.tag.unrolls - r.tag.unrolls)
@@ -81,7 +81,7 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
     }
     case r@RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) => {
       assert(c == 0)
-      if (priv) 0 else 2 + 8*t.recursions + u
+      if (priv) 0 else 0 + 8*t.recursions + u
     }
     case _ => 1
   }
