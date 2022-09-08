@@ -487,7 +487,7 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
     case RApp(true, _, _, _, _, _, _) => None
     case r:RApp if r.isBorrow && r.ref.head.beenAddedToPost => if (post) None else
       Some(r.copy(ref = r.ref.head.copy(beenAddedToPost = false) :: r.ref.tail, tag = PTag()))
-    case h => Some(h)
+    case h => Some(h.setTag(PTag()))
   })
   def toFuts(gamma: Gamma): PFormula = PFormula(chunks.flatMap {
     case r@RApp(_, field, ref, _, fnSpec, _, _) if r.isBorrow && ref.head.mut && ref.head.beenAddedToPost =>
