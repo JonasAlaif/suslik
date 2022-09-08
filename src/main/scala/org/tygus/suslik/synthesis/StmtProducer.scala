@@ -217,6 +217,7 @@ case class AbduceCallProducer(f: FunSpec) extends StmtProducer {
       case c: Call => SeqComp(c.callGoal, c.copy(callGoal = Hole)).simplify
       case SeqComp(c: Call, s2) =>
         SeqComp(SeqComp(c.callGoal, c.copy(callGoal = Hole)).simplify, s2).simplify
+      case Error => Error
     }
   })
 }
