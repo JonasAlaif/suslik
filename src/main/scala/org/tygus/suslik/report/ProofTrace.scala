@@ -138,7 +138,7 @@ object ProofTraceJson {
     type Uid = String
     implicit val rw: RW[GoalEntry] = macroRW
 
-    def apply(goal: Goal): GoalEntry = apply(goal.label.pp + s" (${goal.cost}|${goal.actualCost})", goal.uid,
+    def apply(goal: Goal): GoalEntry = apply(goal.label.pp + s" (${goal.cost}${goal.callGoal.map("|" + _.allowedRecursions).getOrElse("")})", goal.uid,
       AssertionEntry(goal.pre, goal.constraints.preNoncyc, goal.constraints.preCyc),
       AssertionEntry(goal.post, goal.constraints.postNoncyc, goal.constraints.postCyc), goal.sketch.pp,
       vars(goal, goal.programVars), vars(goal, goal.existentials),
@@ -152,7 +152,7 @@ object ProofTraceJson {
       val companion = goal.ancestorWithLabel(callGoal.call.companion.get).get
       val funSpec = companion.toFunSpec
       val toActual = compose(callGoal.companionToFresh, callGoal.freshToActual)
-      Some(apply(callGoal.call.companion.get.pp + s" (${goal.cost}|${goal.actualCost})", companion.uid,
+      Some(apply(callGoal.call.companion.get.pp + s" (${companion.cost})", companion.uid,
         AssertionEntry(funSpec.pre.subst(toActual), goal.constraints.preNoncyc, goal.constraints.preCyc),
         AssertionEntry(funSpec.post.subst(toActual), goal.constraints.postNoncyc, goal.constraints.postCyc), callGoal.actualCall.pp,
         Seq(), Seq(), Seq()))

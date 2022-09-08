@@ -223,19 +223,27 @@ object Specifications extends SepLogicUtils {
 
     // Companion candidates for this goal:
     // look at ancestors before progress was last made, only keep those with different heap profiles
-    def companionCandidates: List[Goal] = {
+    def companionCandidates: List[(Goal, Int)] = {
       var matchedWith = this.pre.sigma.rapps.filter(!_.hasBlocker).map(r => r -> Set(r.field))
-      val allCands = ancestors.filter(_.canBeCompanion).filter(g => {
+      val allCands = ancestors.filter(_.canBeCompanion).flatMap(g => {
         val rapps = g.pre.sigma.rapps
+        var recursions = 0
         var newAdded = false
         matchedWith = matchedWith.map(mw => {
-          val newFields = rapps.filter(r => !mw._2(r.field)).filter(r =>
-            mw._1.pred == r.pred && mw._1.ref.length == r.ref.length && mw._1.field.name.endsWith(r.field.name)
-          ).map(_.field)
+          val newFields = rapps.filter(r => !mw._2(r.field)).filter(r => {
+            val matches = mw._1.pred == r.pred && mw._1.ref.length == r.ref.length && mw._1.field.name.endsWith(r.field.name)
+            if (matches) {
+              val mwRec = mw._1.tag.pastTypes._1.count(_ == mw._1.pred) + mw._1.tag.pastTypes._2
+              val rRec = r.tag.pastTypes._1.count(_ == mw._1.pred) + r.tag.pastTypes._2
+              recursions += mwRec - rRec
+            }
+            matches
+          }).map(_.field)
+          assert(newFields.length <= 1)
           newAdded = newAdded || newFields.length > 0
           mw._1 -> (mw._2 ++ newFields)
         })
-        newAdded
+        if (newAdded) Some(g, recursions) else None
       }).reverse
       if (env.config.auxAbduction) allCands else allCands.take(1)
   }
@@ -474,6 +482,7 @@ object Specifications extends SepLogicUtils {
                                calleePost: Assertion,
                                call: Call,
                                companionToFresh: SubstVar,
+                               allowedRecursions: Int,
                                freshToActual: Subst = Map.empty) {
     def updateSubstitution(sigma: Subst): SuspendedCallGoal = {
       assertNoOverlap(freshToActual, sigma)

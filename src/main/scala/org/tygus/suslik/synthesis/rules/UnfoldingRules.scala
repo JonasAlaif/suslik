@@ -84,7 +84,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
 
     def apply(goal: Goal): Seq[RuleResult] = {
       val cands = goal.companionCandidates
-      val funLabels = cands.map(a => (a.toFunSpec, Some(a.label))) ++ // companions
+      val funLabels = cands.map(a => (a._1.toFunSpec, Some(a._1.label))) ++ // companions
         goal.env.functions.values.map(f => (f, None)) // components
       for {
         (_f, l) <- funLabels
@@ -98,7 +98,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
         call = Call(Var(f.clean), f.returns, f.params.map(_._1), l, _f.params.headOption.map(_._1.name == "self").getOrElse(false), Skip)
         calleePostSigma = f.post.sigma.setSAppTags(PTag().incrCalls)
         callePost = Assertion(f.post.phi, calleePostSigma)
-        suspendedCallGoal = Some(SuspendedCallGoal(goal.pre, goal.post, callePost, call, freshSub))
+        suspendedCallGoal = Some(SuspendedCallGoal(goal.pre, goal.post, callePost, call, freshSub, 666))
         newGoal = goal.spawnChild(post = f.pre, gamma = newGamma, callGoal = suspendedCallGoal)
       } yield {
         val kont: StmtProducer = AbduceCallProducer(f) >> IdProducer >> ExtractHelper(goal)

@@ -222,10 +222,10 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
 
     def apply(goal: Goal): Seq[RuleResult] = {
       val cands = goal.companionCandidates
-      val funLabels = cands.map(a => (a.toFunSpec, Some(a.label))) ++ // companions
-        goal.env.functions.values.map(f => (f, None)) // components
+      val funLabels = cands.map(a => (a._1.toFunSpec, Some(a._1.label), a._2)) ++ // companions
+        goal.env.functions.values.map(f => (f, None, 666)) // components
       for {
-        (_f, l) <- funLabels
+        (_f, l, rec) <- funLabels
         (freshSub, f) = _f.refreshAll(goal.vars)
 
         // Optimization: do not consider f if its pre has predicates that cannot possibly match ours
@@ -236,7 +236,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val call = Call(Var(f.clean), f.returns, f.params.map(_._1), l, _f.params.headOption.map(_._1.name == "self").getOrElse(false), Skip)
         val calleePostSigma = f.post.sigma.setSAppTags(PTag().incrCalls)
         val callePost = Assertion(f.post.phi, calleePostSigma)
-        val suspendedCallGoal = Some(SuspendedCallGoal(goal.pre, goal.post, callePost, call, freshSub))
+        val suspendedCallGoal = Some(SuspendedCallGoal(goal.pre, goal.post, callePost, call, freshSub, rec))
         val newGoal = goal.spawnChild(post = f.pre, gamma = newGamma, callGoal = suspendedCallGoal)
         val kont: StmtProducer = AbduceCallProducer(f) >> ExtractHelper(goal)
 
@@ -576,6 +576,22 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       val cost = if (ownedToDrop.isPrim(goal.env.predicates)) 0 else 20
       val newGoal = goal.spawnChild(pre = newPre, extraCost = cost)
       List(RuleResult(List(newGoal), IdProducer, this, goal))
+    }
+  }
+
+  /*
+  NonTermCall: prevent nonterminating calls
+   */
+  object NonTermCall extends SynthesisRule with InvertibleRule {
+
+    override def toString: Ident = "NonTermCall"
+
+    def apply(goal: Goal): Seq[RuleResult] = {
+      if (goal.callGoal.isEmpty) return Nil
+      val recConstr = goal.post.sigma.owneds.map(o => o.tag.pastTypes._1.count(_ == o.pred) + o.tag.pastTypes._2).foldLeft(0)(_ + _)
+      if (recConstr == 0) return Nil
+      if (goal.callGoal.get.allowedRecursions <= recConstr) List(RuleResult(List(goal.unsolvableChild), IdProducer, this, goal))
+      else Nil
     }
   }
 }

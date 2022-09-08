@@ -109,7 +109,7 @@ object Memoization {
         g.sketch,
         g.callGoal,
         g.isCompanion,
-        g.companionCandidates.map(_.label)
+        g.companionCandidates.map(_._1.label)
       )
     }
 

@@ -24,7 +24,8 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
       // FailRules.CheckPost
       ) ++
       (if (goal.post.sigma.rapps.nonEmpty)
-        List(LogicalRules.FrameBorrowsFinal,
+        List(RuslikUnfoldingRules.NonTermCall,
+          LogicalRules.FrameBorrowsFinal,
           UnificationRules.HeapUnifyBorrows,
           RuslikUnfoldingRules.Close,
           RuslikUnfoldingRules.ReborrowCall)
