@@ -257,6 +257,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     override def toString: Ident = "Close"
 
     def apply(goal: Goal): Seq[RuleResult] = {
+      if (goal.callGoal.isDefined && !goal.env.config.closeWhileAbduce) return Nil
       for {
         // TODO: Could potentially be a create-borrow rule as well for local lifetimes
         (h, c) <- goal.constraints.canUnfoldPost(goal)

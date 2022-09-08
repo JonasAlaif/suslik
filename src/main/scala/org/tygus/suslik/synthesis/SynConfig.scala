@@ -30,6 +30,7 @@ case class SynConfig(
                       delegatePure: Boolean = false,
                       extendedPure: Boolean = false,
                       canLeak: Boolean = true,
+                      closeWhileAbduce: Boolean = true,
                       simple: Boolean = false,
                       // Timeout and logging
                       interactive: Boolean = false,
