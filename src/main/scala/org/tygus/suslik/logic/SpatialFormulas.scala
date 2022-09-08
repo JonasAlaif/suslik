@@ -486,7 +486,7 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   def toCallGoal(post: Boolean): SFormula = SFormula(chunks.flatMap {
     case RApp(true, _, _, _, _, _, _) => None
     case r:RApp if r.isBorrow && r.ref.head.beenAddedToPost => if (post) None else
-      Some(r.copy(ref = r.ref.head.copy(beenAddedToPost = false) :: r.ref.tail))
+      Some(r.copy(ref = r.ref.head.copy(beenAddedToPost = false) :: r.ref.tail, tag = PTag()))
     case h => Some(h)
   })
   def toFuts(gamma: Gamma): PFormula = PFormula(chunks.flatMap {
