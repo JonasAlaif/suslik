@@ -608,15 +608,16 @@ object Statements {
   }
   object Procedure {
     def apply(f: FunSpec, body: Statement)(implicit predicates: Map[Ident, InductivePredicate]): (Procedure, Map[Int,Boolean]) = {
+      val argsFixed = f.returns.r.get._1.res.res.isInstanceOf[OrderedRes]
       val procBody = body.withRes(f.returns).doSubsts
       val (newBody, cmap) = procBody.simplifyVars(ClashMap(Map.empty, Sub()), f.name)
       val argNames = f.params.map(_._1)
       // To skip simplification use the following cmap
       // val newBody = procBody
       // val cmap = ClashMap(argNames.map(a => a -> (Set.empty[Int], argNames.toSet)).toMap, Sub())
-      val sub = doVarSimp(argNames.toSet, cmap)
+      val sub: SubstVar = if (argsFixed) Map.empty else doVarSimp(argNames.toSet, cmap)
       var oldUsedArgs = Map.empty[Int, Boolean]
-      var usedArgs = f.params.indices.map(_ -> false).toMap
+      var usedArgs = f.params.indices.map(_ -> argsFixed).toMap
       while (oldUsedArgs != usedArgs) {
         oldUsedArgs = usedArgs
         usedArgs = usedArgs.map(a => a._1 -> {

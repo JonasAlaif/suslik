@@ -280,9 +280,11 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           goal.post.sigma ** SFormula(noDisc) - h
         )
         val construct_args = if (ip.isPrim) {
-          assert(h.fnSpec.length == 1)
-          var deAE = h.fnSpec(0).collect[AlwaysExistsVar](_.isInstanceOf[AlwaysExistsVar]).map(ae => ae.v -> ae.v).toMap
-          Seq(h.field -> h.fnSpec(0).subst(deAE))
+          assert(h.fnSpec.length <= 1)
+          if (h.fnSpec.length == 0) Seq(h.field -> Var("()")) else {
+            var deAE = h.fnSpec(0).collect[AlwaysExistsVar](_.isInstanceOf[AlwaysExistsVar]).map(ae => ae.v -> ae.v).toMap
+            Seq(h.field -> h.fnSpec(0).subst(deAE))
+          }
         } else {
           val fieldNames = ip.clauses(idx).asn.sigma.rapps.filter(!_.priv).map(_.field)
           val argNames = asn.sigma.rapps.filter(!_.priv).map(_.field)
@@ -404,6 +406,12 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     }
   }
 
+  def borrowToOwned(brrw: RApp): RApp = {
+    val newTag = PTag(0, brrw.tag.unrolls, (brrw.tag.pastTypes._1, brrw.tag.pastTypes._2 + 1))
+    brrw.copy(field = Var(brrw.field.name + "_NV"), ref = brrw.ref.tail, blocked = None, tag = newTag)
+  }
+  def oeSubWrite(oes: Set[OnExpiry], brrw: RApp, owned: RApp): Subst = oes.flatMap(_.writeSub(brrw.field, owned.field, owned.fnSpec, brrw.fnSpec, true)).toMap
+
   /*
   Borrow write rule: write to a borrow in the post-state
    */
@@ -419,14 +427,10 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         brrw <- goal.post.sigma.borrows
         if !goal.isRAppExistential(brrw)
       } yield {
-        val newTag = PTag(0, brrw.tag.unrolls, (brrw.tag.pastTypes._1, brrw.tag.pastTypes._2 + 1))
-        val newOwned = brrw.copy(field = Var(brrw.field.name + "_NV"), ref = brrw.ref.tail, blocked = None, tag = newTag)
+        val newOwned = borrowToOwned(brrw)
         val newBrrw = brrw.refreshFnSpec(goal.gamma, goal.vars).mkUnblockable
         val newPost = Assertion(post.phi, (post.sigma ** newOwned - brrw) ** newBrrw)
-
-        val fut_subst = goal.onExpiries.flatMap(
-          _.writeSub(brrw.field, newOwned.field, newOwned.fnSpec, brrw.fnSpec, true)).toMap
-
+        val fut_subst = oeSubWrite(goal.onExpiries, brrw, newOwned)
         val kont = AppendProducer(Store(brrw.field, 0, newOwned.field))
         RuleResult(List(goal.spawnChild(post = newPost, fut_subst = fut_subst)), kont, this, goal)
       }

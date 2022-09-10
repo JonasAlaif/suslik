@@ -830,11 +830,12 @@ object Expressions {
       case OpLftEq => this
       case OpEq => (left, right) match {
         case (IntConst(left), IntConst(right)) if left != right => BoolConst(false)
-        case (TupleExpr(left), TupleExpr(right)) if left.length != right.length => BoolConst(false)
-        case (TupleExpr(left), TupleExpr(right)) =>
+        case (TupleExpr(left), TupleExpr(right)) if left.length == right.length =>
           val both = left.zip(right)
           val gamma = (left ++ right).foldLeft(Map.empty[Var, SSLType])((acc, tpl) => tpl._1.resolve(acc, tpl._2).get)
           both.map(tpl => tpl._1._1 |===| tpl._2._1).fold(BoolConst(true))(_ && _).resolveOverloading(gamma)
+        case (e, TupleExpr(_)) if !e.isInstanceOf[Var] && !e.isInstanceOf[AlwaysExistsVar] => BoolConst(false)
+        case (TupleExpr(_), e) if !e.isInstanceOf[Var] && !e.isInstanceOf[AlwaysExistsVar] => BoolConst(false)
         case (BinaryExpr(OpPlus, left, IntConst(lval)), BinaryExpr(OpPlus, right, IntConst(rval))) =>
           if (lval == rval) BinaryExpr(OpEq, left, right).simplify
           else if (lval < rval) BinaryExpr(OpEq, left, BinaryExpr(OpPlus, IntConst(rval-lval), right)).simplify
