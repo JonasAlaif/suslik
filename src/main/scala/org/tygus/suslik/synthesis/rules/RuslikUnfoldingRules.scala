@@ -365,6 +365,71 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       // Don't need to try reborrowing
       !goal.hasPotentialReborrows(r)
   }
+    // ExpireFinal can make us incomplete if we don't want to drop things
+    // Since we'll think we don't need to write and so will eagerly expire,
+    // this tries to mitigate that somewhat
+  object ExpireAndWrite extends SynthesisRule with InvertibleRule {
+    override def toString: Ident = "ExpireAndWrite"
+
+    def apply(goal: Goal): Seq[RuleResult] = {
+      val preBorrows = goal.pre.sigma.borrows.map(_.field)
+      for {
+        h <- goal.post.sigma.borrows
+        // Expire non-writable borrows eagerly
+        if ExpireFinal.filter(h, goal)
+        // Cannot expire existential
+        if h.ref.head.beenAddedToPost
+        // Cannot expire before reborrowing:
+        if !preBorrows.contains(h.field)
+        val (clauses, sbst, _, _, fut_subst, _) = loadPred(h, goal.vars, goal.env.predicates, false, goal.onExpiries, goal.env.predicateCycles)
+        InductiveClause(name, selector, asn) <- clauses
+        // Hacky way to ensure we can only Expire the correct enum variant:
+        if selector == BoolConst(true) || {
+          val sel = selector.asInstanceOf[BinaryExpr]
+          val disc = asn.sigma.rapps.find(d => d.field.name.startsWith("disc")).get
+          // if (goal.pre.sigma.rapps.find(_.field == disc.field).isEmpty)
+          //   println("Goal " + goal.rulesApplied + " could not find disc " + disc.field.pp + " in " + goal.pre.sigma.pp)
+          val pre_disc = goal.pre.sigma.rapps.find(_.field == disc.field).get
+          if (pre_disc.fnSpec.length != 1) println("Found: " + pre_disc.pp)
+          assert(pre_disc.fnSpec.length == 1)
+          pre_disc.fnSpec.head.asInstanceOf[Const] == sel.right
+        }
+        // Only do this if writing would only be a trivial drop
+        if asn.sigma.rapps.forall(r => r.priv || r.isPrim(goal.env.predicates))
+      } yield {
+        // Expiry:
+        val blocked = if (h.isUnblockable) asn.sigma.mkUnblockable else asn.sigma
+        val selectorEQ = if (selector != BoolConst(true)) {
+          val left = selector.asInstanceOf[BinaryExpr].left.asInstanceOf[Var]
+          // ArgSubst contains?
+          if (sbst.contains(left)) sbst(left) |=| left else BoolConst(true)
+        } else BoolConst(true)
+        val newPost = Assertion(
+          // Assumption: selector will be substituted in (since it's an equality when clauses.length != 1)
+          goal.post.phi && asn.phi && selector && selectorEQ,
+          goal.post.sigma ** blocked - h
+        )
+        // Write
+        val newOwned = borrowToOwned(h)
+        val preRapps = goal.pre.sigma.rapps
+        val newFields: SFormula = SFormula(asn.sigma.rapps.map(r => preRapps.find(_.field == r.field).get))
+        val newPostWrite = Assertion(goal.post.phi, (goal.post.sigma ** newOwned - h) ** newFields)
+        val fut_subst_write = oeSubWrite(goal.onExpiries, h, newOwned)
+        val kont = AppendProducer(Store(h.field, 0, newOwned.field))
+
+        List(
+          // Normal expire
+          RuleResult(List(goal.spawnChild(post = newPost, fut_subst = fut_subst,
+            // Hasn't progressed since we didn't progress toward termination, but can be companion
+            hasProgressed = false, isCompanionNB = true)), IdProducer, this, goal),
+          // Expire with write
+          RuleResult(List(goal.spawnChild(post = newPostWrite, fut_subst = fut_subst_write,
+            // Hasn't progressed since we didn't progress toward termination, but can be companion
+            hasProgressed = false, isCompanionNB = true)), kont, this, goal),
+        )
+      }
+    }.flatten
+  }
 
   // i.e. from { 'a >= 'b ; x: &'a mut i32(val_x) } { x: &'a mut i32(FA_val_result)<'tmp> ** result: &'b mut i32(val_result) }
   //        to { 'a >= 'b ; x: &'a mut i32(val_x) } { 'a >= 'b ; x: &'a mut i32(FA_val_result)<'tmp> }
