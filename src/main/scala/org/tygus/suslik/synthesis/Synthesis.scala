@@ -116,7 +116,9 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
           trace.add(node, Succeeded(sol, id), Some("cache"))
           node.succeed(sol) match {
             case Left(sibling) => {
-              worklist = addNewNodes(List(sibling))
+              sibling.map(sibling =>
+                worklist = addNewNodes(List(sibling))
+              )
               Nil
             }
             case Right(sol) => sol
@@ -173,7 +175,9 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
         node.succeed(List(e.producer(Nil))) match {
           case Left(sibling) =>
             // This node had a suspended and-sibling: add to the worklist
-            worklist = addNewNodes(List(sibling))
+            sibling.map(sibling =>
+              worklist = addNewNodes(List(sibling))
+            )
             Nil
           case Right(sol) => sol // This node had no more and-siblings: return solution
         }

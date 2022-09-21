@@ -82,6 +82,7 @@ object SearchTree {
 
     // This node has failed: prune siblings from worklist
     def fail(implicit stats: SynStats, config: SynConfig): Unit = {
+      if (memo.lookup(goal).map(_.isInstanceOf[Succeeded]).getOrElse(false)) return
       memo.save(goal, Failed)
       parent match {
         case None => assert(st.worklist.isEmpty)// this is the root; wl must already be empty
@@ -97,7 +98,7 @@ object SearchTree {
     }
 
     // This node has succeeded: return either its next suspended and-sibling or the solution
-    def succeed(s: List[Solution])(implicit config: SynConfig): Either[OrNode, List[Solution]] = {
+    def succeed(s: List[Solution])(implicit config: SynConfig): Either[Option[OrNode], List[Solution]] = {
       memo.save(goal, Succeeded(s, id))
       st.successLeaves = st.successLeaves.filterNot(n => this.isFailedDescendant(n))  // prune members of partially successful branches
       parent match {
@@ -116,9 +117,10 @@ object SearchTree {
               case h :: t => for (j <- generator2(t); i <- h) yield i :: j
             }
             val sols = generator2(an.childSolutions.updated(idx, s)).map(an.kont(_)) // compute solution
-            an.parent.succeed(sols) // tell parent it succeeded
+            if (sols.length == 0) Left(None)
+            else an.parent.succeed(sols) // tell parent it succeeded
           } else { // there are other open subgoals: add next open subgoal to the worklist
-            Left(an.nextChild)
+            Left(Some(an.nextChild))
           }
         }
       }
