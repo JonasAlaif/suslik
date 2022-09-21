@@ -221,6 +221,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     override def toString: Ident = "TryCall"
 
     def apply(goal: Goal): Seq[RuleResult] = {
+      if (goal.constraints.haveClosed) return Nil
       val cands = goal.companionCandidates
       val funLabels = cands.map(a => (a._1.toFunSpec, Some(a._1.label), a._2)) ++ // companions
         goal.env.functions.values.map(f => (f, None, 666)) // components
@@ -396,7 +397,16 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         }
         // Only do this if writing would only be a trivial drop
         if asn.sigma.rapps.forall(r => r.priv || r.isPrim(goal.env.predicates))
+        // TODO: very coarse way to prevent double-write:
+        newOwned = borrowToOwned(h, goal.vars)
+        if (newOwned.field.name.endsWith("_NV"))
       } yield {
+        // Write
+        val preRapps = goal.pre.sigma.rapps
+        val newFields: SFormula = SFormula(asn.sigma.rapps.map(r => preRapps.find(_.field == r.field).get))
+        val newPostWrite = Assertion(goal.post.phi, (goal.post.sigma ** newOwned - h) ** newFields)
+        val fut_subst_write = oeSubWrite(goal.onExpiries, h, newOwned)
+        val kont = AppendProducer(Store(h.field, 0, newOwned.field))
         // Expiry:
         val blocked = if (h.isUnblockable) asn.sigma.mkUnblockable else asn.sigma
         val selectorEQ = if (selector != BoolConst(true)) {
@@ -409,13 +419,6 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           goal.post.phi && asn.phi && selector && selectorEQ,
           goal.post.sigma ** blocked - h
         )
-        // Write
-        val newOwned = borrowToOwned(h)
-        val preRapps = goal.pre.sigma.rapps
-        val newFields: SFormula = SFormula(asn.sigma.rapps.map(r => preRapps.find(_.field == r.field).get))
-        val newPostWrite = Assertion(goal.post.phi, (goal.post.sigma ** newOwned - h) ** newFields)
-        val fut_subst_write = oeSubWrite(goal.onExpiries, h, newOwned)
-        val kont = AppendProducer(Store(h.field, 0, newOwned.field))
 
         List(
           // Normal expire
@@ -471,9 +474,10 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     }
   }
 
-  def borrowToOwned(brrw: RApp): RApp = {
+  def borrowToOwned(brrw: RApp, vars: Set[Var]): RApp = {
     val newTag = PTag(0, brrw.tag.unrolls, (brrw.tag.pastTypes._1, brrw.tag.pastTypes._2 + 1))
-    brrw.copy(field = Var(brrw.field.name + "_NV"), ref = brrw.ref.tail, blocked = None, tag = newTag)
+    val newField = freshVar(vars, brrw.field.name + "_NV")
+    brrw.copy(field = newField, ref = brrw.ref.tail, blocked = None, tag = newTag)
   }
   def oeSubWrite(oes: Set[OnExpiry], brrw: RApp, owned: RApp): Subst = oes.flatMap(_.writeSub(brrw.field, owned.field, owned.fnSpec, brrw.fnSpec, true)).toMap
 
@@ -492,7 +496,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         brrw <- goal.post.sigma.borrows
         if !goal.isRAppExistential(brrw)
       } yield {
-        val newOwned = borrowToOwned(brrw)
+        val newOwned = borrowToOwned(brrw, goal.vars)
         val newBrrw = brrw.refreshFnSpec(goal.gamma, goal.vars).mkUnblockable
         val newPost = Assertion(post.phi, (post.sigma ** newOwned - brrw) ** newBrrw)
         val fut_subst = oeSubWrite(goal.onExpiries, brrw, newOwned)
@@ -643,7 +647,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       if (owneds.isEmpty) return Nil
       val ownedToDrop = goal.pre.sigma.owneds.head
       val newPre = Assertion(goal.pre.phi, goal.pre.sigma - ownedToDrop)
-      val cost = if (ownedToDrop.isPrim(goal.env.predicates)) 0 else 20
+      val cost = if (ownedToDrop.isPrim(goal.env.predicates)) 0 else 6
       val newGoal = goal.spawnChild(pre = newPre, extraCost = cost)
       List(RuleResult(List(newGoal), IdProducer, this, goal))
     }

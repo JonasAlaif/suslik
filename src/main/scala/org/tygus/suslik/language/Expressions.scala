@@ -581,6 +581,7 @@ object Expressions {
     }
     def isLiteral = this.isInstanceOf[Const] || this.isInstanceOf[SetLiteral]
     def getAlwaysExists: Option[Var] = None
+    def isVarLike: Boolean = false
   }
 
   // Program-level variable: program-level or ghost
@@ -594,6 +595,7 @@ object Expressions {
 
     def getType(gamma: Gamma): Option[SSLType] = gamma.get(this)
     def isTupleLike: Boolean = name.charAt(0) == '_' && name.substring(1).forall(_.isDigit)
+    override def isVarLike: Boolean = true
   }
 
   case class NoExists(expr: Expr) extends Expr {
@@ -610,6 +612,7 @@ object Expressions {
     override def subst(sigma: Subst): Expr = if (sigma.contains(v)) v.subst(sigma) else this
     override def getType(gamma: Gamma): Option[SSLType] = v.getType(gamma)
     override def getAlwaysExists: Option[Var] = Some(v)
+    override def isVarLike: Boolean = true
   }
 
   // For existentials (like ^result) post is always None
@@ -630,6 +633,7 @@ object Expressions {
         // sigma.getOrElse(this.asVar, this)
 
     override def getType(gamma: Gamma): Option[SSLType] = Some(ty)
+    override def isVarLike: Boolean = true
 
     // When FA ref is added to post
     def toPostSub(f: Var, preFnSpec: Seq[Expr], postFnSpec: Seq[Expr]): Option[(Var, Expr)] = if (f == this.field) {
@@ -834,8 +838,8 @@ object Expressions {
           val both = left.zip(right)
           val gamma = (left ++ right).foldLeft(Map.empty[Var, SSLType])((acc, tpl) => tpl._1.resolve(acc, tpl._2).get)
           both.map(tpl => tpl._1._1 |===| tpl._2._1).fold(BoolConst(true))(_ && _).resolveOverloading(gamma)
-        case (e, TupleExpr(_)) if !e.isInstanceOf[Var] && !e.isInstanceOf[AlwaysExistsVar] => BoolConst(false)
-        case (TupleExpr(_), e) if !e.isInstanceOf[Var] && !e.isInstanceOf[AlwaysExistsVar] => BoolConst(false)
+        case (e, TupleExpr(_)) if !e.isVarLike => BoolConst(false)
+        case (TupleExpr(_), e) if !e.isVarLike => BoolConst(false)
         case (BinaryExpr(OpPlus, left, IntConst(lval)), BinaryExpr(OpPlus, right, IntConst(rval))) =>
           if (lval == rval) BinaryExpr(OpEq, left, right).simplify
           else if (lval < rval) BinaryExpr(OpEq, left, BinaryExpr(OpPlus, IntConst(rval-lval), right)).simplify

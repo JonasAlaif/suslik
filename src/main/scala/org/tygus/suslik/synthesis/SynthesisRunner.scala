@@ -194,6 +194,10 @@ object SynthesisRunner extends SynthesisRunnerUtil {
       _.copy(closeWhileAbduce = b)
     }).text("can construct objects as call params; more complete but worse performance; default: yes")
 
+    opt[Int](name = "solutions").action(cfg { b =>
+      _.copy(solutions = b)
+    }).text("number of solutions to return (does not work well with memoisation on); default: 2")
+
     opt[Unit](name = "simple").action(cfg { _ =>
       _.copy(simple = true)
     }).text("use simple, unphased rules (this is very slow); default: no")

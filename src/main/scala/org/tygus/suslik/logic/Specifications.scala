@@ -119,6 +119,7 @@ object Specifications extends SepLogicUtils {
                                preCyc: Int = 0, // Of all cyc rapps
                                postNoncyc: Int = 0, // Of all non-cyc owneds
                                postCyc: Int = 0, // Of all cyc owneds
+                               haveClosed: Boolean = false,
     ) {
       def getPre(g: Goal): (List[RApp], List[RApp]) =
         g.pre.sigma.rapps.filter(r =>
@@ -160,7 +161,7 @@ object Specifications extends SepLogicUtils {
       def blockNoncycPre(g: Goal): UnfoldConstraints =
         this.copy(preNoncyc = getPre(g)._2.length)
       def blockAllPre(g: Goal): UnfoldConstraints =
-        this.copy(preNoncyc = getPre(g)._2.length, preCyc = getPre(g)._1.length)
+        this.copy(preNoncyc = getPre(g)._2.length, preCyc = getPre(g)._1.length, haveClosed = true)
 
       def nonBlockedPre(g: Goal): List[RApp] =
         getPre(g)._2.drop(preNoncyc) ++ getPre(g)._1.drop(preCyc)

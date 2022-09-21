@@ -151,7 +151,7 @@ trait SynthesisRunnerUtil {
   }
 
   def synthesizeFromFile(dir: String, testName: String,
-                         initialParams: SynConfig = defaultConfig) : List[Statements.Procedure] = {
+                         initialParams: SynConfig = defaultConfig) : List[List[Statements.Procedure]] = {
     val fullPath = Paths.get(dir, testName)
     val defs = getDefsFromDir(new File(dir))
     val (_, _, in, out, params) = getDescInputOutput(fullPath.toString, initialParams)
@@ -159,7 +159,7 @@ trait SynthesisRunnerUtil {
   }
 
   def synthesizeFromSpec(testName: String, text: String, out: String = noOutputCheck,
-                         params: SynConfig = defaultConfig) : List[Statements.Procedure] = {
+                         params: SynConfig = defaultConfig) : List[List[Statements.Procedure]] = {
     import log.out.testPrintln
 
     val (spec, env, body) = prepareSynthesisTask(text, params)
@@ -203,58 +203,61 @@ trait SynthesisRunnerUtil {
         else
           throw SynthesisException(s"Failed to synthesise due to unrealizable spec or incompleteness")
       case procs =>
-        val result = if (params.printSpecs) {
-          procs.map(p => {
-            val (pre, post) = (p.f.pre.pp.trim, p.f.post.pp.trim)
-            List(pre, post, p.pp.trim).mkString("\n")
-          }).mkString("\n\n")
-        } else {
-          procs.map(_.pp.trim).mkString("\n\n")
-        }
-
-        // [Certify] initialize and print cert tree
-        initCertTree(synthesizer.trace)
-
-        if (params.printStats) {
-          testPrintln(s"\n[$testName]:", Console.MAGENTA)
-          testPrintln(params.pp)
-          testPrintln(s"${spec.pp}\n", Console.BLUE)
-          testPrintln(s"Successfully synthesised in $duration milliseconds:", Console.GREEN)
-          printStats(sresult._2)
-          testPrintln(result)
-          testPrintln("-----------------------------------------------------")
-        } else {
-          println(result)
-        }
-        if (out != noOutputCheck) {
-          val tt = out.trim.lines.map(_.trim)
-          val res = result.trim.lines.map(_.trim)
-          if (params.assertSuccess && !res.equals(tt)) {
-            throw SynthesisException(s"\nThe expected output\n$tt\ndoesn't match the result:\n$res")
-          }
-        }
-        if (params.interactive) {
-          testPrintln(sresult._2.getExpansionChoices.mkString("\n"))
-          testPrintln("-----------------------------------------------------")
-        }
-        if (params.certTarget != NoCert) {
-          val certTarget = params.certTarget
-          val targetName = certTarget.name
-          val root = CertTree.root.getOrElse(throw SynthesisException("Search tree is uninitialized"))
-          val tree = SuslikProofStep.of_certtree(root)
-          val certificate = certTarget.certify(testName, procs.head, tree, root.goal, env)
-          if (params.certDest == null) {
-            testPrintln(s"\n$targetName certificate:", Console.MAGENTA)
-            certificate.outputs.foreach(o => {
-              testPrintln(s"File ${o.filename}:\n", Console.MAGENTA)
-              testPrintln(s"${o.body}")
-            })
+        for { sln <- procs } {
+          val result = if (params.printSpecs) {
+            sln.map(p => {
+              val (pre, post) = (p.f.pre.pp.trim, p.f.post.pp.trim)
+              List(pre, post, p.pp.trim).mkString("\n")
+            }).mkString("\n")
           } else {
-            certificate.outputs.foreach(o => {
-              val path = Paths.get(params.certDest.getCanonicalPath, o.filename).toFile
-              new PrintWriter(path) { write(o.body); close() }
-              testPrintln(s"\n$targetName certificate exported to $path", Console.MAGENTA)
-            })
+            sln.map(_.pp.trim).mkString("\n")
+          }
+
+          // [Certify] initialize and print cert tree
+          initCertTree(synthesizer.trace)
+
+          if (params.printStats) {
+            testPrintln(s"\n[$testName]:", Console.MAGENTA)
+            testPrintln(params.pp)
+            testPrintln(s"${spec.pp}\n", Console.BLUE)
+            testPrintln(s"Successfully synthesised in $duration milliseconds:", Console.GREEN)
+            printStats(sresult._2)
+            testPrintln(result)
+            testPrintln("-----------------------------------------------------")
+          } else {
+            testPrintln("-----------------------------------------------------")
+            println(result)
+          }
+          if (out != noOutputCheck) {
+            val tt = out.trim.lines.map(_.trim)
+            val res = result.trim.lines.map(_.trim)
+            if (params.assertSuccess && !res.equals(tt)) {
+              throw SynthesisException(s"\nThe expected output\n$tt\ndoesn't match the result:\n$res")
+            }
+          }
+          if (params.interactive) {
+            testPrintln(sresult._2.getExpansionChoices.mkString("\n"))
+            testPrintln("-----------------------------------------------------")
+          }
+          if (params.certTarget != NoCert) {
+            val certTarget = params.certTarget
+            val targetName = certTarget.name
+            val root = CertTree.root.getOrElse(throw SynthesisException("Search tree is uninitialized"))
+            val tree = SuslikProofStep.of_certtree(root)
+            val certificate = certTarget.certify(testName, procs.head.head, tree, root.goal, env)
+            if (params.certDest == null) {
+              testPrintln(s"\n$targetName certificate:", Console.MAGENTA)
+              certificate.outputs.foreach(o => {
+                testPrintln(s"File ${o.filename}:\n", Console.MAGENTA)
+                testPrintln(s"${o.body}")
+              })
+            } else {
+              certificate.outputs.foreach(o => {
+                val path = Paths.get(params.certDest.getCanonicalPath, o.filename).toFile
+                new PrintWriter(path) { write(o.body); close() }
+                testPrintln(s"\n$targetName certificate exported to $path", Console.MAGENTA)
+              })
+            }
           }
         }
         procs

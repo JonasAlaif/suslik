@@ -21,11 +21,15 @@ class SearchTree {
   // List of leaf nodes that succeeded
   var successLeaves: Worklist = List()
 
+  // List of nodes to process
+  var slns: List[Solution] = List()
+
   // Initialize worklist: root or-node containing the top-level goal
   private def init(initialGoal: Goal): SearchTree = {
     val root = OrNode(Vector(), initialGoal, None)
     worklist = List(root)
     successLeaves = List()
+    slns = List()
     this
   }
 }
@@ -42,6 +46,8 @@ object SearchTree {
   def worklist_=(w: Worklist): Unit = { st.worklist = w }
   def successLeaves: Worklist = st.successLeaves
   def successLeaves_=(w: Worklist): Unit = { st.successLeaves = w }
+  def slns: List[Solution] = st.slns
+  def slns_=(w: List[Solution]): Unit = { st.slns = w }
 
   /**
     * Node's position in the search tree
@@ -91,18 +97,26 @@ object SearchTree {
     }
 
     // This node has succeeded: return either its next suspended and-sibling or the solution
-    def succeed(s: Solution)(implicit config: SynConfig): Either[OrNode, Solution] = {
+    def succeed(s: List[Solution])(implicit config: SynConfig): Either[OrNode, List[Solution]] = {
       memo.save(goal, Succeeded(s, id))
-      st.worklist = pruneDescendants(id, st.worklist) // prune all my descendants from worklist
       st.successLeaves = st.successLeaves.filterNot(n => this.isFailedDescendant(n))  // prune members of partially successful branches
       parent match {
         case None => Right(s) // this is the root: synthesis succeeded
         case Some(an) => { // a subgoal has succeeded
-          an.childSolutions = an.childSolutions :+ s
+          val idx = if (an.nChildren == 1) 0 else this.id.head
+          if (idx >= an.childSolutions.length) {
+            println("Have env " + an.nChildren + " with id " + this.id)
+            println("childSolutions " + an.childSolutions.length)
+          }
+          an.childSolutions = an.childSolutions.updated(idx, an.childSolutions(idx) ++ s)
           // Check if my parent has more open subgoals:
           if (an.nextChildIndex == an.nChildren) { // there are no more open subgoals: an has succeeded
-            val sol = an.kont(an.childSolutions) // compute solution
-            an.parent.succeed(sol) // tell parent it succeeded
+            def generator2(x: List[List[Solution]]): List[List[Solution]] = x match {
+              case Nil    => List(Nil)
+              case h :: t => for (j <- generator2(t); i <- h) yield i :: j
+            }
+            val sols = generator2(an.childSolutions.updated(idx, s)).map(an.kont(_)) // compute solution
+            an.parent.succeed(sols) // tell parent it succeeded
           } else { // there are other open subgoals: add next open subgoal to the worklist
             Left(an.nextChild)
           }
@@ -199,7 +213,8 @@ object SearchTree {
     val kont: StmtProducer = _result.producer                 // Statement producer: combines solutions from children into a single solution
     val updates: Seq[GoalUpdater] = _result.updates           // How to update goals of future children based on solutions of succeeded children
     var nextChildIndex: Int = 0                               // The index of first child that hasn't yet been explored
-    var childSolutions: Seq[Solution] = List()                // Solutions of children that already succeeded
+    var childSolutions: List[List[Solution]] =         // Solutions of children that already succeeded
+      (1 to nChildren).map(_ => List.empty).toList
 
     // Does this node have an ancestor with label l?
     def hasAncestor(l: NodeId): Boolean =
@@ -213,7 +228,7 @@ object SearchTree {
     // Return the first previously suspended or-node and increase nextChildIndex
     def nextChild: OrNode = {
       val origGoal = childGoals(nextChildIndex)
-      val goal = updates(nextChildIndex)(childSolutions)(origGoal)
+      val goal = updates(nextChildIndex)(childSolutions.flatMap(_.headOption))(origGoal)
       val j = if (nChildren == 1) -1 else nextChildIndex
       val extraCost = (0 +: childGoals.drop(nextChildIndex + 1).map(_.cost)).max
       nextChildIndex = nextChildIndex + 1

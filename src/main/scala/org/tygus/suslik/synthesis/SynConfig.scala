@@ -31,6 +31,7 @@ case class SynConfig(
                       extendedPure: Boolean = false,
                       canLeak: Boolean = true,
                       closeWhileAbduce: Boolean = true,
+                      solutions: Int = 2,
                       simple: Boolean = false,
                       // Timeout and logging
                       interactive: Boolean = false,

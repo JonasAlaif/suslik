@@ -22,7 +22,7 @@ import scala.annotation.tailrec
 
 class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: ProofTrace) extends SepLogicUtils {
 
-  def synthesizeProc(funGoal: FunSpec, env: Environment, sketch: Statement): (List[Procedure], SynStats) = {
+  def synthesizeProc(funGoal: FunSpec, env: Environment, sketch: Statement): (List[List[Procedure]], SynStats) = {
     implicit val config: SynConfig = env.config
     implicit val stats: SynStats = env.stats
     val FunSpec(_, _, formals, rets, pre, post, var_decl) = funGoal
@@ -48,13 +48,15 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
     ProofTrace.current = trace
     try {
       synthesize(goal)(stats = stats) match {
-        case Some((body, helpers)) =>
-          log.print(s"Succeeded leaves (${successLeaves.length}): ${successLeaves.map(n => s"${n.pp()}").mkString(" ")}", Console.YELLOW, 2)
-          val main = Procedure(funGoal, body)(goal.env.predicates)
-          (main._1 :: helpers, stats)
-        case None =>
+        case Nil =>
           log.out.printlnErr(s"Deductive synthesis failed for the goal\n ${goal.pp}")
           (Nil, stats)
+        case slns =>
+          (slns.reverse.map { case (body, helpers) =>
+            log.print(s"Succeeded leaves (${successLeaves.length}): ${successLeaves.map(n => s"${n.pp()}").mkString(" ")}", Console.YELLOW, 2)
+            val main = Procedure(funGoal, body)(goal.env.predicates)
+            (main._1 :: helpers)
+          }, stats)
       }
     } catch {
       case SynTimeOutException(msg) =>
@@ -64,14 +66,14 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
   }
 
   protected def synthesize(goal: Goal)
-                          (stats: SynStats): Option[Solution] = {
+                          (stats: SynStats): List[Solution] = {
     SearchTree.init(goal)
     processWorkList(stats, goal.env.config)
   }
 
   @tailrec final def processWorkList(implicit
                                      stats: SynStats,
-                                     config: SynConfig): Option[Solution] = {
+                                     config: SynConfig): List[Solution] = {
     // Check for timeouts
     if (!config.interactive && stats.timedOut) {
       throw SynTimeOutException(s"\n\nThe derivation took too long: more than ${config.timeOut / 1000.0} seconds.\n")
@@ -83,7 +85,7 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
     log.print(s"Memo (${memo.size}) Suspended (${memo.suspendedSize})", Console.YELLOW, 2)
     stats.updateMaxWLSize(sz)
 
-    if (worklist.isEmpty) None // No more goals to try: synthesis failed
+    if (worklist.isEmpty) slns // No more goals to try: synthesis failed
     else {
       val (node, addNewNodes) = popNode // Select next node to expand
       val goal = node.goal
@@ -99,11 +101,11 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
           log.print("Recalled FAIL", Console.RED)
           trace.add(node, Failed, Some("cache"))
           node.fail
-          None
+          Nil
         }
         case Some(Succeeded(sol, id)) =>
         { // Same goal has succeeded before: return the same solution
-          log.print(s"Recalled solution ${sol._1.pp}", Console.RED)
+          log.print(s"Recalled solutions ${sol.map(_._1.pp).mkString("\n")}", Console.RED)
           // This seems to always hold in practice because we always get to the companion
           // before we get to any of its children;
           // if this ever fails, we can either:
@@ -115,23 +117,23 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
           node.succeed(sol) match {
             case Left(sibling) => {
               worklist = addNewNodes(List(sibling))
-              None
+              Nil
             }
-            case Right(sol) => Some(sol)
+            case Right(sol) => sol
           }
         }
         case Some(Expanded) => { // Same goal has been expanded before: wait until it's fully explored
           log.print("Suspend", Console.RED)
           memo.suspend(node)
           worklist = addNewNodes(List(node))
-          None
+          Nil
         }
         case None => expandNode(node, addNewNodes) // First time we see this goal: do expand
       }
-      res match {
-        case None => processWorkList
-        case sol => sol
-      }
+      slns = res ++ slns
+      // Could have more solutions than asked for if one and branch has multiple
+      if (slns.length >= config.solutions) slns.takeRight(config.solutions)
+      else processWorkList
     }
   }
 
@@ -156,7 +158,7 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
 
   // Expand node and return either a new worklist or the final solution
   protected def expandNode(node: OrNode, addNewNodes: List[OrNode] => List[OrNode])(implicit stats: SynStats,
-                                                                                    config: SynConfig): Option[Solution] = {
+                                                                                    config: SynConfig): List[Solution] = {
     val goal = node.goal
     memo.save(goal, Expanded)
     implicit val ctx: Log.Context = Log.Context(goal)
@@ -168,12 +170,12 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
       case Some(e) =>
         trace.add(e, node)
         successLeaves = node :: successLeaves
-        node.succeed(e.producer(Nil)) match {
+        node.succeed(List(e.producer(Nil))) match {
           case Left(sibling) =>
             // This node had a suspended and-sibling: add to the worklist
             worklist = addNewNodes(List(sibling))
-            None
-          case Right(sol) => Some(sol) // This node had no more and-siblings: return solution
+            Nil
+          case Right(sol) => sol // This node had no more and-siblings: return solution
         }
       case None =>   // no terminals: add all expansions to worklist
         // Create new nodes from the expansions
@@ -195,7 +197,7 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
         } else {
           stats.addGeneratedGoals(newNodes.size)
         }
-        None
+        Nil
     }
   }
 

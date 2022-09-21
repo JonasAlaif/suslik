@@ -23,12 +23,13 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
       // FailRules.PostInconsistent,
       // FailRules.CheckPost
       ) ++
-      (if (goal.post.sigma.rapps.nonEmpty)
+      (if (goal.post.sigma.borrows.nonEmpty)
+        List(RuslikUnfoldingRules.ReborrowCall)
+      else if (goal.post.sigma.rapps.nonEmpty)
         List(RuslikUnfoldingRules.NonTermCall,
           LogicalRules.FrameBorrowsFinal,
           UnificationRules.HeapUnifyBorrows,
-          RuslikUnfoldingRules.Close,
-          RuslikUnfoldingRules.ReborrowCall)
+          RuslikUnfoldingRules.Close)
       else
         List(UnfoldingRules.CallRule,
           UnificationRules.SubstRight,
