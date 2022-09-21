@@ -109,7 +109,7 @@ object SearchTree {
             println("Have env " + an.nChildren + " with id " + this.id)
             println("childSolutions " + an.childSolutions.length)
           }
-          an.childSolutions = an.childSolutions.updated(idx, an.childSolutions(idx) ++ s)
+          an.childSolutions = an.childSolutions.updated(idx, s ++ an.childSolutions(idx))
           // Check if my parent has more open subgoals:
           if (an.nextChildIndex == an.nChildren) { // there are no more open subgoals: an has succeeded
             def generator2(x: List[List[Solution]]): List[List[Solution]] = x match {
