@@ -9,12 +9,12 @@ class SSLLexical extends StdLexical {
 
   // Add keywords
   reserved += ("if", "then", "else", "true", "false", "emp", "not", "return", "predicate", "in", "lower", "upper")
-  reserved += ("error","magic","malloc", "free", "let", "assume")
+  reserved += ("unreachable","magic","malloc", "free", "let", "assume")
   reserved += ("null")
   reserved += ("mut", "priv")
 
   // Types
-  reserved += ("int", "lft", "bool", "loc", "set", "void", "interval")
+  reserved += ("int", "lft", "bool", "loc", "set", "interval")
 
   delimiters += ("(", ")", "=", ";", "**", "*", ":->", "=i", "<=i", "++", "--", "..",
       "{", "}", "/\\", "&&", "\\/", "||", "\n", "\r", "=>", "?", ":", "&", "^", "#",

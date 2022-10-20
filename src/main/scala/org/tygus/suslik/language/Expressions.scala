@@ -680,9 +680,11 @@ object Expressions {
     def openOrExpirePredSub(newFields: Map[Var, Seq[Expr]], expire: Boolean): Option[(Var, Expr)] = {
       // May have substituted in args which are OEs (thus not in newFields map)
       if (!newFields.contains(this.field)) None else {
-        assert(!this.post.isDefined)
+        // Could have an OE that was obtained from an Open in pre and assigned to arg in post
+        // and now the arg has ben subst for a var (we want to ignore such an OE)
+        if (this.post.isDefined) None
         // Same reasoning as write
-        if (this.futs.forall(!_)) Some(this.asVar -> newFields(this.field)(idx))
+        else if (this.futs.forall(!_)) Some(this.asVar -> newFields(this.field)(idx))
         else Some(this.asVar -> this.copy(post = Some(expire), futs = false :: this.futs))
       }
     }
@@ -699,10 +701,13 @@ object Expressions {
     }
 
     // For a reborrow "let dstF = &mut *srcF;" currently only possible in post
-    def reborrowSub(dstF: Var, srcF: Var, dstFnSpec: Seq[Expr]): Option[(Var, Expr)] = if (dstF == this.field) {
+    def reborrowSub(dstF: Var, srcF: Var, dstFnSpec: Seq[Expr], srcFnSpec: Seq[Expr]): Option[(Var, Expr)] = if (dstF == this.field) {
       assert(this.post.isEmpty)
       if (this.futs.forall(!_))
         Some(this.asVar -> dstFnSpec(idx))
+      // Not sound:
+      // else if (this.futs.tail.forall(!_))
+      //   Some(this.asVar -> srcFnSpec(idx))
       else
         // If we were `?^?tmp None` then we become `?^?x Some(true)`
         // TODO: check that this is sound for e.g. `^^tmp None`
@@ -761,7 +766,7 @@ object Expressions {
   // Named lifetime, universally quant or exists
   case class Named(name: Var, fa: Boolean) extends NamedLifetime {
     override def pp: String = (if (!fa) "(" else "") + name.pp + (if (!fa) ")" else "")
-    override def sig: String = if (this.rustLft.get.startsWith("'anon")) "" else this.rustLft.get + " "
+    override def sig: String = if (this.rustLft.get.startsWith("'_")) "" else this.rustLft.get + " "
     override def subst(sigma: Subst): Lifetime = sigma.get(this.name) match {
       // If Var then its due to a refresh (e.g. when creating companion), pick will also cause this but that shouldn't matter so late
       case Some(e) => if (e.isInstanceOf[Var]) Named(e.asInstanceOf[Var], false) else {
@@ -776,7 +781,7 @@ object Expressions {
     override def getName: Option[Var] = Some(this.name)
   }
   case object StaticLifetime extends NamedLifetime {
-    override def sig: String = if (this.rustLft.get.startsWith("'anon")) "" else this.rustLft.get + " "
+    override def sig: String = if (this.rustLft.get.startsWith("'_")) "" else this.rustLft.get + " "
     override def subst(sigma: Subst): Lifetime = this
     override def rustLft: Option[String] = Some("'static")
     override def getName: Option[Var] = None

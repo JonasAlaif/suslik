@@ -241,9 +241,10 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
         // Don't pick for Locs (fields) - unification will do this
         if goal.getType(ex) == v.getType(goal.gamma).get
         sigma = Map(ex -> v)
+        newPre = goal.pre.subst(sigma)
         newPost = goal.post.subst(sigma)
         newCallGoal = goal.callGoal.map(_.updateSubstitution(sigma))
-        newGoal = goal.spawnChild(post = newPost, callGoal = newCallGoal)
+        newGoal = goal.spawnChild(pre = newPre, post = newPost, callGoal = newCallGoal)
         kont = SubstProducer(ex, v) >> IdProducer >> ExtractHelper(goal)
       } yield {
         ProofTrace.current.add(ProofTrace.DerivationTrail.withSubst(

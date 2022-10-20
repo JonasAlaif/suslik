@@ -38,8 +38,7 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
       | "bool" ^^^ BoolType
       | "loc" ^^^ LocType
       | "set" ^^^ IntSetType
-      | "interval" ^^^ IntervalType
-      | "void" ^^^ VoidType)
+      | "interval" ^^^ IntervalType)
 
   def formal: Parser[(Var, SSLType)] = typeParser ~ ("&" ~> varParser ^^ { v => Var(v.name + "-L") } | varParser) ^^ { case a ~ b => (b, a) }
 
@@ -190,7 +189,7 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
 
   def statementParser: Parser[Statement] = (
     ("??" ^^^ Hole)
-      ||| ("error" ~> ";" ^^^ Statements.Error)
+      ||| ("unreachable" ~> ";" ^^^ Statements.Error)
       // Malloc
       ||| "let" ~> varParser ~ ("=" ~> "malloc" ~> "(" ~> numericLit <~ ")" ~> ";") ^^ {
       case variable ~ number_str => Malloc(variable, IntType, Integer.parseInt(number_str)) // todo: maybe not ignore type here

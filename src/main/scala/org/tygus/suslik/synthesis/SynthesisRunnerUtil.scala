@@ -197,11 +197,13 @@ trait SynthesisRunnerUtil {
 
     sresult._1 match {
       case Nil =>
-        printStats(sresult._2)
+        // printStats(sresult._2)
         if (sresult._2.timedOut)
           throw SynTimeOutException(s"Timeout after ${(sresult._2.duration / 1000.0).round.toInt} seconds")
         else
-          throw SynthesisException(s"Failed to synthesise due to unrealizable spec or incompleteness")
+          println("Failed to synthesise due to unrealizable spec or incompleteness")
+          sys.exit(2)
+          // throw SynthesisException(s"Failed to synthesise due to unrealizable spec or incompleteness")
       case procs =>
         for { sln <- procs } {
           val result = if (params.printSpecs) {
@@ -225,7 +227,8 @@ trait SynthesisRunnerUtil {
             testPrintln(result)
             testPrintln("-----------------------------------------------------")
           } else {
-            testPrintln("-----------------------------------------------------")
+            if (procs.length > 1)
+              testPrintln("-----------------------------------------------------")
             println(result)
           }
           if (out != noOutputCheck) {

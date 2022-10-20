@@ -481,8 +481,11 @@ object Statements {
       // Normal:
       case (Skip, _) => s2 // Remove compositions with skip
       case (_, Skip) => s1
-      case (Error, _) => Error
-      case (_, Error) => Error
+        // Don't simplify errors so that we can see how they were reached
+      case (Error, s2) => SeqComp(s2, Error).simplify
+      case (Return(_), Error) => Error
+      // case (Error, _) => Error
+      // case (_, Error) => Error
       case (Sub(subst1), Sub(subst2)) => Sub(subst1, subst2)
       case (Sub(subst1), SeqComp(Sub(subst2), s2)) =>
         SeqComp(Sub(subst1, subst2), s2)
@@ -581,7 +584,7 @@ object Statements {
     val (name: String, formals: Formals, returns: RustFormals) = (f.clean, f.params, f.rustReturns)
 
     def pp: String = {
-      val lfts = f.lfts.filter(lft => !lft.startsWith("'anon") && lft != "'static")
+      val lfts = f.lfts.filter(lft => !lft.startsWith("'_") && lft != "'static")
       val generics = if (lfts.size == 0) "" else s"<${lfts.mkString(", ")}>"
       val returnStr =
         if (returns.length == 0) ""

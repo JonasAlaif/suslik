@@ -49,7 +49,8 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
     try {
       synthesize(goal)(stats = stats) match {
         case Nil =>
-          log.out.printlnErr(s"Deductive synthesis failed for the goal\n ${goal.pp}")
+          val main = Procedure(funGoal, Hole)(goal.env.predicates)
+          log.out.printlnErr(s"Deductive synthesis failed for the goal:\n ${main._1.pp}")
           (Nil, stats)
         case slns =>
           (slns.reverse.map { case (body, helpers) =>

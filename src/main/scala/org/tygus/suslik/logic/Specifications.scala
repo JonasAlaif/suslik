@@ -353,7 +353,7 @@ object Specifications extends SepLogicUtils {
         val v = if (a.isInstanceOf[Var]) a.asInstanceOf[Var]
           else if (a.isInstanceOf[AlwaysExistsVar]) a.asInstanceOf[AlwaysExistsVar].v
           else return false
-        val phiVars = post.phi.vars
+        val phiVars = post.phi.vars ++ pre.phi.vars
         existentials(v) && !phiVars(v)
       }) && !post.onExpiries.exists(oe =>
         oe.field == r.field && !oe.futs.head && (oe.post.get || (oe.futs.length > 1 && oe.futs.tail.head))

@@ -109,14 +109,20 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       def loadVars(rapp: RApp): Seq[Var] =
         for { v@Var(_) <- rapp.fnSpec; if !goal.programVars.contains(v) } yield v
       // Take first prim, we will unfold all anyway
-      val prims = goal.pre.sigma.prims(goal.env.predicates).filter(h => !h.priv && !h.hasBlocker && !loadVars(h).isEmpty)
+      val prims = goal.pre.sigma.prims(goal.env.predicates).filter(h => !h.priv && h.ref.length <= 1 && !h.hasBlocker && !loadVars(h).isEmpty)
       if (prims.length == 0) return Seq()
       val prim = prims.head
       val (asn, fut_subst) = loadPrimPred(prim, goal.vars, goal.env.predicates, goal.onExpiries)
+      val futPrim = prim.fnSpec.zipWithIndex.map(fs => {
+        val ty = fs._1.getType(goal.gamma).get
+        if (ty == LifetimeType) fs._1 else OnExpiry(Some(true), List(true), prim.field, fs._2, ty)
+      })
+      val (asnFut, _) = loadPrimPred(prim.copy(fnSpec = futPrim), goal.vars, goal.env.predicates, goal.onExpiries)
       val newVars = loadVars(prim)
       val extraPhi = asn.phi - PFormula(asn.phi.collect[Expr](_.isInstanceOf[NoExists]))
+      val extraPhiFut = asnFut.phi - PFormula(asnFut.phi.collect[Expr](_.isInstanceOf[NoExists]))
       val newGoal = goal.spawnChild(
-        Assertion(goal.pre.phi && extraPhi, goal.pre.sigma),
+        Assertion(goal.pre.phi && extraPhi && extraPhiFut, goal.pre.sigma),
         fut_subst = fut_subst,
         programVars = goal.programVars ++ newVars
       )
@@ -182,6 +188,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       for (h <- goal.pre.sigma.borrows
         if !h.priv && !h.hasBlocker && (!h.isPrim(goal.env.predicates) || h.ref.length >= 2) && h.tag.unrolls < goal.env.config.maxOpenDepth &&
         !goal.post.onExpiries.exists(oe => oe.field == h.field && !oe.post.get && !oe.futs.head) &&
+        !(h.isBorrow && goal.env.functions.values.exists(_.pre.sigma.borrows.exists(b => h.reborrow(b, Set((b.ref.head.lft, h.ref.head.lft))).isDefined))) &&
         h.ref.head.beenAddedToPost) {
         val (clauses, sbst, fresh_subst, fieldSubst, fut_subst, pred) = loadPred(h, goal.vars, goal.env.predicates, true, goal.onExpiries, goal.env.predicateCycles)
         if (clauses.length > 0) {
@@ -380,6 +387,8 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         if ExpireFinal.filter(h, goal)
         // Cannot expire existential
         if h.ref.head.beenAddedToPost
+        // Only write to mut borrows
+        if h.ref.head.mut
         // Cannot expire before reborrowing:
         if !preBorrows.contains(h.field)
         val (clauses, sbst, _, _, fut_subst, _) = loadPred(h, goal.vars, goal.env.predicates, false, goal.onExpiries, goal.env.predicateCycles)
@@ -451,7 +460,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         assert(!tgt.ref.head.lft.isExistential) // Unsupported as of now (how would it happen that we're trying to create a borrow with existential lft - could just kill?)
         val tgtPred = goal.env.predicates(tgt.pred)
         assert(tgtPred.params.length == src.fnSpec.length)
-        val fut_subst = goal.onExpiries.flatMap(_.reborrowSub(tgt.field, src.field, tgt.fnSpec)).toMap
+        val fut_subst = goal.onExpiries.flatMap(_.reborrowSub(tgt.field, src.field, tgt.fnSpec, src.fnSpec)).toMap
         // `src.fnSpec` are existentials, need to bind them to all of the futures
         val exists_bind = if (tgt.ref.head.mut)
           PFormula(src.fnSpec.zipWithIndex.zip(tgtPred.params.map(_._2)).filter(_._2 != LifetimeType).map(p => {
