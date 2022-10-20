@@ -404,7 +404,7 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
   override def unify(that: Heaplet): Option[ExprSubst] = that match {
     // Unifying borrow in pre/post which has been duplicated with beenAddedToPost
     case o@RApp(pri, tgt, rs, p, spec, _, _) if this.field == tgt && o.isBorrow && (!this.hasBlocker || o.canBeBlocked) => {
-      assert(pri == this.priv && p == this.pred && this.ref == rs && this.ref.head.beenAddedToPost)
+      assert(pri == this.priv && p == this.pred && this.ref == rs && this.ref.head.beenAddedToPost, "this: " + this + " vs that: " + that)
       val subst = this.fnSpec.zip(spec.toList)
       Some(subst.toMap)
     }

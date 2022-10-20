@@ -586,7 +586,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             (goal.pre.sigma - src) ** src.setTag(src.tag.incrCalls)
           )
           val fut_subst = if (tgt.ref.head.lft == src.ref.head.lft) Map.empty[Var, Expr]
-                          else Map(tgt.ref.head.lft.asInstanceOf[Named].name -> src.ref.head.lft.asInstanceOf[Named].name)
+                          else Map(tgt.ref.head.lft.asInstanceOf[Named].name -> src.ref.head.lft)
           (newPre, fut_subst, goal.callGoal)
         }
         // TODO: use?
