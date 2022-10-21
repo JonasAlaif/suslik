@@ -225,10 +225,10 @@ trait SynthesisRunnerUtil {
             testPrintln(s"Successfully synthesised in $duration milliseconds:", Console.GREEN)
             printStats(sresult._2)
             testPrintln(result)
-            testPrintln("-----------------------------------------------------")
+            println("-----------------------------------------------------")
           } else {
             if (procs.length > 1)
-              testPrintln("-----------------------------------------------------")
+              println("-----------------------------------------------------")
             println(result)
           }
           if (out != noOutputCheck) {

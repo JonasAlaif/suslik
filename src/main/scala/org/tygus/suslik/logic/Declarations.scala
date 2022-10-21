@@ -163,8 +163,9 @@ case class InductivePredicate(priv: Boolean, full_name: Ident, params: Formals, 
     extends TopLevelDeclaration with PureLogicUtils {
 
   val isPrim: Boolean = full_name.startsWith("PRIM_")
+  val isCopy: Boolean = full_name.endsWith("_COPY")
   val isOpaque: Boolean = clauses.length == 0
-  val name: Ident = full_name.stripPrefix("PRIM_")
+  val name: Ident = full_name.stripPrefix("PRIM_").stripSuffix("_COPY")
   val clean: String = clean_name.getOrElse(name)
 
   def resolve(gamma: Gamma, env:Environment):Option[Gamma] = {

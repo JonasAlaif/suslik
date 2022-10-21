@@ -294,7 +294,7 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
       :: ref.tail.tail,
     tag = this.tag.incrUnrolls("", true)
   )
-  def getBlocker: Option[NamedLifetime] = blocked.map(_.getNamed.get)
+  def getBlocker: Option[NamedLifetime] = blocked.flatMap(_.getNamed)
   val hasBlocker: Boolean = blocked.isDefined && blocked.get.getNamed.isDefined
   val canBeBlocked: Boolean = isBorrow && blocked.isEmpty && ref.head.beenAddedToPost
   val isUnblockable: Boolean = !canBeBlocked
@@ -306,6 +306,7 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
 
   // Can be copied out immediately
   def isPrim(predicates: PredicateEnv): Boolean = predicates(pred).isPrim
+  def isCopy(predicates: PredicateEnv): Boolean = predicates(pred).isCopy
 
   // Should be folded/unfolded after non-cyclic things
   def isCyclic(predicates: PredicateCycles): Boolean = predicates(pred)
@@ -469,6 +470,7 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   def borrows: List[RApp] = rapps.filter(_.isBorrow)
   def owneds: List[RApp] = rapps.filter(!_.isBorrow)
   def prims(predicates: PredicateEnv): List[RApp] = rapps.filter(_.isPrim(predicates))
+  def copies(predicates: PredicateEnv): List[RApp] = borrows.filter(b => !b.priv && b.blocked.isEmpty && b.ref.length == 1 && b.isCopy(predicates))
   def enableAddBrrwsToPost: SFormula = SFormula(chunks.map {
     case b:RApp if b.ref.length > 0 && b.ref.head.beenAddedToPost => b.copy(ref = b.ref.head.copy(beenAddedToPost = false) :: b.ref.tail)
     case h => h

@@ -13,6 +13,7 @@ object Expressions {
     def level: Int = 5
     def inputType: SSLType
     def outputType: SSLType
+    def postfix: Boolean = false
   }
   object OpNot extends UnOp {
     override def pp: String = "not "
@@ -48,6 +49,12 @@ object Expressions {
     override def pp: String = "*"
     override def inputType: SSLType = LocType
     override def outputType: SSLType = LocType
+  }
+  case class OpCast(tp: String) extends UnOp {
+    override def pp: String = " as " + tp
+    override def inputType: SSLType = LocType
+    override def outputType: SSLType = LocType
+    override def postfix: Boolean = true
   }
 
   sealed abstract class BinOp extends OverloadedBinOp {
@@ -984,7 +991,9 @@ object Expressions {
     override def substUnknown(sigma: UnknownSubst): Expr = UnaryExpr(op, arg.substUnknown(sigma))
     override def level = op.level
     override def associative: Boolean = op.isInstanceOf[AssociativeOp]
-    override def pp: String = s"${op.pp}${arg.printInContext(this)}"
+    override def pp: String =
+      if (op.postfix) s"${arg.printInContext(this)}${op.pp}"
+      else s"${op.pp}${arg.printInContext(this)}"
     def getType(gamma: Gamma): Option[SSLType] = Some(op.outputType)
   }
 

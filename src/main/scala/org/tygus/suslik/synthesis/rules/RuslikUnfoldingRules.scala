@@ -12,6 +12,7 @@ import org.tygus.suslik.synthesis._
 import org.tygus.suslik.synthesis.rules.Rules._
 import org.tygus.suslik.language.LifetimeType
 import org.tygus.suslik.language.SSLType
+import org.tygus.suslik.language.IntType
 
 /**
   * Unfolding rules deal with Rust predicates and recursion.
@@ -129,6 +130,27 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       assert(newVars.length == 1)
       val field = prim.ref.foldLeft[Expr](prim.field)((acc, _) => UnaryExpr(OpDeRef, acc))
       val kont = CrossFnSubstProducer(newVars.head, field)
+      Seq(RuleResult(List(newGoal), kont, this, goal))
+    }
+  }
+
+  /*
+  Copy out rule: load in a primitive value
+   */
+  object CopyOut2 extends SynthesisRule with GeneratesCode with InvertibleRule {
+    override def toString: Ident = "CopyOut2"
+
+    def apply(goal: Goal): Seq[RuleResult] = {
+      // Take first copy, we will unfold all anyway
+      val copies = goal.pre.sigma.copies(goal.env.predicates)
+      if (copies.length == 0) return Seq()
+      val cp = copies.head
+      val newCopy = cp.copy(blocked = Some(NilLifetime))
+      val derefed = cp.copy(ref = List(), field = Var("de_" + cp.field.name))
+      val newGoal = goal.spawnChild(
+        Assertion(goal.pre.phi, (goal.pre.sigma - cp) ** newCopy ** derefed),
+      )
+      val kont = SubstProducer(derefed.field, UnaryExpr(OpDeRef, cp.field))
       Seq(RuleResult(List(newGoal), kont, this, goal))
     }
   }
@@ -299,8 +321,13 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
           assert(fieldNames.length == argNames.length)
           fieldNames.zip(argNames)
         }
-        val stmt = if (ip.isPrim) SubstProducer(construct_args(0)._1, construct_args(0)._2)
-          else AppendProducer(Construct(Some(h.field), ip.clean, name, construct_args))
+        val stmt = if (ip.isPrim) {
+            val arg =
+              if (ip.params.length == 1 && ip.params(0)._2 == IntType)
+                UnaryExpr(OpCast(ip.clean), construct_args(0)._2)
+              else construct_args(0)._2
+            SubstProducer(construct_args(0)._1, arg)
+          } else AppendProducer(Construct(Some(h.field), ip.clean, name, construct_args))
         val kont =
           UnfoldProducer(h.toSApp, selector, Assertion(asn.phi, asn.sigma), fresh_subst ++ fieldSubst) >>
           stmt >> ExtractHelper(goal)

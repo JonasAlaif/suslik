@@ -43,7 +43,7 @@ object Preprocessor extends SepLogicUtils {
     })
     val unusedPreds = predMap.keySet.filter(pred => !visited.contains(pred))
     if (unusedPreds.size != 0) {
-      println(s"Defined predicates which can never be reached: ${unusedPreds.mkString(", ")}!")
+      System.err.println(s"Defined predicates which can never be reached: ${unusedPreds.mkString(", ")}!")
     }
     cycles
   }
