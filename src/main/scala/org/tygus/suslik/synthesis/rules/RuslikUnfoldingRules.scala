@@ -149,6 +149,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       val derefed = cp.copy(ref = List(), field = Var("de_" + cp.field.name))
       val newGoal = goal.spawnChild(
         Assertion(goal.pre.phi, (goal.pre.sigma - cp) ** newCopy ** derefed),
+        programVars = derefed.field :: goal.programVars,
       )
       val kont = SubstProducer(derefed.field, UnaryExpr(OpDeRef, cp.field))
       Seq(RuleResult(List(newGoal), kont, this, goal))
@@ -683,7 +684,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       if (owneds.isEmpty) return Nil
       val ownedToDrop = goal.pre.sigma.owneds.head
       val newPre = Assertion(goal.pre.phi, goal.pre.sigma - ownedToDrop)
-      val cost = if (ownedToDrop.isPrim(goal.env.predicates)) 0 else 6
+      val cost = if (ownedToDrop.isCopy(goal.env.predicates)) 0 else 6
       val newGoal = goal.spawnChild(pre = newPre, extraCost = cost)
       List(RuleResult(List(newGoal), IdProducer, this, goal))
     }
