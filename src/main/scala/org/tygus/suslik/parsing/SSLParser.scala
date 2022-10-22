@@ -121,10 +121,10 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
     }
 
   def noExists: Parser[NoExists] = "#" ~> "[" ~> expr <~ "]" ^^ { case e => NoExists(e) }
-  def onExpiry: Parser[OnExpiry] = rep1("^" ^^^ true | "*" ^^^ false) ~ ("(" ~> typeParser ~ varParser <~ ")") ~ ("[" ~> numericLit <~ "]") ^^ { case futs ~ (ty ~ f) ~ i => OnExpiry(None, futs.reverse, f, Integer.parseInt(i), ty) }
+  def onExpiry: Parser[OnExpiry] = rep1("^" ^^^ true | "*" ^^^ false) ~ ("(" ~> typeParser ~ field <~ ")") ~ ("[" ~> numericLit <~ "]") ^^ { case futs ~ (ty ~ f) ~ i => OnExpiry(None, futs.reverse, f, Integer.parseInt(i), ty) }
 
   def lft: Parser[NamedLifetime] = "&" ~> ident ^^ (l => if (l == "static") StaticLifetime else Named(Var(l + "-L"), true))
-  def field: Parser[Var] = varParser ^^ { case Var(name) => Var(name.replaceAll("^f_\\d*", "")) }
+  def field: Parser[Var] = varParser ^^ { case Var(name) => Var(name.replaceAll("^f\\d*", "")) }
 
   def ref: Parser[Ref] =
     lft ~ opt("mut") ^^ { case l ~ mut => Ref(l, mut.isDefined, false) }
