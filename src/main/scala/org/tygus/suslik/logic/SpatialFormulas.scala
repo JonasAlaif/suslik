@@ -419,7 +419,7 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
 
   // this is the RApp in pre (source), that is in post (target)
   def reborrow(that: RApp, outlivesRels: Set[(NamedLifetime, NamedLifetime)]): Option[ExprSubst] = {
-    assert(that.ref.head.beenAddedToPost || that.blocked.isEmpty)
+    assert(that.ref.head.beenAddedToPost || that.blocked.isEmpty, "That: " + that + "\nwith " + this)
     if (
       this.canBeBlocked && !this.priv &&
       !that.ref.head.beenAddedToPost && !that.priv &&
@@ -489,7 +489,7 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   def toCallGoal(post: Boolean): SFormula = SFormula(chunks.flatMap {
     case RApp(true, _, _, _, _, _, _) => None
     case r:RApp if r.isBorrow && r.ref.head.beenAddedToPost => if (post) None else
-      Some(r.copy(ref = r.ref.head.copy(beenAddedToPost = false) :: r.ref.tail, tag = PTag()))
+      Some(r.copy(ref = r.ref.head.copy(beenAddedToPost = false) :: r.ref.tail, tag = PTag(), blocked = r.blocked.flatMap(_.getNamed)))
     case h => Some(h.setTag(PTag()))
   })
   def toFuts(gamma: Gamma): PFormula = PFormula(chunks.flatMap {

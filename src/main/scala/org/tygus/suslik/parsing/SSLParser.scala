@@ -124,6 +124,7 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
   def onExpiry: Parser[OnExpiry] = rep1("^" ^^^ true | "*" ^^^ false) ~ ("(" ~> typeParser ~ varParser <~ ")") ~ ("[" ~> numericLit <~ "]") ^^ { case futs ~ (ty ~ f) ~ i => OnExpiry(None, futs.reverse, f, Integer.parseInt(i), ty) }
 
   def lft: Parser[NamedLifetime] = "&" ~> ident ^^ (l => if (l == "static") StaticLifetime else Named(Var(l + "-L"), true))
+  def field: Parser[Var] = varParser ^^ { case Var(name) => Var(name.stripPrefix("f_")) }
 
   def ref: Parser[Ref] =
     lft ~ opt("mut") ^^ { case l ~ mut => Ref(l, mut.isDefined, false) }
@@ -145,7 +146,7 @@ class SSLParser(config: SynConfig = defaultConfig) extends StandardTokenParsers 
       ||| ident ~ ("(" ~> rep1sep(expr, ",") <~ ")") ~ opt("<" ~> expr <~ ">") ^^ {
         case name ~ args ~ v => SApp(name, args, PTag(), v.getOrElse(defaultCardParameter))
       }
-      ||| opt("priv") ~ (varParser <~ ":") ~ rep(ref) ~ ident ~ ("(" ~> repsep(expr, ",") <~ ")") ~ opt("<" ~> lft <~ ">") ^^ {
+      ||| opt("priv") ~ (field <~ ":") ~ rep(ref) ~ ident ~ ("(" ~> repsep(expr, ",") <~ ")") ~ opt("<" ~> lft <~ ">") ^^ {
         case priv ~ field ~ r ~ pred ~ fnSpec ~ b => RApp(priv.isDefined, field, r, pred, fnSpec, b, PTag())
       }
     )
