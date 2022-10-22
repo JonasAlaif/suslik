@@ -71,7 +71,7 @@ object Specifications extends SepLogicUtils {
     // Size of the assertion (in AST nodes)
     def size: Int = phi.size + sigma.size
 
-    def cost: Int = sigma.cost
+    def cost(predicates: PredicateEnv, cycles: PredicateCycles): Int = sigma.cost(predicates, cycles)
     def postCost(preBrrws: List[RApp]): Int = sigma.postCost(preBrrws)
     def wrapInAE: Assertion = Assertion(this.phi, this.sigma.wrapInAE)
   }
@@ -433,9 +433,10 @@ object Specifications extends SepLogicUtils {
       if (this.extraCost > 0) this.extraCost + (this.maxPrevCost max this.actualCost)
       else this.actualCost
     lazy val actualCost: Int = callGoal match {
-        case None => pre.cost + post.postCost(pre.sigma.borrows)  // + existentials.size //
+        case None => pre.cost(this.env.predicates, this.env.predicateCycles) + post.postCost(pre.sigma.borrows)  // + existentials.size //
         // Add `post.cost` to prevent infinite Closes when abducing call (we allow constructing objects while trying to fn call)
-        case Some(cg) => 3 + cg.callerPre.cost + cg.callerPost.postCost(pre.sigma.borrows) + post.cost // + (cg.callerPost.vars -- allUniversals).size //
+        case Some(cg) => 3 + cg.callerPre.cost(this.env.predicates, this.env.predicateCycles) +
+          cg.callerPost.postCost(pre.sigma.borrows) + post.cost(this.env.predicates, this.env.predicateCycles) // + (cg.callerPost.vars -- allUniversals).size //
       }
   }
 
@@ -500,7 +501,7 @@ object Specifications extends SepLogicUtils {
 
     def addPostFact(e: Expr): SuspendedCallGoal = this.copy(callerPost = this.callerPost.copy(phi = this.callerPost.phi && e))
 
-    lazy val cost: Int = calleePost.cost
+    // lazy val cost: Int = calleePost.cost
   }
 }
 

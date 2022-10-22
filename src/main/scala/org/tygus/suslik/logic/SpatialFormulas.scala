@@ -65,8 +65,9 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
     case RApp(_, _, _, _, fnSpec, _, _) => 1 + fnSpec.map(_.size).sum
   }
 
-  def cost: Int = this match {
+  def cost(predicates: PredicateEnv, cycles: PredicateCycles): Int = this match {
     case SApp(_, _, t@PTag(c, u, _), _) => 0 + 2*c*c+ 3*t.recursions + u
+    case r:RApp if !r.isBorrow && !cycles(r.pred) && r.isCopy(predicates) => 1
     case r@RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) =>// if (priv && r.isBorrow) 0 else 
       0 + 2*c*c + 3*t.recursions + u
     case _ => 1
@@ -470,7 +471,7 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   def borrows: List[RApp] = rapps.filter(_.isBorrow)
   def owneds: List[RApp] = rapps.filter(!_.isBorrow)
   def prims(predicates: PredicateEnv): List[RApp] = rapps.filter(_.isPrim(predicates))
-  def copies(predicates: PredicateEnv): List[RApp] = borrows.filter(b => !b.priv && b.blocked.isEmpty && b.ref.length == 1 && b.isCopy(predicates))
+  def copies(predicates: PredicateEnv): List[RApp] = borrows.filter(_.isCopy(predicates))
   def enableAddBrrwsToPost: SFormula = SFormula(chunks.map {
     case b:RApp if b.ref.length > 0 && b.ref.head.beenAddedToPost => b.copy(ref = b.ref.head.copy(beenAddedToPost = false) :: b.ref.tail)
     case h => h
@@ -573,7 +574,7 @@ case class SFormula(chunks: List[Heaplet]) extends PrettyPrinting with HasExpres
   // Size of the formula (in AST nodes)
   def size: Int = chunks.map(_.size).sum
 
-  def cost: Int = chunks.map(_.cost).sum
+  def cost(predicates: PredicateEnv, cycles: PredicateCycles): Int = chunks.map(_.cost(predicates, cycles)).sum
   def postCost(preBrrws: List[RApp]): Int = chunks.map(_.postCost(preBrrws)).sum
 
   //  def cost: Int = chunks.foldLeft(0)((m, c) => m.max(c.cost))

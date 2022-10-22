@@ -143,6 +143,8 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     def apply(goal: Goal): Seq[RuleResult] = {
       // Take first copy, we will unfold all anyway
       val copies = goal.pre.sigma.copies(goal.env.predicates)
+        .filter(b => !b.priv && b.blocked.isEmpty && b.ref.length == 1)
+        .filter(_.fnSpec.forall(_.getType(goal.gamma).get != LifetimeType))
       if (copies.length == 0) return Seq()
       val cp = copies.head
       val newCopy = cp.copy(blocked = Some(NilLifetime))
@@ -211,7 +213,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       for (h <- goal.pre.sigma.borrows
         if !h.priv && !h.hasBlocker && (!h.isPrim(goal.env.predicates) || h.ref.length >= 2) && h.tag.unrolls < goal.env.config.maxOpenDepth &&
         !goal.post.onExpiries.exists(oe => oe.field == h.field && !oe.post.get && !oe.futs.head) &&
-        !(h.isBorrow && goal.env.functions.values.exists(_.pre.sigma.borrows.exists(b => h.reborrow(b, Set((b.ref.head.lft, h.ref.head.lft))).isDefined))) &&
+        !(h.isBorrow && h.tag.calls == 0 && goal.env.functions.values.exists(_.pre.sigma.borrows.exists(b => h.reborrow(b, Set((b.ref.head.lft, h.ref.head.lft))).isDefined))) &&
         h.ref.head.beenAddedToPost) {
         val (clauses, sbst, fresh_subst, fieldSubst, fut_subst, pred) = loadPred(h, goal.vars, goal.env.predicates, true, goal.onExpiries, goal.env.predicateCycles)
         if (clauses.length > 0) {
@@ -590,8 +592,6 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         sub <- src.reborrow(tgt, goal.pre.phi.outlivesRels)
       } yield {
         assert(!goal.existentials(src.field) && goal.existentials(tgt.field))
-        // TODO:
-        assert(src.fnSpec.forall(_.getType(goal.gamma) != LifetimeType))
         val (newPre, fut_subst, newCG) = if (src.ref.head.mut) {
           val newSrc = if (tgt.ref.head.mut) src.refreshFnSpec(goal.gamma, goal.vars) else src
           val newSrcBlck = newSrc.block(tgt.ref.head.lft).setTag(newSrc.tag.incrCalls)
