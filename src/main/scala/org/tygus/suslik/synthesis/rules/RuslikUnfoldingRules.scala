@@ -279,7 +279,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val call = Call(Var(f.clean), f.returns, f.params.map(_._1), l, _f.params.headOption.map(_._1.name == "self").getOrElse(false), Skip)
         val calleePostSigma = f.post.sigma.setSAppTags(PTag().incrCalls)
         val callePost = Assertion(f.post.phi, calleePostSigma)
-        val suspendedCallGoal = Some(SuspendedCallGoal(goal.pre, goal.post, callePost, call, freshSub, rec))
+        val suspendedCallGoal = Some(SuspendedCallGoal(goal.pre, goal.post, callePost, call, freshSub, rec, !f.pre.sigma.borrows.isEmpty))
         val newGoal = goal.spawnChild(post = f.pre, gamma = newGamma, callGoal = suspendedCallGoal)
         val kont: StmtProducer = AbduceCallProducer(f) >> ExtractHelper(goal)
 
@@ -301,7 +301,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
 
     def apply(goal: Goal): Seq[RuleResult] = {
       if (goal.callGoal.isDefined && !goal.env.config.closeWhileAbduce) return Nil
-      if (goal.callGoal.isDefined && goal.post.sigma.chunks.length <= 1) return Nil
+      if (goal.callGoal.isDefined && !goal.callGoal.get.hasBorrows && goal.post.sigma.chunks.length <= 1) return Nil
       for {
         // TODO: Could potentially be a create-borrow rule as well for local lifetimes
         (h, c) <- goal.constraints.canUnfoldPost(goal)

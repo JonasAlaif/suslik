@@ -478,6 +478,7 @@ object Specifications extends SepLogicUtils {
                                call: Call,
                                companionToFresh: SubstVar,
                                allowedRecursions: Int,
+                               hasBorrows: Boolean,
                                freshToActual: Subst = Map.empty) {
     def updateSubstitution(sigma: Subst): SuspendedCallGoal = {
       assertNoOverlap(freshToActual, sigma)

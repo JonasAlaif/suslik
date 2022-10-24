@@ -326,7 +326,7 @@ case class AbduceCall(
               val new_vars =
                 head.goal.gamma.filterKeys(key => !node.goal.gamma.contains(key))
               val f_pre = head.goal.post
-              var SuspendedCallGoal(caller_pre, caller_post, callePost, call, freshSub, _, freshToActual) = head.goal.callGoal.get
+              var SuspendedCallGoal(caller_pre, caller_post, callePost, call, freshSub, _, _, freshToActual) = head.goal.callGoal.get
               SuslikProofStep.AbduceCall(new_vars, f_pre, callePost, call, freshSub, freshToActual, f, head.goal.gamma)
             case ls => fail_with_bad_children(ls, 1)
           }

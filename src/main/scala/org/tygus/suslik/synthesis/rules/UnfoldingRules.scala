@@ -98,7 +98,7 @@ object UnfoldingRules extends SepLogicUtils with RuleUtils {
         call = Call(Var(f.clean), f.returns, f.params.map(_._1), l, _f.params.headOption.map(_._1.name == "self").getOrElse(false), Skip)
         calleePostSigma = f.post.sigma.setSAppTags(PTag().incrCalls)
         callePost = Assertion(f.post.phi, calleePostSigma)
-        suspendedCallGoal = Some(SuspendedCallGoal(goal.pre, goal.post, callePost, call, freshSub, 666))
+        suspendedCallGoal = Some(SuspendedCallGoal(goal.pre, goal.post, callePost, call, freshSub, 666, true))
         newGoal = goal.spawnChild(post = f.pre, gamma = newGamma, callGoal = suspendedCallGoal)
       } yield {
         val kont: StmtProducer = AbduceCallProducer(f) >> IdProducer >> ExtractHelper(goal)
