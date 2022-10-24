@@ -297,7 +297,7 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
   )
   def getBlocker: Option[NamedLifetime] = blocked.flatMap(_.getNamed)
   val hasBlocker: Boolean = blocked.isDefined && blocked.get.getNamed.isDefined
-  val canBeBlocked: Boolean = isBorrow && blocked.isEmpty && ref.head.beenAddedToPost
+  val canBeBlocked: Boolean = isBorrow && getBlocker.isEmpty && ref.head.beenAddedToPost
   val isUnblockable: Boolean = !canBeBlocked
 
   def isWriteableRef(existentials: Set[Var]): Boolean = !priv && isBorrow && ref.head.mut && ref.head.beenAddedToPost

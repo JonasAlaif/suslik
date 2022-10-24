@@ -595,11 +595,10 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     override def toString: Ident = "ReborrowCall"
 
     def apply(goal: Goal): Seq[RuleResult] = {
-      if (goal.callGoal.isEmpty) return Nil
+      if (goal.callGoal.isEmpty || goal.post.sigma.borrows.isEmpty) return Nil
+      val tgt = goal.post.sigma.borrows.head
       for {
         src <- goal.pre.sigma.borrows
-        if src.isBorrow
-        tgt <- goal.post.sigma.borrows
         sub <- src.reborrow(tgt, goal.pre.phi.outlivesRels)
       } yield {
         assert(!goal.existentials(src.field) && goal.existentials(tgt.field))
