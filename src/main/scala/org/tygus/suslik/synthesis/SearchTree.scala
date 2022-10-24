@@ -67,6 +67,7 @@ object SearchTree {
     * For this node to succeed, one of its children has to succeed.
     */
   case class OrNode(id: NodeId, goal: Goal, parent: Option[AndNode], extraCost: Int = 0) extends SearchNode {
+    var parentSucceeded: Boolean = false
     // My index among the children of parent
     def childIndex: Int = id.headOption.getOrElse(0).max(0)
 
@@ -100,6 +101,7 @@ object SearchTree {
     // This node has succeeded: return either its next suspended and-sibling or the solution
     def succeed(s: List[Solution])(implicit config: SynConfig): Either[Option[OrNode], List[Solution]] = {
       memo.save(goal, Succeeded(s, id))
+      succeedDescendants(id, st.worklist) // succeed all my descendants in worklist
       st.successLeaves = st.successLeaves.filterNot(n => this.isFailedDescendant(n))  // prune members of partially successful branches
       parent match {
         case None => Right(s) // this is the root: synthesis succeeded
@@ -131,6 +133,11 @@ object SearchTree {
       val (toForget, newWL) = wl.partition(_.hasAncestor(ancestor))
       toForget.foreach(_.forget(ancestor))
       newWL
+    }
+
+    // Worklist `wl` with all descendants of `ancestor` succeeded
+    private def succeedDescendants(ancestor: NodeId, wl: List[OrNode]) = {
+      wl.filter(_.hasAncestor(ancestor)).foreach(_.parentSucceeded = true)
     }
 
     // Remove reflexive ancestors of this node until `until` from memo

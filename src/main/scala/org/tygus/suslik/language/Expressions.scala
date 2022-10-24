@@ -589,6 +589,8 @@ object Expressions {
     def isLiteral = this.isInstanceOf[Const] || this.isInstanceOf[SetLiteral]
     def getAlwaysExists: Option[Var] = None
     def isVarLike: Boolean = false
+    val evalIntConst: Option[Int] = None
+    val evalBoolConst: Option[Boolean] = None
   }
 
   // Program-level variable: program-level or ghost
@@ -812,10 +814,12 @@ object Expressions {
 
   case class IntConst(value: Integer) extends Const(value) {
     def getType(gamma: Gamma): Option[SSLType] = Some(IntType)
+    override val evalIntConst: Option[Int] = Some(value)
   }
 
   case class BoolConst(value: Boolean) extends Const(value) {
     def getType(gamma: Gamma): Option[SSLType] = Some(BoolType)
+    override val evalBoolConst: Option[Boolean] = Some(value)
   }
 
   case class BinaryExpr(op: BinOp, left: Expr, right: Expr) extends Expr {
@@ -829,7 +833,9 @@ object Expressions {
         this
       }).simplify
 
-    def simplify: Expr = op match {
+    def simplify: Expr = if (evalIntConst.isDefined) {
+        if (evalIntConst.get < 0) UnaryExpr(OpUnaryMinus, IntConst(-evalIntConst.get)) else IntConst(evalIntConst.get)
+      } else if (evalBoolConst.isDefined) BoolConst(evalBoolConst.get) else op match {
       case OpLftEq if !(left.isInstanceOf[Lifetime] && right.isInstanceOf[Lifetime]) => ???
       case OpOutlived if !(left.isInstanceOf[Lifetime] && right.isInstanceOf[Lifetime]) => ???
       case OpEq | OpBoolEq | OpLftEq | OpSetEq | OpIntervalEq |
@@ -845,7 +851,6 @@ object Expressions {
       case OpLftEq if left == right => BoolConst(true)
       case OpLftEq => this
       case OpEq => (left, right) match {
-        case (IntConst(left), IntConst(right)) if left != right => BoolConst(false)
         case (TupleExpr(left), TupleExpr(right)) if left.length == right.length =>
           val both = left.zip(right)
           val gamma = (left ++ right).foldLeft(Map.empty[Var, SSLType])((acc, tpl) => tpl._1.resolve(acc, tpl._2).get)
@@ -859,14 +864,12 @@ object Expressions {
         case _ => this
       }
       case OpBoolEq => (left, right) match {
-        case (BoolConst(left), BoolConst(right)) if left != right => BoolConst(false)
         case (l, BoolConst(true)) => l
         case (BoolConst(true), r) => r
         case _ => this
       }
       case OpMinus => (left, right) match {
         case (_, IntConst(right)) if right == 0 => left
-        case (IntConst(left), IntConst(right)) => if (left >= right) IntConst(left-right) else UnaryExpr(OpUnaryMinus, IntConst(right-left))
         case (BinaryExpr(OpMinus, ll, IntConst(lr)), IntConst(right)) => BinaryExpr(OpMinus, ll, IntConst(lr+right)).simplify
         case (BinaryExpr(OpPlus, ll, IntConst(lr)), IntConst(right)) =>
           if (lr >= right) BinaryExpr(OpPlus, ll, IntConst(lr-right)).simplify else BinaryExpr(OpMinus, ll, IntConst(right-lr)).simplify
@@ -874,17 +877,9 @@ object Expressions {
       }
       case OpPlus => (left, right) match {
         case (_, IntConst(right)) if right == 0 => left
-        case (IntConst(left), IntConst(right)) => IntConst(left+right)
         case (BinaryExpr(OpPlus, ll, IntConst(lr)), IntConst(right)) => BinaryExpr(OpPlus, ll, IntConst(lr+right)).simplify
         case (BinaryExpr(OpMinus, ll, IntConst(lr)), IntConst(right)) =>
           if (lr >= right) BinaryExpr(OpMinus, ll, IntConst(lr-right)).simplify else BinaryExpr(OpPlus, ll, IntConst(right-lr)).simplify
-        case _ => this
-      }
-      case OpLeq | OpLt => (left, right) match {
-        case (IntConst(left), IntConst(right)) => {
-          if (left < right || (left == right && op == OpLeq)) BoolConst(true)
-          else BoolConst(false)
-        }
         case _ => this
       }
       case OpAnd => (left, right) match {
@@ -920,6 +915,33 @@ object Expressions {
       case (IntConst(x), IntConst(y)) if x > y => "[]"
       case _ if left == right => s"[${left.printInContext(this)}]"
       case _ => s"[${left.printInContext(this)} ${op.pp} ${right.printInContext(this)}]"
+    }
+    override val evalIntConst: Option[Int] = (left.evalIntConst, right.evalIntConst) match {
+      case (Some(left), Some(right)) => op match {
+        case OpPlus => Some(left + right)
+        case OpMinus => Some(left - right)
+        case OpMultiply => Some(left * right)
+        case _ => None
+      }
+      case _ => None
+    }
+    override val evalBoolConst: Option[Boolean] = (left.evalIntConst, right.evalIntConst) match {
+      case (Some(left), Some(right)) => op match {
+        case OpEq => Some(left == right)
+        case OpLeq => Some(left <= right)
+        case OpLt => Some(left < right)
+        case _ => None
+      }
+      case _ => (left.evalBoolConst, right.evalBoolConst) match {
+        case (Some(left), Some(right)) => op match {
+          case OpImplication => Some(!left || right)
+          case OpBoolEq => Some(left == right)
+          case OpAnd => Some(left && right)
+          case OpOr => Some(left || right)
+          case _ => None
+        }
+        case _ => None
+      }
     }
   }
 
@@ -981,11 +1003,12 @@ object Expressions {
 
   case class UnaryExpr(op: UnOp, arg: Expr) extends Expr {
     def subst(sigma: Subst): Expr = UnaryExpr(op, arg.subst(sigma)).normalise
-    override def normalise: Expr = (op, arg) match {
+    override def normalise: Expr = if (evalIntConst.isDefined) {
+        if (evalIntConst.get < 0) UnaryExpr(OpUnaryMinus, IntConst(-evalIntConst.get)) else IntConst(evalIntConst.get)
+      } else if (evalBoolConst.isDefined) BoolConst(evalBoolConst.get) else (op, arg) match {
       case (OpDeRef, UnaryExpr(OpTakeRef(_), arg)) => arg.normalise
       case (OpNot, UnaryExpr(OpNot, arg)) => arg.normalise
       case (OpUnaryMinus, UnaryExpr(OpUnaryMinus, arg)) => arg.normalise
-      case (OpNot, BoolConst(b)) => BoolConst(!b)
       case _ => this
     }
     override def substUnknown(sigma: UnknownSubst): Expr = UnaryExpr(op, arg.substUnknown(sigma))
@@ -995,6 +1018,14 @@ object Expressions {
       if (op.postfix) s"${arg.printInContext(this)}${op.pp}"
       else s"${op.pp}${arg.printInContext(this)}"
     def getType(gamma: Gamma): Option[SSLType] = Some(op.outputType)
+    override val evalIntConst: Option[Int] = (op, arg.evalIntConst) match {
+      case (OpUnaryMinus, Some(arg)) => Some(-arg)
+      case _ => None
+    }
+    override val evalBoolConst: Option[Boolean] = (op, arg.evalBoolConst) match {
+      case (OpNot, Some(arg)) => Some(!arg)
+      case _ => None
+    }
   }
 
   case class SetLiteral(elems: List[Expr]) extends Expr {
@@ -1013,11 +1044,11 @@ object Expressions {
     override def level: Int = 0
     override def pp: String = s"${cond.printInContext(this)} ? ${left.printInContext(this)} : ${right.printInContext(this)}"
     override def subst(sigma: Subst): Expr = IfThenElse(cond.subst(sigma), left.subst(sigma), right.subst(sigma)).normalise
-    override def normalise: Expr = (cond, left, right) match {
-      case (BoolConst(true), _, _) => left
-      case (BoolConst(false), _, _) => right
-      case (_, BoolConst(false), _) => (cond.not && right).normalise
-      case (_, _, BoolConst(false)) => (cond && left).normalise
+    override def normalise: Expr = (cond.evalBoolConst, left.evalBoolConst, right.evalBoolConst) match {
+      case (Some(true), _, _) => left
+      case (Some(false), _, _) => right
+      case (_, Some(false), _) => (cond.not && right).normalise
+      case (_, _, Some(false)) => (cond && left).normalise
       case _ => this
     }
     override def substUnknown(sigma: UnknownSubst): Expr = IfThenElse(cond.substUnknown(sigma), left.substUnknown(sigma), right.substUnknown(sigma))

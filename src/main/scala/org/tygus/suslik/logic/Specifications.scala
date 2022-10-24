@@ -225,26 +225,19 @@ object Specifications extends SepLogicUtils {
     // Companion candidates for this goal:
     // look at ancestors before progress was last made, only keep those with different heap profiles
     def companionCandidates: List[(Goal, Int)] = {
-      var matchedWith = this.pre.sigma.rapps.filter(!_.hasBlocker).map(r => r -> Set(r.field))
+      val currRapps = this.pre.sigma.rapps.filter(!_.hasBlocker)
+      var matchedWith = currRapps.map(_.field).toSet
+      var recursions = 0
       val allCands = ancestors.filter(_.canBeCompanion).flatMap(g => {
-        val rapps = g.pre.sigma.rapps
-        var recursions = 0
-        var newAdded = false
-        matchedWith = matchedWith.map(mw => {
-          val newFields = rapps.filter(r => !mw._2(r.field)).filter(r => {
-            val matches = mw._1.pred == r.pred && mw._1.ref.length == r.ref.length && mw._1.field.name.endsWith(r.field.name)
-            if (matches) {
-              val mwRec = mw._1.tag.pastTypes._1.count(_ == mw._1.pred) + mw._1.tag.pastTypes._2
-              val rRec = r.tag.pastTypes._1.count(_ == mw._1.pred) + r.tag.pastTypes._2
-              recursions += mwRec - rRec
-            }
-            matches
-          }).map(_.field)
-          assert(newFields.length <= 1)
-          newAdded = newAdded || newFields.length > 0
-          mw._1 -> (mw._2 ++ newFields)
+        val unmatched = g.pre.sigma.rapps.filter(old => !matchedWith(old.field))
+        matchedWith = matchedWith ++ unmatched.map(_.field)
+        val newRecs = unmatched.filter(old => {
+          currRapps.exists(curr => {
+            curr.pred == old.pred && curr.ref.length == old.ref.length && curr.field.name.endsWith(old.field.name)
+          })
         })
-        if (newAdded) Some(g, recursions) else None
+        recursions += newRecs.length
+        if (newRecs.length > 0) Some(g, recursions) else None
       }).reverse
       if (env.config.auxAbduction) allCands else allCands.take(1)
   }

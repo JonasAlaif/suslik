@@ -177,9 +177,14 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         if clauses.length > 0
       } yield {
         val newGoals = clauses.zipWithIndex.map { case (clause, j) => {
-          val newVars = clause.asn.sigma.rapps.map(_.field)
+          val newSigma = if (h.isBorrow) clause.asn.sigma else {
+            val disc = clause.asn.sigma.rapps.filter(r => r.priv && r.isPrim(goal.env.predicates) && r.field.name.startsWith("disc_"))
+            assert(disc.length <= 1)
+            clause.asn.sigma - SFormula(disc)
+          }
+          val newVars = newSigma.rapps.map(_.field)
           goal.spawnChild(
-            pre = Assertion(goal.pre.phi && clause.asn.phi && clause.selector, goal.pre.sigma ** clause.asn.sigma - h),
+            pre = Assertion(goal.pre.phi && clause.asn.phi && clause.selector, goal.pre.sigma ** newSigma - h),
             fut_subst = fut_subst,
             constraints = c,
             programVars = goal.programVars ++ newVars,
@@ -220,9 +225,14 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         var counter: Int = 0
         val newGoals = clauses.zipWithIndex.map { case (clause, j) => {
           if (clause.selector != BoolConst(false)) counter += 1
-          val newVars = clause.asn.sigma.rapps.map(_.field)
+          val newSigma = if (h.isBorrow) clause.asn.sigma else {
+            val disc = clause.asn.sigma.rapps.filter(r => r.priv && r.isPrim(goal.env.predicates) && r.field.name.startsWith("disc_"))
+            assert(disc.length <= 1)
+            clause.asn.sigma - SFormula(disc)
+          }
+          val newVars = newSigma.rapps.map(_.field)
           goal.spawnChild(
-            pre = Assertion(goal.pre.phi && clause.asn.phi && clause.selector, goal.pre.sigma ** clause.asn.sigma - h),
+            pre = Assertion(goal.pre.phi && clause.asn.phi && clause.selector, goal.pre.sigma ** newSigma - h),
             fut_subst = fut_subst,
             programVars = goal.programVars ++ newVars,
             childId = Some(j),
@@ -291,6 +301,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
 
     def apply(goal: Goal): Seq[RuleResult] = {
       if (goal.callGoal.isDefined && !goal.env.config.closeWhileAbduce) return Nil
+      if (goal.callGoal.isDefined && goal.post.sigma.chunks.length <= 1) return Nil
       for {
         // TODO: Could potentially be a create-borrow rule as well for local lifetimes
         (h, c) <- goal.constraints.canUnfoldPost(goal)
@@ -515,7 +526,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
 
   def borrowToOwned(brrw: RApp, vars: Set[Var]): RApp = {
     val newTag = PTag(0, brrw.tag.unrolls, (brrw.tag.pastTypes._1, brrw.tag.pastTypes._2 + 1))
-    val newField = freshVar(vars, brrw.field.name + "_NV")
+    val newField = freshVar(vars, "new_" + brrw.field.name + "_NV")
     brrw.copy(field = newField, ref = brrw.ref.tail, blocked = None, tag = newTag)
   }
   def oeSubWrite(oes: Set[OnExpiry], brrw: RApp, owned: RApp): Subst = oes.flatMap(_.writeSub(brrw.field, owned.field, owned.fnSpec, brrw.fnSpec, true)).toMap

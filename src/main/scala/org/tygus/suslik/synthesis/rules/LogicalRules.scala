@@ -133,7 +133,8 @@ object LogicalRules extends PureLogicUtils with SepLogicUtils with RuleUtils {
       findMatchingHeaplets(_ => true, isMatch, pre.sigma, post.sigma) match {
         case None => Nil
         case Some((hPre, hPost)) => {
-          val newPreSigma = pre.sigma - hPre
+          val isOwnedCopy = hPre.isInstanceOf[RApp] && hPre.asInstanceOf[RApp].isCopy(goal.env.predicates) && !hPre.asInstanceOf[RApp].isBorrow
+          val newPreSigma = if (isOwnedCopy) pre.sigma else pre.sigma - hPre
           val newPostSigma = post.sigma - hPost
           val newPre = Assertion(pre.phi, newPreSigma)
           val newPost = Assertion(post.phi, newPostSigma)

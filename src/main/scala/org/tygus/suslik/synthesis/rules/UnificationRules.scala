@@ -190,7 +190,10 @@ object UnificationRules extends PureLogicUtils with SepLogicUtils with RuleUtils
       if (cs.size == 0) Nil
       else {
           var sigmaOld: Subst = Map.empty
-          var sigma = cs.map(tpl => tpl._1 -> tpl._2._1).toMap
+          var sigma = cs.map(tpl => {
+            val subst = tpl._2._1.vars.filter(v => goal.existentials(v)).map(v => v -> AlwaysExistsVar(v)).toMap
+            tpl._1 -> tpl._2._1.subst(subst)
+          }).toMap
           while (sigma != sigmaOld) {
             sigmaOld = sigma
             sigma = sigmaOld.map(tpl => (tpl._1, tpl._2.subst(sigmaOld)))
