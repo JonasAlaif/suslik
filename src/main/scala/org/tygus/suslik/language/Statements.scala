@@ -443,9 +443,12 @@ object Statements {
   // let results = match tgt { arms }
   case class Match(results: Results, tgt: Expr, arms: Seq[(Construct, Statement)]) extends Statement {
     override def simplify: Statement = {
+      if (arms.length == 0) return this
       var armStmt: Option[Statement] = None
       for (arm <- arms if arm._2 != Error) {
-        if (arm._1.args.length > 0 || (armStmt.isDefined && armStmt.get != arm._2)) return this
+        // TODO: two Returns might still be != even if they were the same due to differing subs
+        if (arm._1.args.filter(a => !a._2.isInstanceOf[Var] || a._2.asInstanceOf[Var].name != "_").length > 0 ||
+            (armStmt.isDefined && armStmt.get != arm._2)) return this
         armStmt = Some(arm._2)
       }
       if (armStmt.isEmpty) Error else armStmt.get
@@ -454,8 +457,8 @@ object Statements {
       if (res.r.isEmpty) this
       else this.copy(arms = this.arms.map(a => (a._1, a._2.withRes(res))))
     }
-    override def doSubsts: Match = {
-      this.copy(arms = this.arms.map(a => (a._1, a._2.doSubsts)))
+    override def doSubsts: Statement = {
+      this.copy(arms = this.arms.map(a => (a._1, a._2.doSubsts))).simplify
     }
     
     override def pushResIn: Statement = this.addResToArms(results)
