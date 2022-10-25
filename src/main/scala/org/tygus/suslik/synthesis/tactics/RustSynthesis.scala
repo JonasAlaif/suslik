@@ -79,11 +79,11 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
         List(
           LogicalRules.FrameBorrows,
           UnificationRules.HeapUnifyBorrows,
+          RuslikUnfoldingRules.ExpireNoWrite,
           RuslikUnfoldingRules.Open,
           RuslikUnfoldingRules.AbduceCall,
           RuslikUnfoldingRules.Close,
           RuslikUnfoldingRules.Reborrow,
-          RuslikUnfoldingRules.ExpireNoWrite,
           RuslikUnfoldingRules.BrrwWrite,
         )
     } else {

@@ -183,8 +183,14 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
             clause.asn.sigma - SFormula(disc)
           }
           val newVars = newSigma.rapps.map(_.field)
+          val inPost = goal.post.sigma.borrows.find(p => h.isBorrow && h.field != p.field && h.field.name.endsWith(p.field.name))
+          val newPost = if (inPost.isDefined) {
+            val newTag = inPost.get.tag.copy(extraCost = inPost.get.tag.extraCost + 1)
+            (goal.post.sigma - inPost.get) ** inPost.get.setTag(newTag)
+          } else goal.post.sigma
           goal.spawnChild(
             pre = Assertion(goal.pre.phi && clause.asn.phi && clause.selector, goal.pre.sigma ** newSigma - h),
+            post = goal.post.copy(sigma = newPost),
             fut_subst = fut_subst,
             constraints = c,
             programVars = goal.programVars ++ newVars,
@@ -453,7 +459,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       } yield {
         // Write
         val preRapps = goal.pre.sigma.rapps
-        val newFields: SFormula = SFormula(asn.sigma.rapps.map(r => preRapps.find(_.field == r.field).get))
+        val newFields: SFormula = SFormula(asn.sigma.rapps.map(r => preRapps.find(_.field == r.field).get).map(r => r.copy(tag = r.tag.copy(extraCost = 0))))
         val newPostWrite = Assertion(goal.post.phi, (goal.post.sigma ** newOwned - h) ** newFields)
         val fut_subst_write = oeSubWrite(goal.onExpiries, h, newOwned)
         val kont = AppendProducer(Store(h.field, 0, newOwned.field))
@@ -511,7 +517,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val addLftRel = BinaryExpr(OpOutlived, tgt.ref.head.lft, src.ref.head.lft)
         val newPost = Assertion(
           goal.post.phi && exists_bind && addLftRel,
-          (goal.post.sigma - tgt - src) ** src.copy(fnSpec = tgt.fnSpec).mkUnblockable
+          (goal.post.sigma - tgt - src) ** src.copy(fnSpec = tgt.fnSpec, tag = src.tag.copy(extraCost = 0)).mkUnblockable
         )
         val kont =
           // We'll get a (tgt.field |===| src.field) subst anyway
@@ -547,7 +553,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         if !goal.isRAppExistential(brrw)
       } yield {
         val newOwned = borrowToOwned(brrw, goal.vars)
-        val newBrrw = brrw.refreshFnSpec(goal.gamma, goal.vars).mkUnblockable
+        val newBrrw = brrw.copy(tag = brrw.tag.copy(extraCost = 0)).refreshFnSpec(goal.gamma, goal.vars).mkUnblockable
         val newPost = Assertion(post.phi, (post.sigma ** newOwned - brrw) ** newBrrw)
         val fut_subst = oeSubWrite(goal.onExpiries, brrw, newOwned)
         val kont = AppendProducer(Store(brrw.field, 0, newOwned.field))

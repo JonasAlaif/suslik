@@ -66,24 +66,24 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
   }
 
   def cost(predicates: PredicateEnv, cycles: PredicateCycles): Int = this match {
-    case SApp(_, _, t@PTag(c, u, _), _) => 0 + 2*c*c+ 3*t.recursions + u
+    case SApp(_, _, t@PTag(c, u, _, ec), _) => 0 + 2*c*c+ 3*t.recursions + u + ec
     case r:RApp if !r.isBorrow && !cycles(r.pred) && r.isCopy(predicates) => 1
-    case r@RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) =>// if (priv && r.isBorrow) 0 else 
-      0 + 2*c*c + 3*t.recursions + u
+    case r@RApp(priv, _, _, _, _, _, t@PTag(c, u, _, ec)) =>// if (priv && r.isBorrow) 0 else 
+      0 + 2*c*c + 3*t.recursions + u + ec
     case _ => 1
   }
 
   def postCost(preBrrws: List[RApp]): Int = this match {
-    case SApp(_, _, t@PTag(c, u, _), _) => 0 + 4*(c + u + t.recursions)
-    case r@RApp(_, _, _, _, _, _, _) if r.isBorrow && r.ref.head.beenAddedToPost => {
+    case SApp(_, _, t@PTag(c, u, _, ec), _) => 0 + 4*(c + u + t.recursions) + ec
+    case r:RApp if r.isBorrow && r.ref.head.beenAddedToPost => {
       // Punish not expiring early
       preBrrws.filter(_.field.name.endsWith(r.field.name)).map(_.tag.unrolls - r.tag.unrolls)
       // TODO: There may be no fields in a ref that was unfolded in the pre, handle this inelegantly by defaulting to 20
-        .reduceOption(_ max _).getOrElse(20)
+        .reduceOption(_ max _).getOrElse(20) + r.tag.extraCost
     }
-    case r@RApp(priv, _, _, _, _, _, t@PTag(c, u, _)) => {
+    case r@RApp(priv, _, _, _, _, _, t@PTag(c, u, _, ec)) => {
       assert(c == 0)
-      if (priv) 0 else 0 + 3*t.recursions + u
+      if (priv) 0 else 0 + 3*t.recursions + u + ec
     }
     case _ => 1
   }
@@ -168,10 +168,10 @@ case class Block(loc: Expr, sz: Int) extends Heaplet {
   }
 }
 
-case class PTag(calls: Int = 0, unrolls: Int = 0, pastTypes: (List[Ident], Int) = (List.empty, 0)) extends PrettyPrinting {
+case class PTag(calls: Int = 0, unrolls: Int = 0, pastTypes: (List[Ident], Int) = (List.empty, 0), extraCost: Int = 0) extends PrettyPrinting {
   override def pp: String = this match {
-    case PTag(0, 0, _) => "" // Default tag
-    case _ => s"[$calls,$unrolls,$recursions]"
+    case PTag(0, 0, _, 0) => "" // Default tag
+    case _ => s"[$calls,$unrolls,$recursions,$extraCost]"
   }
   def incrUnrolls(ty: Ident, isCyc: Boolean): PTag = {
     val preCyc = this.pastTypes._1.dropWhile(_ != ty)
