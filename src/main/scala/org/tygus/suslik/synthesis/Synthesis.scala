@@ -22,7 +22,7 @@ import scala.annotation.tailrec
 
 class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: ProofTrace) extends SepLogicUtils {
 
-  def synthesizeProc(funGoal: FunSpec, env: Environment, sketch: Statement): (List[List[Procedure]], SynStats) = {
+  def synthesizeProc(funGoal: FunSpec, env: Environment, sketch: Statement): (List[(List[Procedure], Long)], SynStats) = {
     implicit val config: SynConfig = env.config
     implicit val stats: SynStats = env.stats
     val FunSpec(_, _, formals, rets, pre, post, var_decl) = funGoal
@@ -53,10 +53,10 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
           log.out.printlnErr(s"Deductive synthesis failed for the goal:${main._1.pp}")
           (Nil, stats)
         case slns =>
-          (slns.reverse.map { case (body, helpers) =>
+          (slns.reverse.map { case ((body, helpers), time) =>
             log.print(s"Succeeded leaves (${successLeaves.length}): ${successLeaves.map(n => s"${n.pp()}").mkString(" ")}", Console.YELLOW, 2)
             val main = Procedure(funGoal, body)(goal.env.predicates)
-            (main._1 :: helpers)
+            (main._1 :: helpers, time)
           }, stats)
       }
     } catch {
@@ -67,14 +67,14 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
   }
 
   protected def synthesize(goal: Goal)
-                          (stats: SynStats): List[Solution] = {
+                          (stats: SynStats): List[(Solution, Long)] = {
     SearchTree.init(goal)
     processWorkList(stats, goal.env.config)
   }
 
   @tailrec final def processWorkList(implicit
                                      stats: SynStats,
-                                     config: SynConfig): List[Solution] = {
+                                     config: SynConfig): List[(Solution, Long)] = {
     // Check for timeouts
     if (!config.interactive && stats.timedOut) {
       throw SynTimeOutException(s"\n\nThe derivation took too long: more than ${config.timeOut / 1000.0} seconds.\n")
@@ -133,7 +133,7 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
         }
         case None => expandNode(node, addNewNodes) // First time we see this goal: do expand
       }
-      slns = res ++ slns
+      slns = res.map(_ -> stats.duration) ++ slns
       // Could have more solutions than asked for if one and branch has multiple
       if (slns.length >= config.solutions) slns.takeRight(config.solutions)
       else processWorkList

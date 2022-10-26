@@ -172,11 +172,11 @@ class AsyncSynthesisRunner extends SynthesisRunnerUtil {
     * Wraps parent implementation, reporting success or failure to the client.
     */
   override def synthesizeFromSpec(testName: String, text: String, out: String,
-                                  params: SynConfig): List[List[Statements.Procedure]] =
+                                  params: SynConfig): List[(List[Statements.Procedure], Long)] =
     wrapError(sticky = true) {
       try {
         val ret = super.synthesizeFromSpec(testName, text, out, params)
-        outbound.put(write(SynthesisResultEntry(ret.head.map(x => SynthesizedProcedureEntry(x.pp)))))
+        outbound.put(write(SynthesisResultEntry(ret.head._1.map(x => SynthesizedProcedureEntry(x.pp)))))
         ret
       }
       catch {
@@ -187,7 +187,7 @@ class AsyncSynthesisRunner extends SynthesisRunnerUtil {
       }
     }
 
-  def synthesizeFromSpec(spec: SpecMessage): List[List[Statements.Procedure]] =
+  def synthesizeFromSpec(spec: SpecMessage): List[(List[Statements.Procedure], Long)] =
     synthesizeFromSpec(spec.name, textFromSpec(spec),
                        noOutputCheck, configFromSpec(spec))
 
@@ -405,6 +405,6 @@ class ClientSessionSynthesis(implicit ec: ExecutionContext) extends AsyncSynthes
     config.copy(timeOut = Math.min(config.timeOut, HARD_MAX_TIMEOUT))
 
   override def synthesizeFromSpec(testName: String, text: String, out: String,
-                                  params: SynConfig): List[List[Statements.Procedure]] =
+                                  params: SynConfig): List[(List[Statements.Procedure], Long)] =
     super.synthesizeFromSpec(testName, text, out, adjustConfig(params))
 }

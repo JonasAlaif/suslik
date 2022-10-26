@@ -22,7 +22,7 @@ class SearchTree {
   var successLeaves: Worklist = List()
 
   // List of nodes to process
-  var slns: List[Solution] = List()
+  var slns: List[(Solution, Long)] = List()
 
   // Initialize worklist: root or-node containing the top-level goal
   private def init(initialGoal: Goal): SearchTree = {
@@ -46,8 +46,8 @@ object SearchTree {
   def worklist_=(w: Worklist): Unit = { st.worklist = w }
   def successLeaves: Worklist = st.successLeaves
   def successLeaves_=(w: Worklist): Unit = { st.successLeaves = w }
-  def slns: List[Solution] = st.slns
-  def slns_=(w: List[Solution]): Unit = { st.slns = w }
+  def slns: List[(Solution, Long)] = st.slns
+  def slns_=(w: List[(Solution, Long)]): Unit = { st.slns = w }
 
   /**
     * Node's position in the search tree

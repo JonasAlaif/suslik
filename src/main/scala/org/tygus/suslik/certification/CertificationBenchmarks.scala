@@ -42,7 +42,7 @@ class CertificationBenchmarks(
     ("Iris", "sll-bounds/sll-min")
   )
 
-  def synthesizeOne(text: String, parser: SSLParser, params: SynConfig): (List[List[Statements.Procedure]], Environment, Long) = {
+  def synthesizeOne(text: String, parser: SSLParser, params: SynConfig): (List[(List[Statements.Procedure], Long)], Environment, Long) = {
     LanguageUtils.resetFreshNameGenerator()
     val res = params.inputFormat match {
       case `dotSyn` => parser.parseGoalSYN(text)
@@ -125,7 +125,7 @@ class CertificationBenchmarks(
 
         logSynStat(List(testName, fmtTime(synDuration)))
 
-        (testName, res.head.head, tree, root.goal, env)
+        (testName, res.head._1.head, tree, root.goal, env)
       }
       println("Finished synthesizing specifications!")
 
