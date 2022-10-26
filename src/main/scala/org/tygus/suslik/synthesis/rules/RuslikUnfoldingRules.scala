@@ -110,7 +110,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       def loadVars(rapp: RApp): Seq[Var] =
         for { v@Var(_) <- rapp.fnSpec; if !goal.programVars.contains(v) } yield v
       // Take first prim, we will unfold all anyway
-      val prims = goal.pre.sigma.prims(goal.env.predicates).filter(h => !h.priv && h.ref.length <= 1 && !h.hasBlocker && !loadVars(h).isEmpty)
+      val prims = goal.pre.sigma.prims(goal.env.predicates).filter(h => !h.priv && h.ref.length == 0 && !h.hasBlocker && !loadVars(h).isEmpty)
       if (prims.length == 0) return Seq()
       val prim = prims.head
       val (asn, fut_subst) = loadPrimPred(prim, goal.vars, goal.env.predicates, goal.onExpiries)
@@ -135,7 +135,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
   }
 
   /*
-  Copy out rule: load in a primitive value
+  Copy out2 rule: load a Copy value out of ref
    */
   object CopyOut2 extends SynthesisRule with GeneratesCode with InvertibleRule {
     override def toString: Ident = "CopyOut2"
@@ -153,7 +153,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         Assertion(goal.pre.phi, (goal.pre.sigma - cp) ** newCopy ** derefed),
         programVars = derefed.field :: goal.programVars,
       )
-      val kont = SubstProducer(derefed.field, UnaryExpr(OpDeRef, cp.field))
+      val kont = PrependProducer(Construct(Some(derefed.field), "", None, Seq((Var("_0"), UnaryExpr(OpDeRef, cp.field)))))
       Seq(RuleResult(List(newGoal), kont, this, goal))
     }
   }

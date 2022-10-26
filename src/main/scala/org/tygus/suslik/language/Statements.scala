@@ -61,8 +61,8 @@ object Statements {
             builder.append(s"let ${to.pp} = *$f;")
           case c@Construct(to, pred, variant, args) =>
             val structLike = c.structLike
-            val bra = if (args.length == 0) "" else if (structLike) " { " else "("
-            val ket = if (args.length == 0) "" else if (structLike) " }" else ")"
+            val bra = if (args.length == 0 || pred == "") "" else if (structLike) " { " else "("
+            val ket = if (args.length == 0 || pred == "") "" else if (structLike) " }" else ")"
             builder.append(s"${if (c.isRes) "" else s"let ${to.get.pp} = "}${c.cName}$bra${c.argsPrint.map(_.pp).mkString(", ")}$ket${if (c.isRes) "" else ";"}")
           case m@Match(res, tgt, arms) =>
             val resStr = if (m.isRes) "" else s"let ${doRet(res.getRes)} = "
@@ -191,7 +191,9 @@ object Statements {
     def substRes(sigma: SubstVar): Statement = this match {
       case Construct(to, pred, variant, args) => {
         if (to.isDefined) assert(!sigma.keySet.contains(to.get) || sigma(to.get).isInstanceOf[Var])
-        Construct(to.map(_.varSubst(sigma).asInstanceOf[Var]), pred, variant, args)
+        val newTo = to.map(_.varSubst(sigma).asInstanceOf[Var])
+        if (newTo.isDefined && newTo.get.name == "_") Skip else
+          Construct(newTo, pred, variant, args)
       }
       case Match(results, tgt, arms) => Match(results.varSubst(sigma), tgt, arms)
       case c:Call => c.copy(result = c.result.varSubst(sigma))
@@ -228,8 +230,12 @@ object Statements {
       case Sub(sub) => (this, cmap.subst(sub))
       case c:Construct => {
         val sub = doVarSimp(c.to.toSet, cmap)
-        val argVars = c.matchVars.flatMap(_.vars)
-        (c.doResSimplify(sub), cmap.dead(c.to.toSet).live(argVars.toSet))
+        val newC = c.doResSimplify(sub)
+        // Was turned into a skip?
+        val unused = !(newC.isInstanceOf[SeqComp] || newC.isInstanceOf[Construct])
+        if (unused) assert(c.pred == "")
+        val argVars = if (unused) Set() else c.matchVars.flatMap(_.vars)
+        (newC, cmap.dead(c.to.toSet).live(argVars.toSet))
       }
       case Match(results, tgt, arms) => {
         val resSet = results.getExprSet.flatMap(_.vars)
