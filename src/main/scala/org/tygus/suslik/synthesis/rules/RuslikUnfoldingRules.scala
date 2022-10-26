@@ -173,15 +173,19 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         // Only for non-primitive types
         if !h.isPrim(goal.env.predicates) || h.ref.length >= 2
         if h.tag.unrolls < goal.env.config.maxOpenDepth
-        (clauses, sbst, fresh_subst, fieldSubst, fut_subst, pred) = loadPred(h, goal.vars, goal.env.predicates, true, goal.onExpiries, goal.env.predicateCycles)
+        (clauses, sbst, fresh_subst, _fieldSubst, fut_subst, pred) = loadPred(h, goal.vars, goal.env.predicates, true, goal.onExpiries, goal.env.predicateCycles)
         if clauses.length > 0
       } yield {
+        var fieldSubst = _fieldSubst
         val newGoals = clauses.zipWithIndex.map { case (clause, j) => {
-          val newSigma = if (h.isBorrow) clause.asn.sigma else {
+          val (newSigma, dropIgnoredFields) = if (h.isBorrow) (clause.asn.sigma, Set[Var]()) else {
             val disc = clause.asn.sigma.rapps.filter(r => r.priv && r.isPrim(goal.env.predicates) && r.field.name.startsWith("disc_"))
+            val dropIgnoredFields = if (h.isDrop(goal.env.predicates)) clause.asn.sigma.rapps.filter(r => !r.isCopy(goal.env.predicates) && (!r.isBorrow || r.ref.head.mut))
+              else List()
             assert(disc.length <= 1)
-            clause.asn.sigma - SFormula(disc)
+            (clause.asn.sigma - SFormula(disc ++ dropIgnoredFields), dropIgnoredFields.map((_.field)).toSet)
           }
+          fieldSubst = fieldSubst.map(f => if (dropIgnoredFields(f._1)) f._1 -> Var("..") else f)
           val newVars = newSigma.rapps.map(_.field)
           val inPost = goal.post.sigma.borrows.find(p => h.isBorrow && h.field != p.field && h.field.name.endsWith(p.field.name))
           val newPost = if (inPost.isDefined) {
@@ -223,6 +227,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     def apply(goal: Goal): Seq[RuleResult] = {
       for (h <- goal.pre.sigma.borrows
         if !h.priv && !h.hasBlocker && (!h.isPrim(goal.env.predicates) || h.ref.length >= 2) && h.tag.unrolls < goal.env.config.maxOpenDepth &&
+        !h.isDrop(goal.env.predicates) &&
         !goal.post.onExpiries.exists(oe => oe.field == h.field && !oe.post.get && !oe.futs.head) &&
         !(h.isBorrow && h.tag.calls == 0 && goal.env.functions.values.exists(_.pre.sigma.borrows.exists(b => h.reborrow(b, Set((b.ref.head.lft, h.ref.head.lft))).isDefined))) &&
         h.ref.head.beenAddedToPost) {

@@ -308,6 +308,7 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
   // Can be copied out immediately
   def isPrim(predicates: PredicateEnv): Boolean = predicates(pred).isPrim
   def isCopy(predicates: PredicateEnv): Boolean = predicates(pred).isCopy
+  def isDrop(predicates: PredicateEnv): Boolean = predicates(pred).isDrop
 
   // Should be folded/unfolded after non-cyclic things
   def isCyclic(predicates: PredicateCycles): Boolean = predicates(pred)
