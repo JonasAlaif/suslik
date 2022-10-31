@@ -665,10 +665,10 @@ object Expressions {
           else
             // If we were `^*x_rb Some(true)` then we become `^tmp None` (since tmp is an existential)
             Some(this.asVar -> this.copy(post = None, futs = this.futs.tail, field = srcF))
-        } else if (this.futs.length > 1 && this.futs.head == false && this.futs.tail.head == true && this.post.get == !inPost) {
-          // If we were `^*x_rb Some(false)` then we become `**tmp Some(true)` (since tmp is an existential)
-          if (this.futs.tail.tail.forall(!_)) Some(this.asVar -> fnSpecDst(this.idx))
-          else Some(this.asVar -> this.copy(post = Some(true), futs = false :: false :: this.futs.tail.tail))
+        // } else if (this.futs.length > 1 && this.futs.head == false && this.futs.tail.head == true && this.post.get == !inPost) {
+        //   // If we were `^*x_rb Some(false)` then we become `**tmp Some(true)` (since tmp is an existential)
+        //   if (this.futs.tail.tail.forall(!_)) Some(this.asVar -> fnSpecDst(this.idx))
+        //   else Some(this.asVar -> this.copy(post = Some(true), futs = false :: false :: this.futs.tail.tail))
         } else None
       } else None
     }

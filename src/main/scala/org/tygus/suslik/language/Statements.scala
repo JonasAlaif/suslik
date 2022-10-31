@@ -592,18 +592,25 @@ object Statements {
   case class Procedure(f: FunSpec, body: Statement)(implicit predicates: Map[Ident, InductivePredicate]) {
     val (name: String, formals: Formals, returns: RustFormals) = (f.clean, f.params, f.rustReturns)
 
+    def ppWithHelpers(helpers: List[Procedure]): String = {
+      val helpersStr = helpers.map("\n#[helper]\n" + _.pp).mkString("").replace("\n", "\n  ")
+      s"""|$ppSig {$helpersStr
+          |  ${body.pp}
+          |}""".stripMargin
+    }
     def pp: String = {
+      s"""|$ppSig {
+          |  ${body.pp}
+          |}""".stripMargin
+    }
+    def ppSig: String = {
       val lfts = f.lfts.filter(lft => !lft.startsWith("'_") && lft != "'static")
       val generics = if (lfts.size == 0) "" else s"<${lfts.mkString(", ")}>"
       val returnStr =
         if (returns.length == 0) ""
-        else if (returns.length == 1) s"-> ${returns.head._2.map(_.sig).mkString("")}${returns.head._3} "
-        else s"-> (${returns.map(r => r._2.map(_.sig).mkString("") + r._3).mkString(", ")}) "
-      s"""
-          |fn $name$generics(${f.rustParams.map { case (f, r, t) => formalPp(f,r,t) }.mkString(", ")}) $returnStr{
-          |  ${body.pp}
-          |}
-      """.stripMargin
+        else if (returns.length == 1) s" -> ${returns.head._2.map(_.sig).mkString("")}${returns.head._3}"
+        else s" -> (${returns.map(r => r._2.map(_.sig).mkString("") + r._3).mkString(", ")})"
+      s"fn $name$generics(${f.rustParams.map { case (f, r, t) => formalPp(f,r,t) }.mkString(", ")})$returnStr"
     }
     def formalPp(f: Var, r: List[Ref], t: Ident): String =
       if (f.name == "self") s"${r.map(_.sig).mkString("")}${f.pp}"

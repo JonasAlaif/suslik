@@ -349,7 +349,7 @@ object Specifications extends SepLogicUtils {
         val phiVars = post.phi.vars ++ pre.phi.vars
         existentials(v) && !phiVars(v)
       }) && !post.onExpiries.exists(oe =>
-        oe.field == r.field && !oe.futs.head && (oe.post.get || (oe.futs.length > 1 && oe.futs.tail.head))
+        oe.field == r.field && !oe.futs.head && oe.post.get
       ))
     def hasPotentialReborrows(r: RApp): Boolean = r.canBeBlocked && this.post.sigma.potentialTgtLfts(r.ref.head.lft)
     def potentialReborrows(r: RApp): List[(RApp, ExprSubst)] = post.sigma.borrows.flatMap(b => r.reborrow(b, this.pre.phi.outlivesRels).map((b, _)))

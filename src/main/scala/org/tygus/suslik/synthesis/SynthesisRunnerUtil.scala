@@ -212,7 +212,8 @@ trait SynthesisRunnerUtil {
               List(pre, post, p.pp.trim).mkString("\n")
             }).mkString("\n")
           } else {
-            sln.map(_.pp.trim).mkString("\n")
+            sln.head.pp + sln.tail.map("\n#[helper] " + _.pp).mkString("")
+            // sln.head.ppWithHelpers(sln.tail)
           }
 
           // [Certify] initialize and print cert tree
