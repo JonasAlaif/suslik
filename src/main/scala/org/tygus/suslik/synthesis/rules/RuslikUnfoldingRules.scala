@@ -705,7 +705,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
       if (owneds.isEmpty) return Nil
       val ownedToDrop = goal.pre.sigma.owneds.head
       val newPre = Assertion(goal.pre.phi, goal.pre.sigma - ownedToDrop)
-      val cost = if (ownedToDrop.isCopy(goal.env.predicates)) 0 else 6
+      val cost = if (ownedToDrop.isCopy(goal.env.predicates)) 0 else 10
       val newGoal = goal.spawnChild(pre = newPre, extraCost = cost)
       List(RuleResult(List(newGoal), IdProducer, this, goal))
     }
