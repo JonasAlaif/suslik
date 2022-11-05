@@ -215,6 +215,8 @@ trait SynthesisRunnerUtil {
             sln.head.pp + sln.tail.map("\n#[helper] " + _.pp).mkString("")
             // sln.head.ppWithHelpers(sln.tail)
           }
+          val nodes = sln.map(_.body.size).sum
+          val nodesUnsimp = sln.map(_.unsimpBody.size).sum
 
           // [Certify] initialize and print cert tree
           initCertTree(synthesizer.trace)
@@ -231,7 +233,7 @@ trait SynthesisRunnerUtil {
             if (procs.length > 1)
               println("-----------------------------------------------------")
             print(result)
-            println(s" // Synth time: $time milliseconds")
+            println(s" // Synth time: $time ms, AST nodes: $nodes vs unsimp $nodesUnsimp @|$time|$nodes|$nodesUnsimp|@")
           }
           if (out != noOutputCheck) {
             val tt = out.trim.lines.map(_.trim)

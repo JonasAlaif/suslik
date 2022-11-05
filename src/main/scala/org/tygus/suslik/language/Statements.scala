@@ -210,8 +210,8 @@ object Statements {
       case Sub(_) => 0
       case Store(to, off, e) => 1 + to.size + e.size
       case Load(to, _, from, _) => 1 + to.size + from.size
-      case Construct(to, _, _, args) => 1 + to.size + args.map(_._2.size).sum
-      case Match(_, _, arms) => 1 + arms.map(a => a._1.size + a._2.size).sum
+      case Construct(to, _, _, args) => 1 + to.map(_.size).getOrElse(0) + args.map(_._2.size + 1).sum
+      case Match(to, tgt, arms) => 1 + to.getResSet.size + arms.map(a => a._1.size + a._2.size).sum
       case Malloc(to, _, _) => 1 + to.size
       case Free(x) => 1 + x.size
       case Call(_, res, args, _, _, _) => 1 + res.getResSet.size + args.map(_.size).sum
@@ -589,7 +589,7 @@ object Statements {
 
 
   // A procedure
-  case class Procedure(f: FunSpec, body: Statement)(implicit predicates: Map[Ident, InductivePredicate]) {
+  case class Procedure(f: FunSpec, body: Statement, unsimpBody: Statement)(implicit predicates: Map[Ident, InductivePredicate]) {
     val (name: String, formals: Formals, returns: RustFormals) = (f.clean, f.params, f.rustReturns)
 
     def ppWithHelpers(helpers: List[Procedure]): String = {
@@ -650,7 +650,7 @@ object Statements {
           p => (p._1._1.varSubst(sub), p._1._2, predicates(p._1._3).clean)
         )
       )
-      (new Procedure(newF, SeqComp(Sub(sub), newBody).simplify.doSubsts), usedArgs)
+      (new Procedure(newF, SeqComp(Sub(sub), newBody).simplify.doSubsts, procBody), usedArgs)
     }
     def apply(f: FunSpec, body: Statement, outerCall: Call)(implicit predicates: Map[Ident, InductivePredicate]): (Procedure, Call) = {
       val (proc, usedArgs) = Procedure(f, body)

@@ -118,12 +118,12 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val ty = fs._1.getType(goal.gamma).get
         if (ty == LifetimeType) fs._1 else OnExpiry(Some(true), List(true), prim.field, fs._2, ty)
       })
-      val (asnFut, _) = loadPrimPred(prim.copy(fnSpec = futPrim), goal.vars, goal.env.predicates, goal.onExpiries)
+      // val (asnFut, _) = loadPrimPred(prim.copy(fnSpec = futPrim), goal.vars, goal.env.predicates, goal.onExpiries)
       val newVars = loadVars(prim)
       val extraPhi = asn.phi - PFormula(asn.phi.collect[Expr](_.isInstanceOf[NoExists]))
-      val extraPhiFut = asnFut.phi - PFormula(asnFut.phi.collect[Expr](_.isInstanceOf[NoExists]))
+      // val extraPhiFut = asnFut.phi - PFormula(asnFut.phi.collect[Expr](_.isInstanceOf[NoExists]))
       val newGoal = goal.spawnChild(
-        Assertion(goal.pre.phi && extraPhi && extraPhiFut, goal.pre.sigma),
+        Assertion(goal.pre.phi && extraPhi, goal.pre.sigma),// && extraPhiFut, goal.pre.sigma),
         fut_subst = fut_subst,
         programVars = goal.programVars ++ newVars
       )
