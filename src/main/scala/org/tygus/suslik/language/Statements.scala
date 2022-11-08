@@ -673,16 +673,17 @@ object Statements {
     def compareTo(other: Results): Boolean = {
       if (this.r.isDefined != other.r.isDefined) return false
       if (this.r.isEmpty && other.r.isEmpty) return true
+      val (sub1, sub2) = (this.sub ++ this.subVar, other.sub ++ other.subVar)
       (this.res, other.res) match {
-        case (OrderedRes(res1), OrderedRes(res2)) => res1.map(_.subst(this.sub)) == res2.map(_.subst(other.sub))
+        case (OrderedRes(res1), OrderedRes(res2)) => res1.map(_.subst(sub1)) == res2.map(_.subst(sub2))
         case (res1, res2) =>
-          if (res1.getResSet.map(_.subst(this.sub)) == res2.getResSet.map(_.subst(other.sub))) {
+          if (res1.getResSet.map(_.subst(sub1)) == res2.getResSet.map(_.subst(sub2))) {
             val (unord, unordSub, ordList) = if (res2.isInstanceOf[OrderedRes])
-              (this.r.get._1, this.sub, res2.asInstanceOf[OrderedRes].res.map(_.subst(other.sub)))
+              (this.r.get._1, sub1, res2.asInstanceOf[OrderedRes].res.map(_.subst(sub2)))
             else {
               val newRes = res.getRes
               this.r.get._1.res.res = newRes
-              (other.r.get._1, other.sub, newRes.res.map(_.subst(this.sub)))
+              (other.r.get._1, sub2, newRes.res.map(_.subst(sub1)))
             }
             val unordMap = unord.res.res.getResSet.map(r => r.subst(unordSub) -> r).toMap
             unord.res.res = OrderedRes(ordList.map(unordMap))

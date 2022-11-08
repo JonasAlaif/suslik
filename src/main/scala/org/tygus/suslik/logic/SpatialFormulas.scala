@@ -437,7 +437,9 @@ case class RApp(priv: Boolean, field: Var, ref: List[Ref], pred: Ident, fnSpec: 
         this.ref.head.lft == that.ref.head.lft || outlivesRels.contains((that.ref.head.lft, this.ref.head.lft)))
     ) {
       val sub = (this.field :: this.fnSpec.toList ++ this.ref.tail.map(_.lft))
-            .zip(that.field :: that.fnSpec.toList ++ that.ref.tail.map(_.lft)).toMap
+            .zip(that.field :: that.fnSpec.toList ++ that.ref.zipWithIndex.tail.map(r => {
+              if (r._1.lft.isExistential && !this.ref.head.mut) this.ref(r._2).lft else r._1.lft
+            })).toMap
       Some(sub)
     } else None
   }
