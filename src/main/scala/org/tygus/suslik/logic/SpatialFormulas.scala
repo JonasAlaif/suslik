@@ -67,7 +67,7 @@ sealed abstract class Heaplet extends PrettyPrinting with HasExpressions[Heaplet
 
   def cost(predicates: PredicateEnv, cycles: PredicateCycles): Int = this match {
     case SApp(_, _, t@PTag(c, u, _, ec), _) => 0 + 2*c*c+ 3*t.recursions + u + ec
-    case r:RApp if !r.isBorrow && !cycles(r.pred) && r.isCopy(predicates) => 1
+    case r:RApp if !r.isBorrow && !cycles(r.pred) && r.isCopy(predicates) && !r.priv => 1
     case r@RApp(priv, _, _, _, _, _, t@PTag(c, u, _, ec)) =>// if (priv && r.isBorrow) 0 else 
       0 + 2*c*c + 3*t.recursions + u + ec
     case _ => 1
