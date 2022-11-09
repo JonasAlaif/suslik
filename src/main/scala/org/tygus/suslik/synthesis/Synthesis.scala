@@ -21,8 +21,9 @@ import scala.annotation.tailrec
   */
 
 class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: ProofTrace) extends SepLogicUtils {
+  type ProcedureList = List[(Int, List[Procedure], Long)]
 
-  def synthesizeProc(funGoal: FunSpec, env: Environment, sketch: Statement): (List[(List[Procedure], Long)], SynStats) = {
+  def synthesizeProc(funGoal: FunSpec, env: Environment, sketch: Statement): (ProcedureList, SynStats) = {
     implicit val config: SynConfig = env.config
     implicit val stats: SynStats = env.stats
     val FunSpec(_, _, formals, rets, pre, post, var_decl) = funGoal
@@ -53,10 +54,10 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
           log.out.printlnErr(s"Deductive synthesis failed for the goal:\n${main._1.pp}")
           (Nil, stats)
         case slns =>
-          (slns.reverse.map { case ((body, helpers), time) =>
+          (slns.reverse.map { case (ruleApps, (body, helpers), time) =>
             log.print(s"Succeeded leaves (${successLeaves.length}): ${successLeaves.map(n => s"${n.pp()}").mkString(" ")}", Console.YELLOW, 2)
             val main = Procedure(funGoal, body)(goal.env.predicates)
-            (main._1 :: helpers, time)
+            (ruleApps, main._1 :: helpers, time)
           }, stats)
       }
     } catch {
@@ -67,14 +68,14 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
   }
 
   protected def synthesize(goal: Goal)
-                          (stats: SynStats): List[(Solution, Long)] = {
+                          (stats: SynStats): SolutionList = {
     SearchTree.init(goal)
     processWorkList(stats, goal.env.config)
   }
 
   @tailrec final def processWorkList(implicit
                                      stats: SynStats,
-                                     config: SynConfig): List[(Solution, Long)] = {
+                                     config: SynConfig): SolutionList = {
     // Check for timeouts
     if (!config.interactive && stats.timedOut) {
       throw SynTimeOutException(s"\n\nThe derivation took too long: more than ${config.timeOut / 1000.0} seconds.\n")
@@ -106,7 +107,7 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
         }
         case Some(Succeeded(sol, id)) =>
         { // Same goal has succeeded before: return the same solution
-          log.print(s"Recalled solutions ${sol.map(_._1.pp).mkString("\n")}", Console.RED)
+          log.print(s"Recalled solutions ${sol.map(_._2._1.pp).mkString("\n")}", Console.RED)
           // This seems to always hold in practice because we always get to the companion
           // before we get to any of its children;
           // if this ever fails, we can either:
@@ -133,7 +134,7 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
         }
         case None => expandNode(node, addNewNodes) // First time we see this goal: do expand
       }
-      slns = res.map(_ -> stats.duration) ++ slns
+      slns = res.map(res => (res._1, res._2, stats.duration)) ++ slns
       // Could have more solutions than asked for if one and branch has multiple
       if (slns.length >= config.solutions) slns.takeRight(config.solutions)
       else processWorkList
@@ -162,7 +163,7 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
 
   // Expand node and return either a new worklist or the final solution
   protected def expandNode(node: OrNode, addNewNodes: List[OrNode] => List[OrNode])(implicit stats: SynStats,
-                                                                                    config: SynConfig): List[Solution] = {
+                                                                                    config: SynConfig): List[(Int, Solution)] = {
     val goal = node.goal
     memo.save(goal, Expanded)
     implicit val ctx: Log.Context = Log.Context(goal)
@@ -174,7 +175,7 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
       case Some(e) =>
         trace.add(e, node)
         successLeaves = node :: successLeaves
-        node.succeed(List(e.producer(Nil))) match {
+        node.succeed(List((0, e.producer(Nil)))) match {
           case Left(sibling) =>
             // This node had a suspended and-sibling: add to the worklist
             sibling.map(sibling =>

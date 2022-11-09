@@ -180,10 +180,10 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         val newGoals = clauses.zipWithIndex.map { case (clause, j) => {
           val (newSigma, dropIgnoredFields) = if (h.isBorrow) (clause.asn.sigma, Set[Var]()) else {
             val disc = clause.asn.sigma.rapps.filter(r => r.priv && r.isPrim(goal.env.predicates) && r.field.name.startsWith("disc_"))
+            assert(disc.length <= 1)
             val dropIgnoredFields = if (h.isDrop(goal.env.predicates)) clause.asn.sigma.rapps.filter(r => !r.isCopy(goal.env.predicates) && (!r.isBorrow || r.ref.head.mut))
               else List()
-            assert(disc.length <= 1)
-            (clause.asn.sigma - SFormula(disc ++ dropIgnoredFields), dropIgnoredFields.map((_.field)).toSet)
+            (clause.asn.sigma - SFormula(dropIgnoredFields), dropIgnoredFields.map((_.field)).toSet)
           }
           fieldSubst = fieldSubst.map(f => if (dropIgnoredFields(f._1)) f._1 -> Var("..") else f)
           val newVars = newSigma.rapps.map(_.field)

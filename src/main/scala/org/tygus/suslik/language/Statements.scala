@@ -80,11 +80,13 @@ object Statements {
           case Return(ret) =>
             builder.append(doRet(ret.getRes))
           case c@Call(fun, result, args, _, rec, _) =>
-            val res = if (c.isRes || result.getRes.isEmpty) ""
-              else s"let ${doRet(result.getRes)} = "
+            val resStr = if (c.isRes) "" else {
+              val res = result.getRes
+              if (res.forall(_.asInstanceOf[Var].name == "_")) "" else s"let ${doRet(result.getRes)} = "
+            }
             val (receiver, cargs) = if (!rec) ("", args)
               else (BinaryExpr(OpField, UnaryExpr(OpDeRef, args.head).normalise, Var("")).normalise.pp, args.tail)
-            val function_call = s"$res$receiver${fun.pp}(${cargs.map(_.pp).mkString(", ")})${if (c.isRes) "" else ";"}"
+            val function_call = s"$resStr$receiver${fun.pp}(${cargs.map(_.pp).mkString(", ")})${if (c.isRes) "" else ";"}"
             builder.append(function_call)
           case SeqComp(s1,s2) =>
             build(s1, offset)
@@ -276,7 +278,8 @@ object Statements {
       case Guarded(cond, body) => ???
     }
     def doResSimplify(sub: SubstVar): Statement = if (sub.isEmpty) this
-      else SeqComp(this.substRes(sub), Sub(sub).simplify).simplify
+      // Unused vars getting subbed to "_" might as well not be subbed
+      else SeqComp(this.substRes(sub), Sub(sub.filter(_._2.name != "_")).simplify).simplify
 
     // Is this an atomic statement?
     def isAtomic: Boolean = this match {
@@ -584,7 +587,7 @@ object Statements {
           }
           Var(parts.take(i).mkString("_"))
         }
-      }).toMap
+      }).filter(sub => sub._1 != sub._2).toMap
     }
 
 
@@ -629,7 +632,10 @@ object Statements {
     def apply(f: FunSpec, body: Statement)(implicit predicates: Map[Ident, InductivePredicate]): (Procedure, Map[Int,Boolean]) = {
       val argsFixed = f.returns.r.get._1.res.res.isInstanceOf[OrderedRes]
       val procBody = body.withRes(f.returns).doSubsts
-      val (newBody, cmap) = procBody.simplifyVars(ClashMap(Map.empty, Sub()), f.name)
+      val _newBody = procBody.simplifyVars(ClashMap(Map.empty, Sub()), f.name)._1.doSubsts
+      // Run this twice to get rid of unnecessary matches first and then unused vars second
+      val (newBody, cmap) = _newBody.simplifyVars(ClashMap(Map.empty, Sub()), f.name)
+
       val argNames = f.params.map(_._1)
       // To skip simplification use the following cmap
       // val newBody = procBody
@@ -664,6 +670,20 @@ object Statements {
   type Solution = (Statement, List[Procedure])
 
   case class Results(r: Option[(FnResList, Sub, SubstVar)] = None) {
+    override def equals(that: Any): Boolean = that match {
+        case other: Results => {
+          if (this.r.isDefined != other.r.isDefined) return false
+          if (this.r.isEmpty && other.r.isEmpty) return true
+          val (sub1, sub2) = (this.sub ++ this.subVar, other.sub ++ other.subVar)
+          (this.res, other.res) match {
+            case (OrderedRes(res1), OrderedRes(res2)) => res1.map(_.subst(sub1)) == res2.map(_.subst(sub2))
+            case (UnorderedRes(res1), UnorderedRes(res2)) => res1.map(_.subst(sub1)) == res2.map(_.subst(sub2))
+            case _ => false
+          }
+        }
+        case _ => false
+    }
+
     def res: ResList = r.get._1.res.res
     def sub: Subst = r.get._2.sub
     def subVar: SubstVar = r.get._3
@@ -700,7 +720,7 @@ object Statements {
     }
     def getExprSet: Set[Expr] = {
       if (this.r.isEmpty) Set.empty else {
-        res.getResSet.map(_.subst(sub))
+        res.getResSet.map(_.subst(sub ++ subVar))
       }
     }
     def getRes: Seq[Expr] = {
@@ -714,7 +734,7 @@ object Statements {
       newRes.res
     }
     def varSubst(subst: SubstVar): Results = {
-      assert(sub.isEmpty && subVar.isEmpty)
+      assert(sub.isEmpty && subVar.isEmpty, "Adding " + subst + "\nBut already have" + sub + " and " + subVar)
       Results(Some(this.r.get.copy(_3 = subst)))
     }
     def subst(sigma: Subst): Results = {

@@ -30,7 +30,7 @@ object Memoization {
   // This goal has been fully explored and failed
   case object Failed extends GoalStatus
   // This goal has been fully explored and produces solution `sol`
-  case class Succeeded(sol: List[Solution], nodeId: NodeId) extends GoalStatus
+  case class Succeeded(sol: List[(Int, Solution)], nodeId: NodeId) extends GoalStatus
   // This goal has been expanded but not yet fully explored
   // (its descendants are still in the worklist)
   case object Expanded extends GoalStatus

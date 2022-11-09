@@ -25,6 +25,7 @@ import scala.io.Source
   */
 
 trait SynthesisRunnerUtil {
+  type ProcedureList = List[(Int, List[Statements.Procedure], Long)]
 
   {
     // Warm up SMT solver:
@@ -151,7 +152,7 @@ trait SynthesisRunnerUtil {
   }
 
   def synthesizeFromFile(dir: String, testName: String,
-                         initialParams: SynConfig = defaultConfig) : List[(List[Statements.Procedure], Long)] = {
+                         initialParams: SynConfig = defaultConfig) : ProcedureList = {
     val fullPath = Paths.get(dir, testName)
     val defs = getDefsFromDir(new File(dir))
     val (_, _, in, out, params) = getDescInputOutput(fullPath.toString, initialParams)
@@ -159,7 +160,7 @@ trait SynthesisRunnerUtil {
   }
 
   def synthesizeFromSpec(testName: String, text: String, out: String = noOutputCheck,
-                         params: SynConfig = defaultConfig) : List[(List[Statements.Procedure], Long)] = {
+                         params: SynConfig = defaultConfig) : ProcedureList = {
     import log.out.testPrintln
 
     val (spec, env, body) = prepareSynthesisTask(text, params)
@@ -205,7 +206,7 @@ trait SynthesisRunnerUtil {
           sys.exit(2)
           // throw SynthesisException(s"Failed to synthesise due to unrealizable spec or incompleteness")
       case procs =>
-        for { (sln, time) <- procs } {
+        for { (ruleApps, sln, time) <- procs } {
           val result = if (params.printSpecs) {
             sln.map(p => {
               val (pre, post) = (p.f.pre.pp.trim, p.f.post.pp.trim)
@@ -233,7 +234,7 @@ trait SynthesisRunnerUtil {
             if (procs.length > 1)
               println("-----------------------------------------------------")
             print(result)
-            println(s" // Synth time: $time ms, AST nodes: $nodes vs unsimp $nodesUnsimp @|$time|$nodes|$nodesUnsimp|@")
+            println(s" // Synth time: $time ms, AST nodes: $nodes vs unsimp $nodesUnsimp @|$time|$nodes|$nodesUnsimp|$ruleApps|@")
           }
           if (out != noOutputCheck) {
             val tt = out.trim.lines.map(_.trim)
@@ -251,7 +252,7 @@ trait SynthesisRunnerUtil {
             val targetName = certTarget.name
             val root = CertTree.root.getOrElse(throw SynthesisException("Search tree is uninitialized"))
             val tree = SuslikProofStep.of_certtree(root)
-            val certificate = certTarget.certify(testName, procs.head._1.head, tree, root.goal, env)
+            val certificate = certTarget.certify(testName, procs.head._2.head, tree, root.goal, env)
             if (params.certDest == null) {
               testPrintln(s"\n$targetName certificate:", Console.MAGENTA)
               certificate.outputs.foreach(o => {

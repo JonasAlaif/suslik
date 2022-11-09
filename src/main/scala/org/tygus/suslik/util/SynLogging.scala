@@ -181,6 +181,7 @@ class SynStats(timeOut: Long) {
 
 // TODO: refactor me to make more customizable
 object SynStatUtil {
+  type ProcedureList = List[(Int, List[Procedure], Long)]
 
   import java.io.{File, FileWriter}
 
@@ -222,12 +223,12 @@ object SynStatUtil {
     countInner(proc.body)
   }
 
-  def log(name: String, time: Long, config: SynConfig, spec: FunSpec, res: List[(List[Procedure], Long)], stats: SynStats): Unit = {
+  def log(name: String, time: Long, config: SynConfig, spec: FunSpec, res: ProcedureList, stats: SynStats): Unit = {
     if (config.logToFile) {
       val statRow = (res match {
         case Nil => List("FAIL", "FAIL", "FAIL", stats.numGoalsGenerated, stats.numRulesApplied, stats.maxWorklistSize)
         // TODO:
-        case (procs, _) :: _ => List(procs.length, procs.map(_.body.size).sum, procs.map(countStmts).sum, stats.numGoalsGenerated, stats.numRulesApplied, stats.maxWorklistSize)
+        case (_, procs, _) :: _ => List(procs.length, procs.map(_.body.size).sum, procs.map(countStmts).sum, stats.numGoalsGenerated, stats.numRulesApplied, stats.maxWorklistSize)
       }).mkString(", ")
 
       val specSize = spec.pre.size + spec.post.size
