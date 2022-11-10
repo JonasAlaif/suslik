@@ -126,13 +126,13 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
             case Right(sol) => sol
           }
         }
-        case Some(Expanded) => { // Same goal has been expanded before: wait until it's fully explored
+        case Some(Expanded(orig)) if !node.hasAncestor(orig) => { // Same goal has been expanded before: wait until it's fully explored
           log.print("Suspend", Console.RED)
           memo.suspend(node)
           worklist = addNewNodes(List(node))
           Nil
         }
-        case None => expandNode(node, addNewNodes) // First time we see this goal: do expand
+        case Some(Expanded(_)) |  None => expandNode(node, addNewNodes) // First time we see this goal: do expand
       }
       slns = res.map(res => (res._1, res._2, stats.duration)) ++ slns
       // Could have more solutions than asked for if one and branch has multiple
@@ -165,7 +165,7 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
   protected def expandNode(node: OrNode, addNewNodes: List[OrNode] => List[OrNode])(implicit stats: SynStats,
                                                                                     config: SynConfig): List[(Int, Solution)] = {
     val goal = node.goal
-    memo.save(goal, Expanded)
+    memo.save(goal, Expanded(node.id))
     implicit val ctx: Log.Context = Log.Context(goal)
 
     val expansions = expansionsForNode(node)

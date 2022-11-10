@@ -33,7 +33,7 @@ object Memoization {
   case class Succeeded(sol: List[(Int, Solution)], nodeId: NodeId) extends GoalStatus
   // This goal has been expanded but not yet fully explored
   // (its descendants are still in the worklist)
-  case object Expanded extends GoalStatus
+  case class Expanded(orig: NodeId) extends GoalStatus
 
   /**
     * Caches search results for goals
@@ -48,7 +48,7 @@ object Memoization {
     def size: (Int, Int, Int) = (
       cache.count(_._2 == Failed),
       cache.count(_._2.isInstanceOf[Succeeded]),
-      cache.count(_._2 == Expanded)
+      cache.count(_._2.isInstanceOf[Expanded])
       )
 
     // Empty memo
@@ -79,7 +79,7 @@ object Memoization {
     def forgetExpanded(goal: Goal): Unit = {
       val key = trimGoal(goal)
       cache.get(key) match {
-        case Some(Expanded) => {
+        case Some(Expanded(_)) => {
           cache.remove(key)
           suspended.remove(key)
         }
