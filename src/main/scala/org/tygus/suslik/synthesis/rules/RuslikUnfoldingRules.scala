@@ -274,6 +274,8 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
     override def toString: Ident = "TryCall"
 
     def apply(goal: Goal): Seq[RuleResult] = {
+      // Prevent calling more than 8 functions in a single branch:
+      if (goal.rulesApplied.count(_ == UnfoldingRules.CallRule) > 8) return Nil
       if (goal.constraints.haveClosed) return Nil
       val cands = goal.companionCandidates
       val funLabels = cands.map(a => (a._1.toFunSpec, Some(a._1.label), a._2)) ++ // companions

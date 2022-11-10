@@ -32,7 +32,6 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
           RuslikUnfoldingRules.Close)
       else
         List(UnfoldingRules.CallRule,
-          UnificationRules.SubstRight,
           // LogicalRules.FrameFlat,
           // UnificationRules.PickCard,
           // LogicalRules.GhostWrite,
