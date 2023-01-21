@@ -54,6 +54,7 @@ abstract class RustSynthesis (config: SynConfig) extends Tactic {
     RuslikUnfoldingRules.ExpireAndWrite,
     RuslikUnfoldingRules.ExpireFinal,
     RuslikUnfoldingRules.OpenInv,
+    RuslikUnfoldingRules.CloseInv,
     // FailRules.PostInconsistent,
   )
 

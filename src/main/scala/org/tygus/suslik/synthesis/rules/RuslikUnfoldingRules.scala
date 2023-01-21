@@ -368,6 +368,47 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
   }
 
   /*
+  Close rule: unroll a predicate in the post-state
+   */
+  object CloseInv extends SynthesisRule with InvertibleRule {
+
+    override def toString: Ident = "CloseInv"
+
+    def apply(goal: Goal): Seq[RuleResult] = {
+      if (goal.callGoal.isDefined && !goal.env.config.closeWhileAbduce) return Nil
+      if (goal.callGoal.isDefined && !goal.callGoal.get.hasBorrows && goal.post.sigma.chunks.length <= 1) return Nil
+      val toUnfold = goal.constraints.canUnfoldPost(goal).filter(o => {
+        val pred = goal.env.predicates(o._1.pred)
+        pred.params.length == 0 && pred.clauses.length == 1 && pred.clauses(0).asn.sigma.chunks.length == 0
+      }).headOption;
+      if (toUnfold.isEmpty) return Nil
+      val (h, _) = toUnfold.get
+      if (h.tag.unrolls >= goal.env.config.maxCloseDepth) return Nil
+      val (clauses, _, fresh_subst, fieldSubst, fut_subst, ip) = loadPred(h, goal.vars, goal.env.predicates, false, goal.onExpiries, goal.env.predicateCycles)
+      assert(clauses.length == 1)
+      val InductiveClause(name, selector, asn) = clauses(0)
+      if (selector == BoolConst(false)) return Nil
+      assert(asn.sigma.chunks.length == 0)
+
+      assert(!h.hasBlocker)
+      val newPost = Assertion(
+        goal.post.phi && asn.phi && selector,
+        goal.post.sigma - h
+      )
+      val construct_args = Seq()
+      val stmt = AppendProducer(Construct(Some(h.field), ip.clean, name, construct_args))
+      val kont =
+        UnfoldProducer(h.toSApp, selector, Assertion(asn.phi, asn.sigma), fresh_subst ++ fieldSubst) >>
+        stmt >> ExtractHelper(goal)
+      val constants = goal.constraints
+      Seq(RuleResult(List(goal.spawnChild(post = newPost, fut_subst = fut_subst, constraints = constants,
+          // Hasn't progressed since we didn't progress toward termination
+          // Could be used as a companion, but currently won't since it isn't possible to make progress after closing (no more open)
+          hasProgressed = false, isCompanionNB = true)), kont, this, goal))
+    }
+  }
+
+  /*
   Expire rule: expire a reborrow in the post-state
    */
   abstract class Expire extends SynthesisRule {
