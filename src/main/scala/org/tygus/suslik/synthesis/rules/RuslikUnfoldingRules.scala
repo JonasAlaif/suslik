@@ -579,7 +579,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
   }
 
   def borrowToOwned(brrw: RApp, vars: Set[Var]): RApp = {
-    val newTag = PTag(0, brrw.tag.unrolls, (brrw.tag.pastTypes._1, brrw.tag.pastTypes._2 + 1))
+    val newTag = PTag(0, brrw.tag.unrolls, brrw.tag.writes, (brrw.tag.pastTypes._1, brrw.tag.pastTypes._2 + 1))
     val newField = freshVar(vars, "new_" + brrw.field.name + "_NV")
     brrw.copy(field = newField, ref = brrw.ref.tail, blocked = None, tag = newTag)
   }
@@ -601,7 +601,7 @@ object RuslikUnfoldingRules extends SepLogicUtils with RuleUtils {
         if !goal.isRAppExistential(brrw)
       } yield {
         val newOwned = borrowToOwned(brrw, goal.vars)
-        val newBrrw = brrw.copy(tag = brrw.tag.copy(extraCost = 0)).refreshFnSpec(goal.gamma, goal.vars).mkUnblockable
+        val newBrrw = brrw.copy(tag = brrw.tag.copy(extraCost = 0, writes = brrw.tag.writes + 1)).refreshFnSpec(goal.gamma, goal.vars).mkUnblockable
         val newPost = Assertion(post.phi, (post.sigma ** newOwned - brrw) ** newBrrw)
         val fut_subst = oeSubWrite(goal.onExpiries, brrw, newOwned)
         val kont = AppendProducer(Store(brrw.field, 0, newOwned.field))
